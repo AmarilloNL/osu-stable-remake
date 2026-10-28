@@ -670,7 +670,7 @@ sealed partial class Player : Screen
         if (lr != btnCur) { btnPrev2 = btnPrev; btnPrev = btnCur; btnCur = lr; }
         UpdateObjects(held, dtMs);
         if (mods.HasFlag(Mods.Flashlight)) UpdateFlashlight(dtMs);
-        if (time >= objs[0].Time && time <= objs[^1].EndTime && (hpGraph.Count == 0 || time - hpGraph[^1].X >= 250))
+        if (time >= objs[0].Time && time <= objs[^1].EndTime && (hpGraph.Count == 0 || time - hpGraph[^1].X >= (VirtualClock ? 10 : 250))) // verify-osr compares it with stable's life bar
             hpGraph.Add(new((float)time, (float)(health.Value / Health.Max)));
 
         while (firstActive < objs.Count && st[firstActive].Done && time > Math.Max(st[firstActive].JudgeTime, objs[firstActive].EndTime) + 1000)

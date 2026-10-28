@@ -334,13 +334,14 @@ static class Game
             }
             for (int step = 0; step < 3_600_000 && !p.Result.Done; step++) p.Update(1);
             var x = p.Result;
-            // HP against stable's recorded life bar (points ~2s apart; ours sampled every 250ms). VERIFY_LOG also
+            // HP against stable's recorded life bar: stable writes a point (~2s apart) right after a judgement, so it's
+            // compared with our first sample (10ms apart in verify runs) at or after that time. VERIFY_LOG also
             // prints where they first part: a break stable took and we didn't, or the reverse.
             bool parted = Environment.GetEnvironmentVariable("VERIFY_LOG") != "1";
             if (p.hpGraph.Count > 0)
                 foreach (var sp in Replays.OsrLifeBar(r.Path))
                 {
-                    var ours = p.hpGraph.LastOrDefault(g => g.X <= sp.X, p.hpGraph[0]);
+                    var ours = p.hpGraph.FirstOrDefault(g => g.X >= sp.X, p.hpGraph[^1]);
                     hpDiff += Math.Abs(ours.Y - sp.Y); hpPoints++;
                     if (!parted && Math.Abs(ours.Y - sp.Y) > 0.05f) { Console.Error.WriteLine($"  life bar parts at {sp.X:0}: stable {sp.Y:0.00}, ours {ours.Y:0.00}"); parted = true; }
                 }
