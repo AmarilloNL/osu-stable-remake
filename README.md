@@ -96,7 +96,8 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Hit windows, notelock, stacking, slider curves and timing ported from stable's behaviour
 - [x] Slider tracking with stable's button rules
 - [ ] The last ~10% of replay mismatches (mostly cursor right on the slider follow-radius edge)
-- [ ] Check whether stable takes HP for a missed slider end
+- [x] HP bar checked against stable's recorded life bars (within 1.6% on average)
+- [ ] Close the remaining HP gap in miss-heavy stretches
 - [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**
