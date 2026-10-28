@@ -108,7 +108,7 @@ sealed partial class Player : Screen
         autopilot = mods.HasFlag(Mods.Autopilot);
         rate = mods.Rate();
         modMul = mods.ScoreMultiplier();
-        health = new Health(map);
+        health = new Health(map, mods.HasFlag(Mods.HalfTime));
         objs = map.Objects;
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
@@ -420,12 +420,19 @@ sealed partial class Player : Screen
         return false;
     }
 
+    bool InSpinner(double t)
+    {
+        for (int i = firstActive; i < objs.Count && objs[i].Time <= t; i++)
+            if (objs[i].Type == ObjType.Spinner && t <= objs[i].EndTime) return true;
+        return false;
+    }
+
     void Drain()
     {
         double delta = double.IsNaN(lastTime) ? 0 : time - lastTime;
         lastTime = time;
         if (delta <= 0 || time < objs[0].Time - map.Preempt || time > objs[^1].EndTime || InBreak(time)) return;
-        health.Add(-health.DropRate * delta);
+        health.Add(-health.DropRate * delta * (InSpinner(time) ? 0.25 : 1)); // stable: a quarter of the drain during spinners
         if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
     }
 

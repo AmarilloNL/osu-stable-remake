@@ -13,10 +13,10 @@ sealed class Health
     readonly double hp;
     double mul = 1, mulGeki = 1;
 
-    public Health(Beatmap map)
+    public Health(Beatmap map, bool halfTime = false)
     {
         hp = map.HP;
-        DropRate = Calibrate(map);
+        DropRate = Calibrate(map) * (halfTime ? 0.75 : 1); // stable drains a quarter slower under HalfTime
     }
 
     static double Range(double d, double a, double b, double c) => Beatmap.Range(d, a, b, c);
