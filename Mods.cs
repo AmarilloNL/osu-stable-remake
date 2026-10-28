@@ -1,0 +1,99 @@
+using Raylib_cs;
+
+namespace StableRemake;
+
+// Same bit values as stable.
+[Flags]
+enum Mods
+{
+    None = 0,
+    NoFail = 1,
+    Easy = 2,
+    Hidden = 8,
+    HardRock = 16,
+    SuddenDeath = 32,
+    DoubleTime = 64,
+    Relax = 128,
+    HalfTime = 256,
+    Nightcore = 512, // always set together with DoubleTime
+    Flashlight = 1024,
+    Autoplay = 2048,
+    SpunOut = 4096,
+    Autopilot = 8192,
+    Perfect = 16384, // always set together with SuddenDeath
+}
+
+static class ModInfo
+{
+    public const Mods Supported = (Mods)0x7FFF; // NF..PF; other stable mods (TD, cinema, keys...) are dropped
+
+    public static double Rate(this Mods m) => m.HasFlag(Mods.DoubleTime) ? 1.5 : m.HasFlag(Mods.HalfTime) ? 0.75 : 1;
+
+    public static double ScoreMultiplier(this Mods m)
+    {
+        double x = 1;
+        if (m.HasFlag(Mods.Easy)) x *= 0.5;
+        if (m.HasFlag(Mods.NoFail)) x *= 0.5;
+        if (m.HasFlag(Mods.HalfTime)) x *= 0.3;
+        if (m.HasFlag(Mods.HardRock)) x *= 1.06;
+        if (m.HasFlag(Mods.DoubleTime)) x *= 1.12;
+        if (m.HasFlag(Mods.Hidden)) x *= 1.06;
+        if (m.HasFlag(Mods.Flashlight)) x *= 1.12;
+        if (m.HasFlag(Mods.SpunOut)) x *= 0.9;
+        return x;
+    }
+
+    public static string Short(this Mods m)
+    {
+        var parts = new List<string>();
+        void Add(Mods f, string s) { if (m.HasFlag(f)) parts.Add(s); }
+        Add(Mods.Easy, "EZ"); Add(Mods.NoFail, "NF"); Add(Mods.HalfTime, "HT"); Add(Mods.HardRock, "HR");
+        if (m.HasFlag(Mods.Perfect)) parts.Add("PF"); else Add(Mods.SuddenDeath, "SD");
+        if (m.HasFlag(Mods.Nightcore)) parts.Add("NC"); else Add(Mods.DoubleTime, "DT");
+        Add(Mods.Hidden, "HD"); Add(Mods.Flashlight, "FL"); Add(Mods.Relax, "RX"); Add(Mods.Autopilot, "AP");
+        Add(Mods.SpunOut, "SO"); Add(Mods.Autoplay, "Auto");
+        return parts.Count == 0 ? "No mods" : string.Join(" ", parts);
+    }
+
+    // stable's mod-select hotkeys. S and D cycle SD -> PF -> off and DT -> NC -> off.
+    public static Mods Toggle(Mods m, KeyboardKey key) => key switch
+    {
+        KeyboardKey.Q => Flip(m, Mods.Easy, Mods.HardRock),
+        KeyboardKey.W => Flip(m, Mods.NoFail, Mods.SuddenDeath | Mods.Perfect),
+        KeyboardKey.E => Flip(m, Mods.HalfTime, Mods.DoubleTime | Mods.Nightcore),
+        KeyboardKey.A => Flip(m, Mods.HardRock, Mods.Easy),
+        KeyboardKey.S => m.HasFlag(Mods.Perfect) ? m & ~(Mods.SuddenDeath | Mods.Perfect)
+                   : m.HasFlag(Mods.SuddenDeath) ? m | Mods.Perfect
+                   : Flip(m, Mods.SuddenDeath, Mods.NoFail),
+        KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~(Mods.DoubleTime | Mods.Nightcore)
+                   : m.HasFlag(Mods.DoubleTime) ? m | Mods.Nightcore
+                   : Flip(m, Mods.DoubleTime, Mods.HalfTime),
+        KeyboardKey.F => Flip(m, Mods.Hidden, Mods.None),
+        KeyboardKey.G => Flip(m, Mods.Flashlight, Mods.None),
+        KeyboardKey.Z => Flip(m, Mods.Relax, Mods.Autopilot | Mods.Autoplay),
+        KeyboardKey.X => Flip(m, Mods.Autopilot, Mods.Relax | Mods.Autoplay | Mods.SpunOut),
+        KeyboardKey.C => Flip(m, Mods.SpunOut, Mods.Autopilot | Mods.Autoplay),
+        KeyboardKey.V => Flip(m, Mods.Autoplay, Mods.Relax | Mods.Autopilot),
+        _ => m,
+    };
+
+    // "HDHR", "HD DT", "NC" ... (used by the --mods test flag)
+    public static Mods Parse(string s)
+    {
+        var m = Mods.None;
+        s = s.Replace(" ", "").ToUpperInvariant();
+        for (int i = 0; i + 1 < s.Length; i += 2)
+            m |= s.Substring(i, 2) switch
+            {
+                "EZ" => Mods.Easy, "NF" => Mods.NoFail, "HT" => Mods.HalfTime, "HR" => Mods.HardRock,
+                "SD" => Mods.SuddenDeath, "PF" => Mods.SuddenDeath | Mods.Perfect, "DT" => Mods.DoubleTime,
+                "NC" => Mods.DoubleTime | Mods.Nightcore, "HD" => Mods.Hidden, "FL" => Mods.Flashlight,
+                "RX" => Mods.Relax, "AP" => Mods.Autopilot, "SO" => Mods.SpunOut, "AT" => Mods.Autoplay,
+                _ => Mods.None,
+            };
+        return m;
+    }
+
+    static Mods Flip(Mods m, Mods f, Mods incompatible) => m.HasFlag(f) ? m & ~f : (m & ~incompatible) | f;
+}
+

@@ -1,0 +1,5 @@
+bin/
+obj/
+trace.txt
+*.user
+.vs/

@@ -1,0 +1,1215 @@
+using System.Globalization;
+using System.Numerics;
+using Raylib_cs;
+using static Raylib_cs.Raylib;
+
+namespace StableRemake;
+
+sealed class BeatmapSet(List<DbBeatmap> diffs)
+{
+    public readonly List<DbBeatmap> Diffs = diffs;
+    public DbBeatmap First => Diffs[0];
+}
+
+sealed class SongSelect : Screen
+{
+    Task<List<BeatmapSet>>? loading;
+    List<BeatmapSet> sets = [];
+    readonly List<(BeatmapSet Set, List<DbBeatmap> Diffs)> view = []; // after search filter
+    string filter = "", message = "";
+    int setIndex, diffIndex;
+    float scrollRow;
+    Mods mods;
+    bool modSelect;
+
+    // Preview music: starts once the selection has rested briefly, like stable.
+    Track? preview;
+    (string Folder, string Audio, double Rate, bool Nightcore)? previewKey; // same song = no restart across difficulties
+    double selectionChangedAt;
+    bool themeFromStart;
+
+    // Layout in stable's 768px-high units.
+    static float S => GetScreenHeight() / 768f;
+    static float RowH => 76.8f * S; // stable's panel spacing: 144px at 1440p (measured on p057/p059)
+    static float TopH => 100 * S;
+    static float BottomH => 80 * S;
+
+    // Gameplay's sprites decode in the background while a map is picked (and upload a frame at a time in Update).
+    public override void Entered() => Game.Skin.PrefetchGameplay();
+
+    public SongSelect(string filter = "", Mods mods = Mods.None)
+    {
+        this.filter = filter;
+        this.mods = mods;
+        loading = Task.Run(LoadLibrary);
+        scoresLoading = Task.Run(Replays.Index);
+    }
+
+    // Local leaderboard (saved replays), keyed by beatmap MD5.
+    Task<Dictionary<string, List<ReplayInfo>>>? scoresLoading;
+    Dictionary<string, List<ReplayInfo>> scores = [];
+    static readonly List<ReplayInfo> NoScores = []; // read-only: returned when a map has no scores
+    List<ReplayInfo> SelectedScores => Selected is { } b && scores.TryGetValue(b.Md5, out var l) ? l : NoScores;
+    // osu!.db ranked status (4 ranked, 5 approved, 6 qualified, 7 loved, ...); null until the library has loaded.
+    internal byte? StatusOf(string md5)
+    {
+        if (Selected is { } sel && sel.Md5 == md5) return sel.Status; // the usual case; the scan below is ~16ms
+        var lib = loading == null ? sets : loading.IsCompleted ? loading.Result : null; // no side effects: Ambient() adopts it
+        return lib?.SelectMany(s => s.Diffs).FirstOrDefault(d => d.Md5 == md5)?.Status ?? (lib == null ? null : (byte)0);
+    }
+
+    internal List<ReplayInfo> ScoresFor(string md5)
+    {
+        PollScores();
+        return scores.TryGetValue(md5, out var l) ? l : [];
+    }
+
+    // The local leaderboard loads in the background; picked up whenever it's finished.
+    void PollScores()
+    {
+        if (scoresLoading is not { IsCompleted: true }) return;
+        foreach (var (md5, list) in scoresLoading.Result)
+            foreach (var info in list) AddScore(info);
+        scoresLoading = null;
+    }
+
+    public void AddScore(ReplayInfo info)
+    {
+        if (!scores.TryGetValue(info.BeatmapMd5, out var list)) scores[info.BeatmapMd5] = list = [];
+        list.Add(info);
+        list.Sort((a, b) => b.Score.CompareTo(a.Score));
+    }
+
+    void Watch(ReplayInfo info)
+    {
+        if (Selected is not { } b) return;
+        try
+        {
+            var map = Beatmap.Load(b.FilePath, mods: info.Mods);
+            StopPreview();
+            Game.Screen = new Player(map, this, info.Mods, Replays.Frames(info), info);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) // a malformed map or replay mustn't take the game down
+        {
+            message = $"Can't play replay: {e.Message}";
+        }
+    }
+
+    static List<BeatmapSet> LoadLibrary()
+    {
+        List<DbBeatmap> all;
+        try { all = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")); }
+        catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException or UnauthorizedAccessException)
+        {
+            all = ScanFolders(); // TODO: slow fallback (minutes for big libraries) if osu!.db is missing/unreadable
+        }
+        TotalBeatmaps = all.Count;
+        for (int i = 0; i < all.Count; i++) all[i].BuildSearchKey(i > 0 ? all[i - 1] : null); // here, not on the first keystroke
+        return Sorted(all.Where(b => b.Mode == 0)
+            .GroupBy(b => b.Folder, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new BeatmapSet(g.OrderBy(b => b.StarsFor(Mods.None)).ToList())), SortMode);
+    }
+
+    // stable's sort modes (TreeSortMode2 in its cfg; ours is saved to remake.cfg).
+    static readonly (string Key, string Label)[] SortModes =
+        [("Artist", "By Artist"), ("Bpm", "By BPM"), ("Creator", "By Creator"), ("Date", "By Date Added"), ("Difficulty", "By Difficulty"), ("Length", "By Length"), ("Title", "By Title")];
+    static string SortMode => Config.Get("TreeSortMode2", "Artist");
+    internal static int TotalBeatmaps; // every mode, as stable's menu counts them
+
+    static List<BeatmapSet> Sorted(IEnumerable<BeatmapSet> sets, string mode)
+    {
+        var cmp = StringComparer.OrdinalIgnoreCase;
+        return (mode switch
+        {
+            "Title" => sets.OrderBy(s => s.First.Title, cmp),
+            "Creator" => sets.OrderBy(s => s.First.Creator, cmp),
+            "Bpm" => sets.OrderBy(s => s.First.MainBpm),
+            "Length" => sets.OrderBy(s => s.Diffs.Max(d => d.TotalMs)),
+            "Difficulty" => sets.OrderBy(s => s.First.StarsFor(Mods.None)),
+            "Date" => sets.OrderBy(s => s.Diffs.Max(d => d.LastModified)),
+            _ => sets.OrderBy(s => s.First.Artist, cmp),
+        }).ThenBy(s => s.First.Artist, cmp).ThenBy(s => s.First.Title, cmp).ToList();
+    }
+
+    void CycleSort(int dir)
+    {
+        int i = Array.FindIndex(SortModes, m => m.Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase));
+        Config.SetOwn("TreeSortMode2", SortModes[((i < 0 ? 0 : i) + dir + SortModes.Length) % SortModes.Length].Key);
+        sets = Sorted(sets, SortMode);
+        ApplyFilter();
+        Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+    }
+
+    static List<DbBeatmap> ScanFolders()
+    {
+        var list = new List<DbBeatmap>();
+        var songs = Path.Combine(Config.OsuDir, "Songs");
+        if (!Directory.Exists(songs)) return list;
+        foreach (var dir in Directory.EnumerateDirectories(songs))
+            foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
+            {
+                try
+                {
+                    var m = Beatmap.Load(file, metadataOnly: true);
+                    list.Add(new DbBeatmap
+                    {
+                        Artist = m.Artist, Title = m.Title, Creator = m.Creator, Version = m.Version, AudioFile = m.AudioFilename,
+                        OsuFile = Path.GetFileName(file), Folder = Path.GetFileName(dir), Mode = (byte)m.Mode,
+                        AR = (float)m.AR, CS = (float)m.CS, OD = (float)m.OD, HP = (float)m.HP, PreviewMs = (int)m.PreviewTime,
+                    });
+                }
+                catch (IOException) { }
+            }
+        return list;
+    }
+
+    // ---------------------------------------------------------------- filtering
+
+    // stable-style search: plain words must all appear; key<op>value terms filter numbers (stars ar cs od hp bpm length).
+    bool Matches(DbBeatmap b, string[] words, List<(string Key, string Op, double Value)> terms)
+    {
+        foreach (var w in words)
+            if (!b.SearchMatches(w)) return false;
+        foreach (var (key, op, value) in terms)
+        {
+            double v = key switch
+            {
+                "stars" or "star" => b.StarsFor(mods), "ar" => b.AR, "cs" => b.CS, "od" => b.OD, "hp" => b.HP,
+                "bpm" => b.MaxBpm, "length" => b.DrainSeconds, _ => double.NaN,
+            };
+            if (double.IsNaN(v)) continue;
+            bool ok = op switch
+            {
+                "<" => v < value, ">" => v > value, "<=" => v <= value, ">=" => v >= value,
+                _ => Math.Abs(v - value) < (key is "stars" or "star" ? 0.5 : 0.05),
+            };
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    void ApplyFilter()
+    {
+        var keep = view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
+        var all = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
+        var words = new List<string>();
+        var terms = new List<(string, string, double)>();
+        foreach (var token in filter.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(token, @"^([a-z]+)(<=|>=|<|>|=)([\d.]+)$");
+            if (m.Success && double.TryParse(m.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
+                terms.Add((m.Groups[1].Value, m.Groups[2].Value, v));
+            else words.Add(token);
+        }
+        var wordArr = words.ToArray();
+        foreach (var set in sets)
+        {
+            var diffs = filter.Length == 0 ? set.Diffs : set.Diffs.Where(b => Matches(b, wordArr, terms)).ToList();
+            if (diffs.Count > 0) all.Add((set, diffs));
+        }
+        BuildGroups(all);
+        int g = keep == null ? -1 : groups.FindIndex(gr => gr.Entries.Any(e => e.Set == keep));
+        groupIndex = g >= 0 ? g : Math.Clamp(groupIndex, 0, Math.Max(0, groups.Count - 1));
+        view.Clear();
+        if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
+        int found = keep == null ? -1 : view.FindIndex(v => v.Set == keep);
+        setIndex = found >= 0 ? found : 0;
+        diffIndex = Math.Clamp(diffIndex, 0, Math.Max(0, (view.Count > 0 ? view[setIndex].Diffs.Count : 1) - 1));
+        SelectionChanged();
+    }
+
+    DbBeatmap? Selected => view.Count == 0 ? null : view[setIndex].Diffs[diffIndex];
+    readonly Stack<DbBeatmap> randomHistory = [];
+
+    void SelectionChanged() => selectionChangedAt = Game.NowMs;
+
+    void MoveSet(int delta)
+    {
+        if (view.Count == 0) return;
+        if (Grouped && Math.Abs(delta) == 1 && (setIndex + delta < 0 && groupIndex > 0 || setIndex + delta >= view.Count && groupIndex < groups.Count - 1))
+        {
+            OpenGroup(groupIndex + delta, last: delta < 0);
+            return;
+        }
+        int before = setIndex;
+        setIndex = Math.Clamp(setIndex + delta, 0, view.Count - 1);
+        diffIndex = 0;
+        if (setIndex != before) Game.Skin.Sound("select-expand")?.Play(BeatmapSamples.EffectVolume);
+        SelectionChanged();
+    }
+
+    void MoveDiff(int delta)
+    {
+        if (view.Count == 0) return;
+        Game.Skin.Sound("select-difficulty")?.Play(BeatmapSamples.EffectVolume);
+        diffIndex += delta;
+        if (diffIndex < 0)
+        {
+            if (setIndex == 0) diffIndex = 0;
+            else { setIndex--; diffIndex = view[setIndex].Diffs.Count - 1; }
+        }
+        else if (diffIndex >= view[setIndex].Diffs.Count)
+        {
+            if (setIndex == view.Count - 1) diffIndex = view[setIndex].Diffs.Count - 1;
+            else { setIndex++; diffIndex = 0; }
+        }
+        SelectionChanged();
+    }
+
+    // ---------------------------------------------------------------- preview / play
+
+    void UpdatePreview(bool menu)
+    {
+        var b = Selected;
+        (string, string, double, bool)? key = b == null ? null : (b.Folder, b.AudioFile, mods.Rate(), mods.HasFlag(Mods.Nightcore));
+        if (previewLoading is { IsCompleted: true } done)
+        {
+            previewLoading = null;
+            var (forKey, track) = done.Result;
+            if (forKey != previewKey || b == null) track?.Dispose(); // the selection moved on while it loaded
+            else if (track != null)
+            {
+                preview = track;
+                ApplyMusicVolume();
+                preview.Seek(themeFromStart ? 0 : Math.Max(0, b.PreviewMs));
+                themeFromStart = false;
+                preview.Play();
+            }
+        }
+        if (key != previewKey && Game.NowMs - selectionChangedAt > 150 && previewLoading == null)
+        {
+            StopPreview();
+            previewKey = key;
+            if (b == null) return;
+            previewLoading = LoadPreview(key, Path.Combine(Config.OsuDir, "Songs", b.Folder, b.AudioFile), mods.Rate(), mods.HasFlag(Mods.Nightcore));
+        }
+        else if (preview != null && preview.Stopped && b != null)
+        {
+            if (menu) { MusicNext(); return; } // the main menu plays songs through, then another (stable)
+            preview.Seek(Math.Max(0, b.PreviewMs));
+            preview.Play();
+        }
+    }
+
+    // Off the main thread: the prescan reads the whole file (100-170ms per song change measured). Its own method so
+    // the closure is only made when a load starts.
+    Task<((string, string, double, bool)?, Track?)>? previewLoading;
+    static Task<((string, string, double, bool)?, Track?)> LoadPreview((string, string, double, bool)? key, string path, double rate, bool nightcore) =>
+        Task.Run(() => (key, Track.Load(path, rate, nightcore)));
+
+    // Beat source: timing points of the song that's playing, loaded off the main thread.
+    string timingKey = "";
+    Task<List<TimingPoint>>? timingLoading;
+    List<TimingPoint> timing = [];
+
+    void UpdateTiming()
+    {
+        if (timingLoading is { IsCompleted: true })
+        {
+            timing = timingLoading.Result;
+            timingLoading = null;
+        }
+        if (Current is not { } b || timingLoading != null || b.FilePath == timingKey) return;
+        timingKey = b.FilePath;
+        timingLoading = LoadTiming(b.FilePath);
+    }
+
+    // Its own method so the closure is only made when a load starts (UpdateTiming runs every frame).
+    static Task<List<TimingPoint>> LoadTiming(string file) => Task.Run(() =>
+    {
+        try { return Beatmap.Load(file).TimingPoints; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+    });
+
+    // Where the music is in its beat: index within the current red line, phase 0 (on the beat) .. 1.
+    internal (double RedTime, long Index, double Phase, double Length, int Meter, bool Kiai)? Beat()
+    {
+        double ms = MusicMs;
+        if (double.IsNaN(ms) || timing.Count == 0) return null;
+        TimingPoint? red = null;
+        bool kiai = false;
+        foreach (var t in timing)
+        {
+            if (t.Time > ms) break;
+            if (t.Uninherited) red = t;
+            kiai = t.Kiai;
+        }
+        red ??= timing.FirstOrDefault(t => t.Uninherited);
+        if (red == null) return null;
+        double beats = (ms - red.Time) / red.BeatLength;
+        long index = (long)Math.Floor(beats);
+        return (red.Time, index, beats - index, red.BeatLength, red.Meter, kiai);
+    }
+
+    internal double BeatPhase() => Beat()?.Phase ?? double.NaN;
+
+    // The main menu's music controls (stable's Now Playing buttons). Next takes the forward history when there is
+    // one (after Previous), else a random song; Stop pauses at the start so nothing restarts it.
+    readonly Stack<int> musicBack = [], musicForward = [];
+
+    internal void MusicNext()
+    {
+        if (view.Count == 0) return;
+        musicBack.Push(setIndex);
+        setIndex = musicForward.Count > 0 ? Math.Min(musicForward.Pop(), view.Count - 1) : Random.Shared.Next(view.Count);
+        diffIndex = 0;
+        SelectionChanged();
+    }
+
+    internal void MusicPrevious()
+    {
+        if (musicBack.Count == 0 || view.Count == 0) return;
+        musicForward.Push(setIndex);
+        setIndex = Math.Min(musicBack.Pop(), view.Count - 1);
+        diffIndex = 0;
+        SelectionChanged();
+    }
+
+    internal void MusicPlay()
+    {
+        if (preview == null) return;
+        if (!preview.Paused) preview.Seek(0);
+        preview.Play();
+    }
+
+    // Returns true if it paused (false: it resumed).
+    internal bool MusicPause()
+    {
+        if (preview == null) return false;
+        if (preview.Paused) { preview.Play(); return false; }
+        preview.Pause();
+        return true;
+    }
+
+    internal void MusicStop()
+    {
+        preview?.Pause();
+        preview?.Seek(0);
+    }
+
+    internal void MusicSeek(double fraction)
+    {
+        if (preview != null) preview.Seek(fraction * preview.LengthMs);
+    }
+
+    internal void ApplyMusicVolume()
+    {
+        if (preview != null) preview.Volume = Config.MusicVolume;
+    }
+
+    void StopPreview()
+    {
+        preview?.Dispose();
+        preview = null;
+        previewKey = null;
+    }
+
+    void Play(Mods mods)
+    {
+        if (Selected is not { } b) return;
+        try
+        {
+            var map = Beatmap.Load(b.FilePath, mods: mods);
+            if (map.Objects.Count == 0) { message = "Map has no hit objects"; return; }
+            StopPreview();
+            Game.Skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
+            Game.Screen = new Player(map, this, mods);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) // a malformed map mustn't take the game down
+        {
+            message = $"Failed to load: {e.Message}";
+        }
+    }
+
+    // ---------------------------------------------------------------- input
+
+    static readonly KeyboardKey[] ModKeys =
+    [
+        KeyboardKey.Q, KeyboardKey.W, KeyboardKey.E, KeyboardKey.A, KeyboardKey.S, KeyboardKey.D,
+        KeyboardKey.F, KeyboardKey.G, KeyboardKey.Z, KeyboardKey.X, KeyboardKey.C, KeyboardKey.V,
+    ];
+
+    static bool Pressed(KeyboardKey k) => Input.IsKeyPressed(k) || Input.IsKeyPressedRepeat(k);
+
+    // The main menu we return to on Esc/back (null: quit instead).
+    internal Screen? Menu;
+    internal DbBeatmap? Current => Selected;
+    internal double MusicMs => preview?.PositionMs ?? double.NaN;
+    internal Track? Music => preview;
+
+    // Library/score loading, preview music and background. The main menu runs this too, so its music and
+    // background are song select's. Returns false while the library is still loading.
+    internal bool Ambient(bool menu = false)
+    {
+        if (loading != null)
+        {
+            if (!loading.IsCompleted) return false;
+            sets = loading.Result;
+            loading = null;
+            ApplyFilter();
+            if (filter.Length == 0 && view.Count > 0)
+            {
+                // stable's menu theme (MenuMusic): circles! from the start when it's in the library, else a random song.
+                int theme = Menu != null && Config.GetBool("MenuMusic", true) ? view.FindIndex(v => v.Set.First.Artist == "nekodex" && v.Set.First.Title == "circles!") : -1;
+                setIndex = theme >= 0 ? theme : Random.Shared.Next(view.Count);
+                themeFromStart = theme >= 0;
+            }
+        }
+        PollScores();
+        UpdatePreview(menu);
+        UpdateTiming();
+        UpdateBackground();
+        return true;
+    }
+
+    void Back()
+    {
+        Game.Skin.Sound("menuback")?.Play(BeatmapSamples.EffectVolume);
+        if (Menu != null) Game.Screen = Menu;
+        else Game.Quit = true;
+    }
+
+    public override void Update(double dtMs)
+    {
+        Game.Skin.UploadPrefetched();
+        if (!Ambient()) return;
+
+        if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
+
+        // F1: stable's mod select, with stable's hotkeys.
+        if (Input.IsKeyPressed(KeyboardKey.F1)) modSelect = !modSelect;
+        if (modSelect)
+        {
+            while (Input.GetCharPressed() != 0) { } // keep mod hotkeys out of the search box
+            foreach (var k in ModKeys)
+                if (Input.IsKeyPressed(k)) mods = ModInfo.Toggle(mods, k);
+            if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter)) modSelect = false;
+            if (Input.IsKeyPressed(KeyboardKey.Backspace)) mods = Mods.None;
+            return;
+        }
+
+        int page = Math.Max(1, (int)((GetScreenHeight() - TopH - BottomH) / RowH) - 2);
+        if (Pressed(KeyboardKey.Down)) MoveDiff(1);
+        if (Pressed(KeyboardKey.Up)) MoveDiff(-1);
+        if (Pressed(KeyboardKey.Right)) MoveSet(1);
+        if (Pressed(KeyboardKey.Left)) MoveSet(-1);
+        if (Pressed(KeyboardKey.PageDown)) MoveSet(page);
+        if (Pressed(KeyboardKey.PageUp)) MoveSet(-page);
+        if (Input.IsKeyPressed(KeyboardKey.Home)) MoveSet(-view.Count);
+        if (Input.IsKeyPressed(KeyboardKey.End)) MoveSet(view.Count);
+        // F2: random map; Shift+F2: back to the one before the last random pick (stable keeps the same history).
+        if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0)
+        {
+            if (!Input.IsKeyDown(KeyboardKey.LeftShift)) { randomHistory.Push(Selected!); MoveSet(Random.Shared.Next(view.Count) - setIndex); }
+            else while (randomHistory.TryPop(out var prev))
+                if (view.FindIndex(v => v.Diffs.Contains(prev)) is var i and >= 0) { MoveSet(i - setIndex); diffIndex = view[i].Diffs.IndexOf(prev); break; }
+        }
+        float wheel = VolumeControl.Wheel;
+        if (wheel != 0) MoveSet(-(int)Math.Round(wheel));
+
+        var mouse = Input.GetMousePosition();
+        if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, GroupBox(GetScreenWidth())))
+        {
+            int gi = Array.FindIndex(GroupModes, m => m.Key == GroupMode);
+            SetGroupMode(GroupModes[((gi < 0 ? 0 : gi) + (Input.IsMouseButtonPressed(MouseButton.Right) ? -1 : 1) + GroupModes.Length) % GroupModes.Length].Key);
+            return;
+        }
+        for (int t = 0; t < GroupModes.Length; t++)
+            if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, TabRect(GetScreenWidth(), t))) { SetGroupMode(GroupModes[t].Key); return; }
+        if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, SortBox(GetScreenWidth())))
+        {
+            CycleSort(Input.IsMouseButtonPressed(MouseButton.Right) ? -1 : 1);
+            return;
+        }
+        if (Input.IsMouseButtonPressed(MouseButton.Left) && ClickBottomBar(mouse)) return;
+        if (Input.IsMouseButtonPressed(MouseButton.Left) && mouse.Y > TopH && mouse.Y < GetScreenHeight() - BottomH)
+        {
+            if (mouse.X < GetScreenWidth() * 0.35f)
+            {
+                int n = ScoreRowAt(mouse.Y);
+                if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { Watch(SelectedScores[n]); return; }
+            }
+            else if (ClickRow(mouse.Y)) return;
+        }
+        // Ctrl+1..9 watches that local score.
+        if (Input.IsKeyDown(KeyboardKey.LeftControl))
+            for (int n = 0; n < 9; n++)
+                if (Input.IsKeyPressed(KeyboardKey.One + n) && n < SelectedScores.Count) { Watch(SelectedScores[n]); return; }
+        // Ctrl+Enter: this one play with Auto, like stable (the selected mods stay as they are).
+        if (Input.IsKeyPressed(KeyboardKey.Enter) && !Input.IsKeyDown(KeyboardKey.LeftAlt))
+        {
+            Play(Input.IsKeyDown(KeyboardKey.LeftControl) ? mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay : mods);
+            return;
+        }
+
+        if (Input.IsKeyPressed(KeyboardKey.Escape))
+        {
+            if (filter.Length > 0) { filter = ""; ApplyFilter(); }
+            else Back();
+            return;
+        }
+
+        bool changed = false;
+        for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed())
+        {
+            filter += char.ConvertFromUtf32(ch);
+            changed = true;
+        }
+        if (Pressed(KeyboardKey.Backspace) && filter.Length > 0)
+        {
+            filter = Input.IsKeyDown(KeyboardKey.LeftControl) ? "" : filter[..^1];
+            changed = true;
+        }
+        if (changed) ApplyFilter();
+
+        scrollRow += (SelectedRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
+    }
+
+    // Rows: one per set, except the selected set, which is replaced by one row per difficulty (like stable).
+    // Grouped: a header row per group, the open group's rows right under its header.
+    int HeaderRowsBefore => Grouped ? groupIndex + 1 : 0;
+    int EntryRows => view.Count == 0 ? 0 : view.Count - 1 + view[setIndex].Diffs.Count;
+    int SelectedRow => HeaderRowsBefore + setIndex + diffIndex;
+    int RowCount => (Grouped ? groups.Count : 0) + EntryRows;
+
+    // Returns (set, diff, group) for a row: group >= 0 for a group header, diff = -1 for a collapsed set row.
+    (int Set, int Diff, int Group) RowInfo(int row)
+    {
+        if (Grouped)
+        {
+            if (row <= groupIndex) return (-1, -1, row);
+            row -= groupIndex + 1;
+            if (row >= EntryRows) return (-1, -1, groupIndex + 1 + row - EntryRows);
+        }
+        if (row < setIndex) return (row, -1, -1);
+        int diffs = view[setIndex].Diffs.Count;
+        if (row < setIndex + diffs) return (setIndex, row - setIndex, -1);
+        return (row - diffs + 1, -1, -1);
+    }
+
+    // ---- grouping (stable's tabs): Collections, Recently Played, By Artist, By Difficulty, No Grouping.
+    static readonly (string Key, string Label)[] GroupModes =
+        [("Collections", "Collections"), ("Recent", "Recently Played"), ("Artist", "By Artist"), ("Difficulty", "By Difficulty"), ("None", "No Grouping")];
+    static readonly string[] GroupTabLabels = [.. GroupModes.Select(m => m.Label)];
+    static string GroupMode => Config.Get("RemakeGroupMode", "None");
+    // Header text and match count, rebuilt only when they change.
+    (DbBeatmap?, Mods) headerFor;
+    string[] header = [];
+    readonly CachedText<int> matchesText = new(v => $"{v} matches");
+    // Per-row text for the leaderboard and grade icons, built once per replay / grade.
+    static readonly Dictionary<string, string> smallGrades = [];
+    static string SmallGrade(string grade) => smallGrades.TryGetValue(grade, out var s) ? s : smallGrades[grade] = $"ranking-{grade}-small";
+    readonly Dictionary<ReplayInfo, (string Score, string Mods, string Acc)> rowText = [];
+    (string Score, string Mods, string Acc) RowText(ReplayInfo r) => rowText.TryGetValue(r, out var t) ? t : rowText[r] =
+        ($"Score: {r.Score:N0} ({r.MaxCombo}x)", r.Mods == Mods.None ? "" : string.Join(",", r.Mods.Short().Split(' ', StringSplitOptions.RemoveEmptyEntries)), $"{r.Accuracy:0.00}%");
+    readonly string[] rowLines = new string[3];
+    readonly NumberText leadText = new(v => $"+{v:N0}"), rankText = new(v => v.ToString());
+    readonly Dictionary<(string, int), string> groupLabels = [];
+    string GroupLabel(string name, int maps) => groupLabels.TryGetValue((name, maps), out var s) ? s
+        : groupLabels[(name, maps)] = $"{name} ({maps} {(maps == 1 ? "map" : "maps")})";
+    static bool Grouped => GroupMode != "None";
+    readonly List<(string Name, List<(BeatmapSet Set, List<DbBeatmap> Diffs)> Entries)> groups = [];
+    int groupIndex;
+    static List<(string Name, HashSet<string> Md5s)>? collections;
+
+    void SetGroupMode(string key)
+    {
+        if (key == GroupMode) return;
+        Config.SetOwn("RemakeGroupMode", key);
+        groupIndex = 0;
+        ApplyFilter();
+        Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+    }
+
+    void OpenGroup(int g, bool last = false)
+    {
+        if (g < 0 || g >= groups.Count) return;
+        groupIndex = g;
+        view.Clear();
+        view.AddRange(groups[g].Entries);
+        setIndex = last ? Math.Max(0, view.Count - 1) : 0;
+        diffIndex = 0;
+        Game.Skin.Sound("select-expand")?.Play(BeatmapSamples.EffectVolume);
+        SelectionChanged();
+    }
+
+    void BuildGroups(List<(BeatmapSet Set, List<DbBeatmap> Diffs)> all)
+    {
+        groups.Clear();
+        // Groups keep each set's matching difficulties only (a set can sit in several difficulty/date groups).
+        void ByDiff(Func<DbBeatmap, (int Order, string Name)?> key)
+        {
+            var map = new SortedDictionary<int, (string Name, List<(BeatmapSet, List<DbBeatmap>)> Entries)>();
+            foreach (var (set, diffs) in all)
+                foreach (var part in diffs.Select(d => (Key: key(d), Diff: d)).Where(x => x.Key != null).GroupBy(x => x.Key!.Value))
+                {
+                    if (!map.TryGetValue(part.Key.Order, out var gr)) map[part.Key.Order] = gr = (part.Key.Name, []);
+                    gr.Entries.Add((set, part.Select(x => x.Diff).ToList()));
+                }
+            foreach (var gr in map.Values) groups.Add(gr);
+        }
+        switch (GroupMode)
+        {
+            case "Artist":
+                ByDiff(d =>
+                {
+                    char c = d.Artist.Length > 0 ? char.ToUpperInvariant(d.Artist[0]) : '?';
+                    return c is >= 'A' and <= 'Z' ? (c, c.ToString()) : char.IsDigit(c) ? (100, "0-9") : (101, "Other");
+                });
+                break;
+            case "Difficulty":
+                ByDiff(d =>
+                {
+                    float st = d.StarsFor(Mods.None);
+                    int n = Math.Clamp((int)st, 0, 10);
+                    return (n, n == 0 ? "Below 1 star" : n >= 10 ? "Over 10 stars" : n == 1 ? "1 star" : $"{n} stars");
+                });
+                break;
+            case "Recent":
+                var now = DateTime.UtcNow;
+                ByDiff(d =>
+                {
+                    if (d.Unplayed || d.LastPlayed <= 0) return (9, "Never played");
+                    double days = (now - new DateTime(d.LastPlayed, DateTimeKind.Utc)).TotalDays;
+                    return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last week") : days < 30 ? (3, "This month")
+                        : days < 60 ? (4, "Last month") : days < 365 ? (5, "Earlier this year") : (6, "Over a year ago");
+                });
+                break;
+            case "Collections":
+                collections ??= OsuDb.LoadCollections(Path.Combine(Config.OsuDir, "collection.db"));
+                foreach (var (name, md5s) in collections.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    var entries = all.Select(e => (e.Set, Diffs: e.Diffs.Where(d => md5s.Contains(d.Md5)).ToList())).Where(e => e.Diffs.Count > 0).ToList();
+                    if (entries.Count > 0) groups.Add((name, entries));
+                }
+                break;
+            default:
+                groups.Add(("", all));
+                break;
+        }
+    }
+
+    // The selected row sits at the vertical centre; scrollRow eases toward it. Panels are 48 units apart, and
+    // stable adds 10 more around each difficulty of the opened set: (n + 1) x 10 across the block, and 10
+    // before a group header that follows a non-header (here: the first header after the open
+    // group's entries).
+    float Extra(float row)
+    {
+        if (view.Count == 0) return 0;
+        int n = view[setIndex].Diffs.Count;
+        float start = (Grouped ? groupIndex + 1 : 0) + setIndex;
+        float extra = Math.Clamp(row - start + 1, 0, n + 1);
+        if (Grouped) extra += Math.Clamp(row - (groupIndex + EntryRows), 0, 1);
+        return 10 * U * extra;
+    }
+
+    float RowY(int row) => GetScreenHeight() / 2f - RowH / 2 + (row - scrollRow) * RowH + Extra(row) - Extra(scrollRow);
+
+    int RowAt(float y)
+    {
+        int row = (int)MathF.Floor((y - (GetScreenHeight() / 2f - RowH / 2)) / RowH + scrollRow);
+        while (RowY(row) > y) row--;
+        while (RowY(row + 1) <= y) row++;
+        return row;
+    }
+
+    bool ClickRow(float y)
+    {
+        int row = RowAt(y);
+        if (row < 0 || row >= RowCount) return false;
+        var (set, diff, group) = RowInfo(row);
+        if (group >= 0)
+        {
+            if (group != groupIndex) OpenGroup(group);
+            return true;
+        }
+        if (diff < 0)
+        {
+            if (set != setIndex) MoveSet(set - setIndex);
+        }
+        else if (diff == diffIndex) Play(mods);
+        else { diffIndex = diff; SelectionChanged(); }
+        return true;
+    }
+
+    // ---------------------------------------------------------------- drawing (stable's layout)
+
+    static string Length(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
+
+    // stable's panel colours: other sets pink, the open set's difficulties blue, the selected one white.
+    static readonly Color SetColour = new(235, 73, 153, 230), DiffColour = new(0, 150, 236, 230), SelectedColour = new(255, 255, 255, 240);
+
+    public override void Draw()
+    {
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        float s = S;
+        DrawBackground(w, h);
+        if (loading != null)
+        {
+            Game.TextBold("Loading osu!.db…", 40 * s, 40 * s, 36 * s, Color.White);
+            DrawCursor();
+            return;
+        }
+
+        int first = Math.Max(0, RowAt(0)), last = Math.Min(RowCount - 1, RowAt(h));
+        for (int row = last; row >= first; row--) DrawRow(row, w, h, s);
+
+        DrawTopBar(w, s);
+        DrawScores(w, h, s); // over the top bar: stable's ranking box overlaps its lower edge
+        DrawBottomBar(w, h, s);
+        DrawCursor();
+        if (modSelect) DrawModSelect(w, h);
+    }
+
+    // Group header: stable's group panel colours (open group lighter), "Name (N maps)".
+    void DrawGroupHeader(int g, float x, float y, float s)
+    {
+        float ps = 0.87f * s, u = GetScreenHeight() / 480f;
+        float panelH = 103 * ps, cy = y + panelH / 2, visibleLeft = x + 122.7f * ps;
+        var colour = g == groupIndex ? new Color(35, 90, 193, 255) : new Color(35, 50, 143, 255);
+        if (Game.Skin.Tex("menu-button-background") is { } panel)
+            DrawTexturePro(panel.Tex, new Rectangle(0, 0, panel.Tex.Width, panel.Tex.Height),
+                new Rectangle(x, y, panel.Width * ps, panel.Height * ps), Vector2.Zero, 0, colour);
+        else DrawRectangleRec(new Rectangle(visibleLeft, y + 14 * ps, 576 * ps, 75 * ps), colour);
+        var (name, entries) = groups[g];
+        int maps = entries.Sum(e => e.Diffs.Count);
+        Game.Text(GroupLabel(name, maps), visibleLeft + 10 * u, cy - 9 * u, 18 * u, Color.White);
+    }
+
+    void DrawRow(int row, int w, int h, float s)
+    {
+        var (si, d, gi) = RowInfo(row);
+        float y = RowY(row);
+        // Panels further from the centre slide right, giving stable's curved carousel.
+        float fromCentre = (y + RowH / 2 - h / 2f) / (h / 2f);
+        float x = w - 560 * s + fromCentre * fromCentre * 120 * s;
+        if (gi >= 0) { DrawGroupHeader(gi, x, y, s); return; }
+        var set = view[si];
+        var b = d < 0 ? set.Set.First : set.Diffs[d];
+        bool selected = d == diffIndex && si == setIndex && d >= 0;
+        if (d >= 0) x -= selected ? 60 * s : 25 * s;
+        else if (si == setIndex) x += 10 * s;
+
+        var colour = selected ? SelectedColour : d >= 0 ? DiffColour : SetColour;
+        float ps = 0.87f * s, u = GetScreenHeight() / 480f;
+        float panelH = 103 * ps, cy = y + panelH / 2, visibleLeft = x + 122.7f * ps;
+        if (Game.Skin.Tex("menu-button-background") is { } panel)
+            DrawTexturePro(panel.Tex, new Rectangle(0, 0, panel.Tex.Width, panel.Tex.Height),
+                new Rectangle(x, y, panel.Width * ps, panel.Height * ps), Vector2.Zero, 0, colour);
+        else DrawRectangleRec(new Rectangle(visibleLeft, y + 14 * ps, 576 * ps, 75 * ps), colour);
+
+        // stable's panel text (offsets from the panel's centre line, in 640x480 units): title 16 at -16,
+        // artist // creator 12 at -4, version 12 (bold) at +7, stars at +18.
+        var text = selected ? Game.Skin.SongSelectActiveText : Game.Skin.SongSelectInactiveText;
+        // stable centres each line on its offset and its text bitmaps carry padding, so the glyphs sit 2.33 units
+        // lower and 1.67 left of a plain top-left layout (measured).
+        float tx = visibleLeft + 10 * u, lx = tx - 1.67f * u, dy = 2.33f * u;
+        Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 16.5f * u, text); // stable says 16; renders this wide (measured)
+        Game.Text(b.PanelSubtitle, lx, cy - 4 * u - 6 * u + dy, 12 * u, text);
+        if (d < 0) return;
+        Game.TextBold(b.Version, lx, cy + 7 * u - 6 * u + dy + u, 12 * u, text); // a further unit lower (measured)
+        if (view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
+        DrawStars(b.StarsFor(mods), tx + 6.5f * u, cy + (18 + 3.33f) * u, u, text, Game.NowMs - starsAt); // 3.33 units lower than the offset (measured)
+        if (BestGrade(b) is { } grade && Game.Skin.Tex(SmallGrade(grade)) is { } g)
+            g.Draw(new Vector2(visibleLeft - 14 * u, cy), 0.6f * s, Color.White);
+    }
+
+    // stable's star row: ten faint stars (alpha 30) under the filled ones, the last filled one scaled by the
+    // fractional part; the sprite at scale 0.6, spaced by its own width. x is the first star's centre.
+    BeatmapSet? starsSet;
+    double starsAt;
+
+    static void DrawStars(float stars, float x, float y, float u, Color tint, double age = double.MaxValue)
+    {
+        if (stars <= 0 || stars > 100) return;
+        // stable: spaced by 0.6 of the sprite's width; the faint row at 0.6 x 0.35, additive, alpha 30;
+        // filled stars at 0.6 x 0.6 x max(0.5, fill + 0.04 per index), so later stars are a touch bigger.
+        // When a set opens they pop in from nothing: BackOut over 500ms, the first after 50ms, then 80ms apart.
+        var star = Game.Skin.Tex("star");
+        float sd = u * 480 / 768f, step = (star?.Width ?? 46) * 0.6f * sd;
+        for (int i = 0; i < 10; i++)
+        {
+            var c = new Vector2(x + i * step, y);
+            float f = Math.Clamp(stars - i, 0, 1);
+            float filled = f > 0 ? 0.36f * MathF.Max(0.5f, f + 0.04f * i) * (float)Easing.Apply(30, (age - 50 - 80 * i) / 500) : 0;
+            if (star is { } sp)
+            {
+                BeginBlendMode(BlendMode.Additive);
+                sp.Draw(c, 0.21f * sd, ColorAlpha(tint, 30 / 255f));
+                EndBlendMode();
+                if (filled > 0) sp.Draw(c, filled * sd, tint);
+            }
+            else if (filled > 0) DrawCircleV(c, step / 3 * filled / 0.6f, tint);
+        }
+    }
+
+    string? BestGrade(DbBeatmap b)
+    {
+        if (!scores.TryGetValue(b.Md5, out var list) || list.Count == 0) return null;
+        return GradeOf(list[0]);
+    }
+
+    static string GradeOf(ReplayInfo r)
+    {
+        int total = r.N300 + r.N100 + r.N50 + r.NMiss;
+        if (total == 0) return "D";
+        double r300 = r.N300 / (double)total, r50 = r.N50 / (double)total;
+        bool silver = r.Mods.HasFlag(Mods.Hidden) || r.Mods.HasFlag(Mods.Flashlight);
+        if (r.N300 == total) return silver ? "XH" : "X";
+        if (r300 > 0.9 && r50 < 0.01 && r.NMiss == 0) return silver ? "SH" : "S";
+        if (r300 > 0.8 && r.NMiss == 0 || r300 > 0.9) return "A";
+        if (r300 > 0.7 && r.NMiss == 0 || r300 > 0.8) return "B";
+        return r300 > 0.6 ? "C" : "D";
+    }
+
+    // stable's song select header (stable's sizes/positions, in 640x480 units; the right-hand group was
+    // measured from a stable capture): map info top left, Group/Sort boxes and the group tabs top right, search at
+    // the top of the song list.
+    static Rectangle SortBox(int w) { float u = GetScreenHeight() / 480f; return new Rectangle(w - 129 * u, 18 * u, 119 * u, 14 * u); }
+    static Rectangle GroupBox(int w) => SortBox(w) with { X = SortBox(w).X - 168 * GetScreenHeight() / 480f };
+    static Rectangle TabRect(int w, int t) { float u = GetScreenHeight() / 480f, tabW = 78.5f * u; return new Rectangle(w - GroupModes.Length * tabW + t * tabW, 36 * u, tabW - u, 11 * u); }
+
+    void DrawTopBar(int w, float s)
+    {
+        float u = GetScreenHeight() / 480f;
+        if (Game.Skin.Tex("songselect-top") is { } top) DrawTexturePro(top.Tex, new Rectangle(0, 0, top.Tex.Width, top.Tex.Height),
+            new Rectangle(0, 0, Math.Max(w, top.Width * s), top.Height * s), Vector2.Zero, 0, Color.White);
+        else DrawRectangle(0, 0, w, (int)TopH, new Color(0, 0, 0, 220));
+
+        if (Selected is { } b)
+        {
+            // Ranked-status icon (osu!.db status: 4 ranked, 5 approved, 6 qualified, 7 loved).
+            string status = b.Status switch { 4 => "selection-ranked", 5 or 6 => "selection-approved", 7 => "selection-loved", _ => "selection-notranked" };
+            if (Game.Skin.Tex(status) is { } icon) icon.Draw(new Vector2(11 * u, 11 * u), 15 * u / Math.Max(1, icon.Width), Color.White);
+            if (headerFor != (b, mods)) // the header text only changes with the selection or mods
+            {
+                headerFor = (b, mods);
+                double rate = mods.Rate();
+                string bpm = b.MaxBpm <= 0 || b.MaxBpm > 100000 ? "?"
+                    : Math.Abs(b.MaxBpm - b.MinBpm) < 0.5 ? $"{b.MaxBpm * rate:0}"
+                    : $"{b.MinBpm * rate:0}-{b.MaxBpm * rate:0} ({b.MainBpm * rate:0})";
+                int secs = (int)(b.TotalMs / 1000 / rate);
+                float k = mods.HasFlag(Mods.HardRock) ? 1.4f : mods.HasFlag(Mods.Easy) ? 0.5f : 1;
+                float kcs = mods.HasFlag(Mods.HardRock) ? 1.3f : k;
+                float stars = b.StarsFor(mods);
+                header = [$"{b.Artist} - {b.Title} [{b.Version}]", $"Mapped by {b.Creator}",
+                    $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
+                    $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
+                    $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? stars.ToString("0.##") : "?")}★"];
+            }
+            Game.Text(header[0], 21 * u, -3 * u, 18 * u, Color.White);
+            Game.Text(header[1], 23 * u, 12 * u, 12 * u, Color.White);
+            Game.TextBold(header[2], 2 * u, 24 * u, 12 * u, Color.White);
+            Game.Text(header[3], 2 * u, 36 * u, 12 * u, Color.White);
+            Game.Text(header[4], 2 * u, 49 * u, 8 * u, Color.White);
+        }
+
+        // Group / Sort: label, then a boxed value. Only sorting is functional; grouping shows stable's default.
+        void Box(Rectangle r, string label, Color labelColour, string value)
+        {
+            float size = 22 * u;
+            Game.Text(label, r.X - 3 * u - Game.TextWidth(label, size), r.Y + r.Height - size * 0.8f, size, labelColour);
+            DrawRectangleRec(r, Color.Black);
+            DropdownBorder(r, new Color((byte)(labelColour.R * 0.83f), (byte)(labelColour.G * 0.83f), (byte)(labelColour.B * 0.83f), (byte)255)); // label colour at 83% (measured)
+            Game.Text(value, r.X + 2 * u, r.Y + r.Height / 2 - 7.5f * u, 15 * u, Color.White);
+            Options.DrawIcon(0xf078, r.X + r.Width - 9.8f * u, r.Y + r.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
+        }
+        var sortBox = SortBox(w);
+        string sortLabel = SortModes.FirstOrDefault(m => m.Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase)).Label ?? "By Artist";
+        Box(sortBox, "Sort", new Color(174, 210, 139, 255), sortLabel);
+        Box(GroupBox(w), "Group", new Color(146, 195, 230, 255), GroupModes.FirstOrDefault(m => m.Key == GroupMode).Label ?? "No Grouping");
+
+        // Group tabs (stable's selection-tab sprite), the current mode active.
+        var tabs = GroupTabLabels;
+        for (int t = 0; t < tabs.Length; t++)
+        {
+            bool active = GroupModes[t].Key == GroupMode;
+            var tr = TabRect(w, t);
+            if (Game.Skin.Tex("selection-tab") is { } tab)
+                DrawTexturePro(tab.Tex, new Rectangle(0, 0, tab.Tex.Width, tab.Tex.Height), tr, Vector2.Zero, 0, active ? Color.White : new Color(235, 30, 70, 255));
+            else DrawRectangleRec(tr, active ? Color.White : new Color(235, 30, 70, 255));
+            float size = 9.5f * u;
+            Game.TextBold(tabs[t], tr.X + tr.Width / 2 - Game.BoldWidth(tabs[t], size) / 2, tr.Y + tr.Height / 2 - size / 2, size, active ? Color.Black : Color.White);
+        }
+
+        // Search, at the top of the song list.
+        float sx = w - 218 * u;
+        string search = filter.Length == 0 ? "Type to search!" : filter;
+        Game.TextBold("Search:", sx, 54 * u, 13 * u, new Color(173, 255, 47, 255)); // GreenYellow
+        Game.TextBold(search, sx + Game.BoldWidth("Search: ", 13 * u), 54 * u, 13 * u, Color.White);
+        if (message.Length > 0 || filter.Length > 0)
+            Game.Text(message.Length > 0 ? message : matchesText.Of(view.Count), sx, 67 * u, 11 * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
+    }
+
+    // Bottom bar buttons: left edges at 140, 197.6, 245.6 and 293.6 units on widescreen, here in
+    // 768-scale texels (units / 0.625). Hover swaps to the -over sprite like stable.
+    static readonly (string Name, float X)[] BottomButtons = [("selection-mode", 224), ("selection-mods", 316.16f), ("selection-random", 392.96f), ("selection-options", 469.76f)];
+
+    Rectangle ButtonRect(string name, float x, int h, float s)
+    {
+        var sp = Game.Skin.Tex(name);
+        float bw = (sp?.Width ?? 77) * s, bh = (sp?.Height ?? 90) * s;
+        return new Rectangle(x * s, h - bh, bw, bh);
+    }
+
+    void DrawBottomBar(int w, int h, float s)
+    {
+        if (Game.Skin.Tex("songselect-bottom") is { } bottom) DrawTexturePro(bottom.Tex, new Rectangle(0, 0, bottom.Tex.Width, bottom.Tex.Height),
+            new Rectangle(0, h - bottom.Height * s, w, bottom.Height * s), Vector2.Zero, 0, Color.White);
+        else DrawRectangle(0, h - (int)BottomH, w, (int)BottomH, new Color(0, 0, 0, 220));
+
+        var mouse = Input.GetMousePosition();
+        if (Game.Skin.Tex("menu-back") is { } back)
+        {
+            var r = new Rectangle(0, h - back.Height * s, back.Width * s, back.Height * s);
+            back.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), s, CheckCollisionPointRec(mouse, r) ? Color.White : ColorAlpha(Color.White, 0.85f));
+        }
+        foreach (var (name, bx) in BottomButtons)
+        {
+            var r = ButtonRect(name, bx, h, s);
+            bool hover = CheckCollisionPointRec(mouse, r) || name == "selection-mods" && modSelect;
+            var sp = (hover ? Game.Skin.Tex(name + "-over") : null) ?? Game.Skin.Tex(name);
+            sp?.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), s, Color.White);
+            if (hover && name != "selection-mode" && Game.Skin.Tex(name + "-over") == null) DrawRectangleRec(r, new Color(255, 255, 255, 40));
+        }
+        // Active mod icons next to the buttons.
+        // The current mode's icon sits in the Mode button (additive, centred 28.8 units into it, 35 up).
+        float u = h / 480f;
+        if (Game.Skin.Tex("mode-osu-small") is { } modeIcon)
+        {
+            BeginBlendMode(BlendMode.Additive);
+            modeIcon.Draw(new Vector2((140 + 28.8f) * u, h - 35 * u), s, Color.White);
+            EndBlendMode();
+        }
+        float mx = 546.56f * s; // 341.6 units: past Options, where stable continues
+        foreach (var (flag, icon) in ModIcons)
+            if (mods.HasFlag(flag) && !(flag == Mods.DoubleTime && mods.HasFlag(Mods.Nightcore)) && !(flag == Mods.SuddenDeath && mods.HasFlag(Mods.Perfect))
+                && Game.Skin.Tex("selection-mod-" + icon) is { } m)
+            {
+                m.Draw(new Vector2(mx, h - 40 * s), 0.6f * s, Color.White);
+                mx += 30 * s;
+            }
+
+        // The osu! cookie: 40 units in from the right at y 450, scale 0.45 -> 0.4 over each beat, with a
+        // copy swelling 0.45 -> 0.49 and fading 0.7 -> 0 (a 1s cycle without timing).
+        if (Game.Skin.Tex("menu-osu") is { } cookie)
+        {
+            float p = (float)(BeatPhase() is var ph && !double.IsNaN(ph) ? ph : Game.NowMs % 1000 / 1000);
+            var at = new Vector2(w - 40 * u, 450 * u);
+            cookie.Draw(at, (0.45f - 0.05f * p) * s, Color.White);
+            cookie.Draw(at, (0.45f + 0.04f * p) * s, ColorAlpha(Color.White, 0.7f * (1 - p)));
+        }
+    }
+
+    internal static readonly (Mods Flag, string Icon)[] ModIcons =
+    [
+        (Mods.Easy, "easy"), (Mods.NoFail, "nofail"), (Mods.HalfTime, "halftime"), (Mods.HardRock, "hardrock"),
+        (Mods.SuddenDeath, "suddendeath"), (Mods.Perfect, "perfect"), (Mods.DoubleTime, "doubletime"), (Mods.Nightcore, "nightcore"),
+        (Mods.Hidden, "hidden"), (Mods.Flashlight, "flashlight"), (Mods.Relax, "relax"), (Mods.Autopilot, "relax2"),
+        (Mods.SpunOut, "spunout"), (Mods.Autoplay, "autoplay"),
+    ];
+
+    bool ClickBottomBar(Vector2 mouse)
+    {
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        float s = S;
+        if (Game.Skin.Tex("menu-back") is { } back && CheckCollisionPointRec(mouse, new Rectangle(0, h - back.Height * s, back.Width * s, back.Height * s)))
+        {
+            Back();
+            return true;
+        }
+        foreach (var (name, bx) in BottomButtons)
+        {
+            if (!CheckCollisionPointRec(mouse, ButtonRect(name, bx, h, s))) continue;
+            Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+            if (name == "selection-mods") modSelect = !modSelect;
+            else if (name == "selection-random" && view.Count > 0) MoveSet(Random.Shared.Next(view.Count) - setIndex);
+            else if (name == "selection-options") Game.Screen = new Options(this, this);
+            return true;
+        }
+        if (Vector2.Distance(mouse, new Vector2(w - 70 * s, h - 60 * s)) < 60 * s) { Play(mods); return true; }
+        return false;
+    }
+
+    // Local scores, left side, as stable's leaderboard panels.
+    // stable's local leaderboard (measured from a stable capture, in 640x480 units): a ranking box at 73-88, then
+    // up to eight rows of 33.3 from 96: rank, grade, name (16), "Score: N (Mx)" (12), and right-aligned mods /
+    // accuracy / gap to the next score (10); "Personal Best" below.
+    static float U => GetScreenHeight() / 480f;
+    float ScoreTop => 96 * U;
+    float ScoreRowH => 33.3f * U;
+    int ScoreRowAt(float y) => (int)MathF.Floor((y - ScoreTop) / ScoreRowH);
+
+    void DrawScoreRow(ReplayInfo r, int rank, float y, long? nextScore, bool hover)
+    {
+        float u = U;
+        var row = new Rectangle(4.3f * u, y, 235.7f * u, ScoreRowH - 2 * u);
+        DrawRectangleRec(row, new Color(0, 0, 0, hover ? 190 : 130));
+        if (rank > 0)
+        {
+            string n = rankText.Of(rank);
+            Game.TextBold(n, 20 * u - Game.BoldWidth(n, 18 * u) / 2, y + row.Height / 2 - 9 * u, 18 * u, ColorAlpha(Color.White, 0.6f));
+        }
+        if (Game.Skin.Tex(SmallGrade(GradeOf(r))) is { } g) g.Draw(new Vector2(49 * u, y + 14 * u), 21 * u / Math.Max(1, g.Height), Color.White);
+        string name = r.FromStable ? (r.Player.Length > 0 ? r.Player : "stable") : Config.Get("Username", "You");
+        Game.Text(name, 63 * u, y + 7.7f * u - 8 * u, 16 * u, Color.White);
+        var text = RowText(r);
+        Game.Text(text.Score, 63 * u, y + 20.5f * u - 6 * u, 12 * u, Color.White);
+        float right = 237.7f * u, size = 10 * u;
+        string[] lines = rowLines;
+        lines[0] = text.Mods; lines[1] = text.Acc; lines[2] = nextScore is long nx ? leadText.Of(r.Score - nx) : "";
+        for (int i = 0; i < lines.Length; i++)
+            if (lines[i].Length > 0) Game.Text(lines[i], right - Game.TextWidth(lines[i], size), y + (5 + 10.3f * i) * u - size / 2, size, Color.White);
+    }
+
+    // stable's dropdown outline (measured): about half a unit thick with ~1.3-unit rounded corners.
+    void DropdownBorder(Rectangle r, Color c) =>
+        DrawRectangleRoundedLinesEx(r, 2.6f * U / r.Height, 8, Math.Max(1, U / 2), c);
+
+    void DrawScores(int w, int h, float s)
+    {
+        float u = U;
+        var box = new Rectangle(5 * u, 73 * u, 191 * u, 15 * u);
+        DrawRectangleRec(box, Color.Black);
+        DropdownBorder(box, new Color(22, 130, 179, 255));
+        Game.Text("Local Ranking", box.X + 3 * u, box.Y + box.Height / 2 - 7 * u, 14 * u, Color.White);
+        Options.DrawIcon(0xf078, box.X + box.Width - 9.8f * u, box.Y + box.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
+
+        var list = SelectedScores;
+        if (list.Count == 0) Game.Text("No records set!", 63 * u, ScoreTop + 6 * u, 14 * u, ColorAlpha(Color.White, 0.8f));
+        var mouse = Input.GetMousePosition();
+        for (int n = 0; n < Math.Min(8, list.Count); n++)
+        {
+            float y = ScoreTop + n * ScoreRowH;
+            bool hover = mouse.X < 240 * u && ScoreRowAt(mouse.Y) == n && mouse.Y >= ScoreTop;
+            DrawScoreRow(list[n], n + 1, y, n + 1 < list.Count ? list[n + 1].Score : null, hover);
+        }
+
+        // Personal best: the local player's own top score.
+        string me = Config.Get("Username", "");
+        float centre = 120 * u;
+        Game.TextBold("Personal Best", centre - Game.BoldWidth("Personal Best", 12 * u) / 2, 369 * u - 6 * u, 12 * u, Color.White);
+        int best = -1; // a loop, not FindIndex: a lambda capturing me would allocate every frame
+        for (int i = 0; i < list.Count && best < 0; i++) if (!list[i].FromStable || list[i].Player.Equals(me, StringComparison.OrdinalIgnoreCase)) best = i;
+        if (best >= 0) DrawScoreRow(list[best], best + 1, 380 * u, null, false);
+        else
+        {
+            DrawRectangleRec(new Rectangle(45 * u, 380 * u, 195 * u, 29 * u), new Color(0, 0, 0, 100));
+            Game.Text("No personal record set", 63 * u, 394.5f * u - 6.5f * u, 13 * u, Color.White);
+        }
+    }
+    void DrawModSelect(int w, int h)
+    {
+        float s = S;
+        (string Title, (string Key, Mods Flag, string Icon, string Name)[] Mods)[] groups =
+        [
+            ("Difficulty Reduction", [("Q", Mods.Easy, "easy", "Easy"), ("W", Mods.NoFail, "nofail", "No Fail"), ("E", Mods.HalfTime, "halftime", "Half Time")]),
+            ("Difficulty Increase", [
+                ("A", Mods.HardRock, "hardrock", "Hard Rock"),
+                ("S", Mods.SuddenDeath, mods.HasFlag(Mods.Perfect) ? "perfect" : "suddendeath", mods.HasFlag(Mods.Perfect) ? "Perfect" : "Sudden Death"),
+                ("D", Mods.DoubleTime, mods.HasFlag(Mods.Nightcore) ? "nightcore" : "doubletime", mods.HasFlag(Mods.Nightcore) ? "Nightcore" : "Double Time"),
+                ("F", Mods.Hidden, "hidden", "Hidden"), ("G", Mods.Flashlight, "flashlight", "Flashlight")]),
+            ("Special", [("Z", Mods.Relax, "relax", "Relax"), ("X", Mods.Autopilot, "relax2", "Autopilot"), ("C", Mods.SpunOut, "spunout", "Spun Out"), ("V", Mods.Autoplay, "autoplay", "Auto")]),
+        ];
+        DrawRectangle(0, 0, w, h, new Color(0, 0, 0, 210));
+        float y = h * 0.18f;
+        Game.TextBold("Mods", w / 2f - Game.BoldWidth("Mods", 40 * s) / 2, y - 70 * s, 40 * s, Color.White);
+        foreach (var (title, list) in groups)
+        {
+            Game.TextBold(title, w * 0.12f, y + 30 * s, 22 * s, new Color(255, 204, 34, 255));
+            float x = w * 0.12f + 260 * s;
+            foreach (var (key, flag, icon, name) in list)
+            {
+                bool on = mods.HasFlag(flag);
+                var c = new Vector2(x + 50 * s, y + 45 * s);
+                if (Game.Skin.Tex("selection-mod-" + icon) is { } sp)
+                    sp.Draw(c, s * (on ? 1.1f : 0.95f), on ? Color.White : ColorAlpha(Color.White, 0.45f), on ? 8 : 0);
+                Game.Text($"{name} ({key})", c.X - Game.TextWidth($"{name} ({key})", 14 * s) / 2, c.Y + 50 * s, 14 * s, on ? Color.White : Color.Gray);
+                x += 120 * s;
+            }
+            y += 150 * s;
+        }
+        string mult = $"Score Multiplier: {mods.ScoreMultiplier():0.00}x      F1 / Enter: close      Backspace: reset";
+        Game.Text(mult, w / 2f - Game.TextWidth(mult, 20 * s) / 2, y + 10 * s, 20 * s, Color.LightGray);
+    }
+
+    // ---------------------------------------------------------------- background (loaded off the main thread)
+
+    Texture2D bgTex;
+    string bgKey = "";
+    Task<(string Key, Image Img)>? bgLoading;
+    double bgShownAt;
+
+    void UpdateBackground()
+    {
+        if (bgLoading is { IsCompleted: true })
+        {
+            var (key, img) = bgLoading.Result;
+            bgLoading = null;
+            if (key == bgKey && img.Width > 0)
+            {
+                if (bgTex.Id != 0) UnloadTexture(bgTex);
+                bgTex = LoadTextureFromImage(img);
+                SetTextureFilter(bgTex, TextureFilter.Bilinear);
+                bgShownAt = Game.NowMs;
+            }
+            if (img.Width > 0) UnloadImage(img);
+        }
+        if (Selected is not { } b || bgLoading != null || Game.NowMs - selectionChangedAt < 120) return;
+        string file = b.FilePath;
+        if (file == bgKey) return;
+        bgKey = file;
+        bgLoading = LoadBackgroundImage(file);
+    }
+
+    // Its own method so the closure is only made when a load starts (UpdateBackground runs every frame).
+    static Task<(string, Image)> LoadBackgroundImage(string file) => Task.Run(() =>
+    {
+        try
+        {
+            var meta = Beatmap.Load(file, metadataOnly: true);
+            var path = Path.Combine(meta.Folder, meta.Background);
+            return (file, meta.Background.Length > 0 && File.Exists(path) ? LoadImage(path) : default);
+        }
+        catch (IOException) { return (file, default(Image)); }
+    });
+
+    internal void DrawBackground(int w, int h)
+    {
+        if (bgTex.Id == 0) return;
+        float k = Math.Max(w / (float)bgTex.Width, h / (float)bgTex.Height);
+        float a = (float)Math.Clamp((Game.NowMs - bgShownAt) / 250, 0, 1) * 0.75f;
+        DrawTexturePro(bgTex, new Rectangle(0, 0, bgTex.Width, bgTex.Height),
+            new Rectangle((w - bgTex.Width * k) / 2, (h - bgTex.Height * k) / 2, bgTex.Width * k, bgTex.Height * k),
+            Vector2.Zero, 0, ColorAlpha(Color.White, a));
+    }
+
+    public static void DrawCursor() => DrawCursorAt(Input.GetMousePosition());
+
+    // stable's classic cursor trail (skins without cursormiddle): at most every 60Hz frame a copy of cursortrail is
+    // left at the cursor, fading out over 150ms.
+    static readonly List<(Vector2 Pos, double At)> trail = [];
+    static double lastTrail = double.MinValue;
+
+    public static void DrawCursorAt(Vector2 pos)
+    {
+        float s = GetScreenHeight() / 768f * (float)Config.GetDouble("CursorSize", 1);
+        var skin = Game.Skin;
+        // CursorCentre: 0 anchors the sprite's top-left at the cursor instead of its centre.
+        Vector2 Anchor(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * s / 2;
+        double now = Game.NowMs;
+        // stable takes cursormiddle from wherever the cursor came from, so stable's default one doesn't count here.
+        // TODO: skins with their own cursormiddle get no trail; stable draws its smooth (dense) trail for those.
+        bool middle = skin.Own("cursor") ? skin.Own("cursormiddle") : skin.Tex("cursormiddle") != null;
+        if (skin.Tex("cursortrail") is { Width: >= 5 } tr && !middle)
+        {
+            if (now - lastTrail >= 1000 / 60.0) { trail.Add((Anchor(tr), now)); lastTrail = now; }
+            int kept = 0; // RemoveAll without a per-frame closure
+            for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 150) trail[kept++] = trail[i];
+            trail.RemoveRange(kept, trail.Count - kept);
+            foreach (var (p, at) in trail) tr.Draw(p, s, ColorAlpha(Color.White, 1 - (float)((now - at) / 150)));
+        }
+        if (skin.Tex("cursor") is { } c) c.Draw(Anchor(c), s, Color.White);
+        else DrawCircleV(pos, 12 * s, new Color(255, 200, 80, 255));
+    }
+}
