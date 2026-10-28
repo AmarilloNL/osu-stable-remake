@@ -971,7 +971,7 @@ sealed partial class Player : Screen
         comboWorst = Math.Min(comboWorst, result);
         if (i == objs.Count - 1 || objs[i + 1].ComboNumber == 1)
         {
-            health.Add(health.ComboEnd(comboWorst));
+            health.Add(health.ComboEnd(comboWorst, lastHit: result > 0));
             if (comboWorst == 300) nGeki++;
             else if (comboWorst == 100) nKatu++;
             comboWorst = 300;

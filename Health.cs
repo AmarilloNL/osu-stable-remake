@@ -35,8 +35,9 @@ sealed class Health
         _ => 0,
     };
 
-    // End-of-combo bonus: geki (all 300s), katu (no 50s), mu (otherwise). None if the combo had a miss.
-    public double ComboEnd(int worst) => worst switch { 300 => mulGeki * 14, 100 => mulGeki * 10, 50 => mulGeki * 6, _ => 0 };
+    // End-of-combo bonus, given only when the combo's last object is hit: geki (all 300s), katu (no 50s or
+    // misses), mu otherwise - misses earlier in the combo still get mu, like stable.
+    public double ComboEnd(int worst, bool lastHit) => !lastHit ? 0 : worst switch { 300 => mulGeki * 14, 100 => mulGeki * 10, _ => mulGeki * 6 };
 
     public void Apply(HpEvent e) => Add(Gain(e));
     public void Add(double delta) => Value = Math.Clamp(Value + delta, 0, Max);
