@@ -62,6 +62,7 @@ sealed partial class Player : Screen
     int firstActive;
 
     long score;
+    internal long Score => score;
     int combo, maxCombo, n300, n100, n50, nMiss, nGeki, nKatu;
     internal readonly List<Vector2> hpGraph = []; // (time, hp 0..1) for the results screen
     readonly double diffMul;
@@ -86,6 +87,7 @@ sealed partial class Player : Screen
     readonly ReplayFrame[]? playback;
     readonly ReplayInfo? watching;
     readonly List<ReplayFrame> recording = [];
+    internal IReadOnlyList<ReplayFrame> Recording => recording;
     ReplayInfo? savedReplay;
     int pbIndex;
     byte inputKeys;

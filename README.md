@@ -152,6 +152,7 @@ The executable doubles as a test harness:
 | `--auto-check [filter] [--mods HR]` | Plays maps with Auto at several frame times, lists any run that isn't all 300s, and prints each score |
 | `--play <file.osu> [--auto] [--mods HDDT]` | Starts a map directly |
 | `--watch <replay>` | Watches a replay |
+| `--fuzz-osr <file.osu> <seed> <out.osr> [mods]` | Writes a deliberately sloppy replay as a stable `.osr` (NoFail) and prints our judgement of it; stable can watch the same file, so the two judgements can be compared |
 | `--shots 5,10 --exit-after 12` | Takes screenshots at the given seconds and quits; prints frame time stats |
 | `--input "3:key Enter, 4:click 640 360"` | Scripted input for UI tests |
 

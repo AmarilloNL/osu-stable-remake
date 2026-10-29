@@ -126,6 +126,7 @@ static class Game
             }
             return;
         }
+        if (args.Length >= 4 && args[0] == "--fuzz-osr") { FuzzOsr(args[1], int.Parse(args[2]), args[3], args.Length > 4 ? args[4] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-objects") { DumpObjects(args[1], args.Length > 2 ? args[2] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-osr") { Console.WriteLine(string.Join("\n", Replays.OsrText(args[1]).Split(',').Take(args.Length > 2 ? int.Parse(args[2]) : 12))); return; }
         if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault(a => !a.StartsWith("--")) ?? "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
@@ -247,6 +248,66 @@ static class Game
         Bass.BASS_Free();
         CloseWindow();
         timeEndPeriod(1);
+    }
+
+    // --fuzz-osr <file.osu> <seed> <out.osr> [mods]: plays the map with the test bot (Auto's cursor, jittered presses),
+    // then roughens the input more (each key press shifted by a random amount, the cursor pushed around by a slow wobble up to ~1.5 radii) and saves it as a stable
+    // .osr with NoFail, then prints our own judgement of that file. Stable can watch the same file: a judging test.
+    static void FuzzOsr(string file, int seed, string outPath, string mods)
+    {
+        Config.Load();
+        SetTraceLogLevel(TraceLogLevel.None);
+        SetConfigFlags(ConfigFlags.HiddenWindow);
+        InitWindow(640, 480, "fuzz");
+        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+        Player.VirtualClock = true;
+        var play = ModInfo.Parse(mods) | Mods.NoFail;
+        var back = new SongSelect();
+        Player.Bot = true; // Auto's cursor through the recorded input path, presses with seeded jitter
+        var auto = new Player(Beatmap.Load(file, mods: play), back, play);
+        for (int step = 0; step < 50_000_000 && !auto.Result.Done; step++) auto.Update(1000 / 60.0);
+        var src = auto.Recording.ToList();
+        auto.Dispose();
+        Player.Bot = false;
+
+        var rng = new Random(seed);
+        var map = Beatmap.Load(file, mods: play);
+        double timing = rng.NextDouble() * 25, wobble = map.Radius * (0.2 + rng.NextDouble() * 1.3);
+        double p1 = 250 + rng.NextDouble() * 600, p2 = 400 + rng.NextDouble() * 900, a1 = rng.NextDouble() * 7, a2 = rng.NextDouble() * 7;
+        double Gauss() => Math.Sqrt(-2 * Math.Log(1 - rng.NextDouble())) * Math.Cos(2 * Math.PI * rng.NextDouble());
+        // Key-down intervals of the Auto input, each shifted as a whole (no overlap with the next press of that key).
+        var shifted = new List<(double Start, double End, byte Bit)>();
+        for (int bit = 0; bit < 4; bit++)
+        {
+            double? down = null;
+            foreach (var f in src)
+            {
+                bool on = (f.Keys & (1 << bit)) != 0;
+                if (on && down == null) down = f.Time;
+                else if (!on && down != null) { double d = Gauss() * timing; shifted.Add((down.Value + d, f.Time + d, (byte)(1 << bit))); down = null; }
+            }
+        }
+        byte KeysAt(double t) { byte k = 0; foreach (var s in shifted) if (t >= s.Start && t < s.End) k |= s.Bit; return k; }
+        Vector2 Wobble(double t) => new((float)(wobble * Math.Sin(t / p1 + a1)), (float)(wobble * Math.Sin(t / p2 + a2)));
+        var times = src.Select(f => f.Time).Concat(shifted.SelectMany(s => new[] { s.Start, s.End }))
+            .Select(t => Math.Round(t)).Distinct().Order().ToList();
+        var frames = new List<ReplayFrame>();
+        int j = 0;
+        foreach (double t in times)
+        {
+            while (j + 1 < src.Count && src[j + 1].Time <= t) j++;
+            var basePos = new Vector2(src[j].X, src[j].Y) + Wobble(t);
+            frames.Add(new ReplayFrame(t, MathF.Round(basePos.X * 64) / 64, MathF.Round(basePos.Y * 64) / 64, KeysAt(t)));
+        }
+        var info = new ReplayInfo { BeatmapMd5 = Replays.Md5Of(file), Player = Path.GetFileNameWithoutExtension(outPath), Mods = play, Date = DateTime.Now, FromStable = true, Path = outPath };
+        Replays.SaveOsr(outPath, info, frames);
+
+        var judge = new Player(Beatmap.Load(file, mods: play), back, play, Replays.ReadOsrFrames(outPath), info);
+        for (int step = 0; step < 50_000_000 && !judge.Result.Done; step++) judge.Update(1000 / 60.0);
+        var x = judge.Result;
+        Console.WriteLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0} seed {1}: timing sd {2:0}ms wobble {3:0.0}px -> ours {4}/{5}/{6}/{7} {8}x score {9}",
+            Path.GetFileName(outPath), seed, timing, wobble, x.N300, x.N100, x.N50, x.NMiss, x.MaxCombo, judge.Score));
+        judge.Dispose();
     }
 
     // Self-check: parse a sample of the real Songs folder and assert the results are sane.

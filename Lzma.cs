@@ -16,6 +16,56 @@ static class Lzma
         return new Decoder(input, 13, lc, lp, pb).Run(size);
     }
 
+    // Encoder for writing .osr files: every byte coded as a literal (no matches), which is a valid LZMA stream
+    // any decoder reads; larger than real LZMA output but simple. lc=3 lp=0 pb=2, sizes in the header.
+    public static byte[] Encode(byte[] data)
+    {
+        var o = new List<byte>(data.Length + 32) { 0x5D };
+        o.AddRange(BitConverter.GetBytes(1 << 20)); // dictionary size
+        o.AddRange(BitConverter.GetBytes((long)data.Length));
+        ulong low = 0;
+        uint range = 0xFFFFFFFF;
+        byte cache = 0;
+        long cacheSize = 1;
+        var isMatch = new ushort[4];
+        var literal = new ushort[0x300 << 3];
+        Array.Fill(isMatch, (ushort)1024);
+        Array.Fill(literal, (ushort)1024);
+        void ShiftLow()
+        {
+            if ((uint)low < 0xFF000000u || (low >> 32) != 0)
+            {
+                byte carry = (byte)(low >> 32), temp = cache;
+                do { o.Add((byte)(temp + carry)); temp = 0xFF; } while (--cacheSize != 0);
+                cache = (byte)((uint)low >> 24);
+            }
+            cacheSize++;
+            low = (low & 0x00FFFFFF) << 8;
+        }
+        void Bit(ushort[] probs, int i, int bit)
+        {
+            uint bound = (range >> 11) * probs[i];
+            if (bit == 0) { range = bound; probs[i] += (ushort)((2048 - probs[i]) >> 5); }
+            else { low += bound; range -= bound; probs[i] -= (ushort)(probs[i] >> 5); }
+            while (range < 1u << 24) { range <<= 8; ShiftLow(); }
+        }
+        byte prev = 0;
+        for (int p = 0; p < data.Length; p++)
+        {
+            Bit(isMatch, p & 3, 0); // state stays 0: only literals
+            int b = data[p], baseIdx = 0x300 * (prev >> 5), symbol = 1;
+            for (int k = 7; k >= 0; k--)
+            {
+                int bit = (b >> k) & 1;
+                Bit(literal, baseIdx + symbol, bit);
+                symbol = (symbol << 1) | bit;
+            }
+            prev = (byte)b;
+        }
+        for (int i = 0; i < 5; i++) ShiftLow();
+        return o.ToArray();
+    }
+
     sealed class Decoder
     {
         readonly byte[] src;

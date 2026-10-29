@@ -121,6 +121,42 @@ static class Replays
         return (info, mode, data);
     }
 
+    // Writes frames as a stable .osr (osu!standard), so stable can play the replay too. Frame times become whole-ms
+    // deltas, keys stable's bits (K1 = 5, K2 = 10, M1 = 1, M2 = 2).
+    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames)
+    {
+        var text = new System.Text.StringBuilder("0|256|-500|0,-1|256|-500|0,");
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        long last = 0;
+        foreach (var f in frames)
+        {
+            long t = (long)Math.Round(f.Time);
+            int z = ((f.Keys & 1) != 0 ? 5 : 0) | ((f.Keys & 2) != 0 ? 10 : 0) | ((f.Keys & 4) != 0 ? 1 : 0) | ((f.Keys & 8) != 0 ? 2 : 0);
+            text.Append(inv, $"{t - last}|{f.X:R}|{f.Y:R}|{z},");
+            last = t;
+        }
+        text.Append("-12345|0|0|0,");
+        using var w = new BinaryWriter(File.Create(path));
+        void Str(string s) { w.Write((byte)0x0b); w.Write(s); } // BinaryWriter's length prefix is the same ULEB128
+        w.Write((byte)0);
+        w.Write(20250101);
+        Str(info.BeatmapMd5);
+        Str(info.Player);
+        Str(Convert.ToHexStringLower(MD5.HashData(System.Text.Encoding.ASCII.GetBytes(text.ToString()))));
+        w.Write((ushort)info.N300); w.Write((ushort)info.N100); w.Write((ushort)info.N50);
+        w.Write((ushort)0); w.Write((ushort)0); w.Write((ushort)info.NMiss);
+        w.Write((int)info.Score);
+        w.Write((ushort)info.MaxCombo);
+        w.Write(info.NMiss == 0 && info.N100 + info.N50 == 0);
+        w.Write((int)info.Mods);
+        Str("");
+        w.Write(info.Date.ToUniversalTime().Ticks);
+        var data = Lzma.Encode(System.Text.Encoding.ASCII.GetBytes(text.ToString()));
+        w.Write(data.Length);
+        w.Write(data);
+        w.Write(0L); // online score id
+    }
+
     static string OsrString(BinaryReader r)
     {
         byte marker = r.ReadByte();
