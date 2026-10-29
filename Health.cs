@@ -10,14 +10,13 @@ sealed class Health
     public const double Max = 200;
     public double Value = Max;
     public readonly double DropRate;
-    readonly double hp, calibrationHp;
+    readonly double hp;
     internal double mul = 1, mulGeki = 1; // internal: --dump-objects prints them
     internal double[] SimHp = [];
 
     public Health(Beatmap map, bool halfTime = false)
     {
         hp = map.HP;
-        calibrationHp = map.CalibrationHP;
         DropRate = Calibrate(map) * (halfTime ? 0.75 : 1); // stable drains a quarter slower under HalfTime
     }
 
@@ -49,10 +48,10 @@ sealed class Health
         var objs = map.Objects;
         if (objs.Count == 0) return 0; // nothing to drain against (song select won't start these anyway)
         double rate = 0.05;
-        double lowestEver = Range(calibrationHp, 195, 160, 60);
-        double lowestComboEnd = Range(calibrationHp, 198, 170, 80);
-        double lowestEnd = Range(calibrationHp, 198, 180, 80);
-        double recoveryNeeded = Range(calibrationHp, 8, 4, 0);
+        double lowestEver = Range(hp, 195, 160, 60);
+        double lowestComboEnd = Range(hp, 198, 170, 80);
+        double lowestEnd = Range(hp, 198, 180, 80);
+        double recoveryNeeded = Range(hp, 8, 4, 0);
 
         // TODO: iteration cap guards pathological maps; stable loops until it converges
         for (int iteration = 0; iteration < 1000; iteration++)

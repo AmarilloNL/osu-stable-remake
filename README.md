@@ -96,8 +96,8 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Hit windows, notelock, stacking, slider curves and timing ported from stable's behaviour
 - [x] Slider tracking with stable's button rules
 - [ ] The last ~10% of replay mismatches (mostly cursor right on the slider follow-radius edge)
-- [x] HP bar checked against stable's recorded life bars (within 1.2% on average)
-- [ ] Close the remaining HP gap in miss-heavy stretches
+- [x] HP drain calibration identical to stable's, with and without HardRock (checked object by object against a running stable on 32 maps)
+- [x] Slider timing, ticks, repeats and stacking identical to stable's on the same maps (end points within a float step)
 - [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**

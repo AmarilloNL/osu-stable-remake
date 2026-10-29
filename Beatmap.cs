@@ -116,9 +116,6 @@ sealed class Beatmap
     public double AudioLeadIn, PreviewTime, StackLeniency = 0.7;
     public int Countdown = 1, CountdownOffset; // 0 none, 1 normal, 2 half speed, 3 double speed
     public double HP = 5, CS = 5, OD = 5, AR = -1, SliderMultiplier = 1.4, SliderTickRate = 1;
-    // HP for the drain calibration's thresholds: the map's HP before HardRock's x1.4 (EZ still counts). Measured against
-    // stable's recorded life bars (HR plays 0.031 -> 0.019 mean error); the hit gains do use the HR value.
-    public double CalibrationHP = 5;
     public int DefaultSampleSet = 1;
     public List<System.Drawing.Color> ComboColours = [];
     public List<TimingPoint> TimingPoints = [];
@@ -128,7 +125,7 @@ sealed class Beatmap
     public static double Range(double d, double min, double mid, double max) =>
         d > 5 ? mid + (max - mid) * (d - 5) / 5 : d < 5 ? mid - (mid - min) * (5 - d) / 5 : mid;
 
-    public double Preempt => Range(AR, 1800, 1200, 450);
+    public double Preempt => (int)Range(AR, 1800, 1200, 450); // stable keeps it in whole ms
     public double FadeIn => 400 * Math.Min(1, Preempt / 450);
     // stable keeps OD as a float and truncates the windows to whole milliseconds.
     public int Hit300 => (int)Range((float)OD, 80, 50, 20);
@@ -165,10 +162,8 @@ sealed class Beatmap
             catch (IndexOutOfRangeException) { }
         }
         if (map.AR < 0) map.AR = map.OD; // old maps had no separate AR
-        double hpBeforeHr = map.HP;
         if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3f, 1.4f);
         if (mods.HasFlag(Mods.Easy)) map.ScaleDifficulty(0.5f, 0.5f);
-        map.CalibrationHP = mods.HasFlag(Mods.HardRock) ? hpBeforeHr : map.HP;
         if (!metadataOnly) map.Finish();
         return map;
     }
