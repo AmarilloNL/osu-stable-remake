@@ -83,6 +83,7 @@ sealed partial class Player : Screen
     double lastTime = double.NaN;
     int autoNext;
     double autoReleaseAt;
+    int autoAlt, autoButton = 4; byte autoKeys; // the key overlay's view of Auto: stable's M1/M2 choice (judging uses held)
 
     // Replays: recording during live play, or playback when watching.
     readonly ReplayFrame[]? playback;
@@ -572,6 +573,7 @@ sealed partial class Player : Screen
         if (!VirtualClock) { UpdateMapWarning(); UpdateDim(dtMs); }
         if (playback != null && TestSpeedAt.Count > 0 && Game.NowMs / 1000 >= TestSpeedAt[0]) { TestSpeedAt.RemoveAt(0); CycleSpeed(); }
         if (playback != null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; }
+        if (auto && playback == null && UpdateReplayOverlay()) { Leave(back); return; } // End Replay
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
             if (!paused) SetPaused(true);
@@ -662,6 +664,16 @@ sealed partial class Player : Screen
             for (; autoNext < objs.Count && objs[autoNext].Time <= time; autoNext++)
             {
                 var o = objs[autoNext];
+                // stable's Auto clicks M1, alternating to M2 while objects follow closely; a gap of 266ms or a jump longer
+                // than radius x (1.5 + 100 / gap) starts over on M1.
+                // A spinner is aimed at the tangent point of its 50px spin circle, sqrt(d^2 - 50^2) away.
+                if (autoNext > 0 && objs[autoNext - 1] is var p && (o.Time - p.EndTime) / rate is var gap)
+                {
+                    float d = Vector2.Distance(p.EndPos + map.StackOffset(p), PosOf(o));
+                    if (o.Type == ObjType.Spinner) d = d > 50 ? MathF.Sqrt(d * d - 2500) : 50 - d;
+                    autoAlt = gap > 0 && (d > map.Radius * (1.5 + 100 / gap) || gap >= 266) ? 0 : autoAlt + 1;
+                }
+                autoButton = autoAlt % 2 == 0 ? 4 : 8;
                 if (o.Type == ObjType.Spinner) continue;
                 cursor = PosOf(o);
                 HandlePress();
@@ -671,6 +683,7 @@ sealed partial class Player : Screen
             held = time < autoReleaseAt;
             for (int i = firstActive; i < objs.Count && objs[i].Time <= time; i++)
                 if (objs[i].Type != ObjType.Circle && time <= objs[i].EndTime) held = true;
+            autoKeys = (byte)(held ? autoButton : 0);
         }
         else
         {

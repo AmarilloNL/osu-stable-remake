@@ -78,7 +78,7 @@ sealed partial class Player
         // Drawn over everything above: skins like a full-screen scorebar-bg dim the HUD outside the playfield in
         // stable too. The key overlay stays on top.
         DrawHealthBar(w, sd);
-        if (Config.GetBool("KeyOverlay", false)) DrawKeyOverlay(w, u, sd, now);
+        if (Config.GetBool("KeyOverlay", false) || playback != null || auto) DrawKeyOverlay(w, u, sd, now); // stable always shows it when watching
 
         DrawSkip();
         if (now < offsetShownUntil)
@@ -96,16 +96,16 @@ sealed partial class Player
         shownAcc = Math.Abs(shownAcc - Accuracy) < 0.005 ? Accuracy : Accuracy + (shownAcc - Accuracy) * Math.Pow(0.5, frames);
         float scoreScale = 0.96f * sd, accScale = 0.576f * sd, right = w - 6 * u;
         string sc = scoreText.Of((long)Math.Round(shownScore));
-        if (!skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, sc, right, 0, scoreScale, 1, Color.White))
+        if (!skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, sc, right, 0, scoreScale, 1, Color.White, constant: true))
             Game.Text(sc, right - Game.TextWidth(sc, 40 * u / 3), 0, 40 * u / 3, Color.White);
         float glyphH = skin.Glyph(skin.ScorePrefix, '0')?.Height ?? 30;
         float accY = glyphH * scoreScale + (skin.Version > 1 ? 3 * u : 0);
         string acc = accText.Of(Math.Round(shownAcc, 2));
-        if (!skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, acc, right, accY, accScale, 1, Color.White))
+        if (!skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, acc, right, accY, accScale, 1, Color.White, constant: true))
             Game.Text(acc, right - Game.TextWidth(acc, 20 * u / 3), accY, 20 * u / 3, Color.White);
 
         if (Config.Get("ProgressBarType", "Pie") != "Pie") return;
-        float accW = skin.FontWidth(skin.ScorePrefix, skin.ScoreOverlap, "00.00%", accScale);
+        float accW = skin.FontWidth(skin.ScorePrefix, skin.ScoreOverlap, "00.00%", accScale, constant: true);
         var centre = new Vector2(right - Math.Max(0, accW) - 24 * u, accY + glyphH * accScale / 2);
         double first = objs[0].Time, last = objs[^1].EndTime;
         double frac = time < first ? -Math.Clamp((first - time) / Math.Max(1, first - playStart), 0, 1) : Math.Clamp((time - first) / Math.Max(1, last - first), 0, 1);
@@ -208,7 +208,7 @@ sealed partial class Player
         string[] labels = ["K1", "K2", "M1", "M2"];
         for (int i = 0; i < 4; i++)
         {
-            bool down = (inputKeys & (1 << i)) != 0;
+            bool down = ((auto && playback == null ? autoKeys : inputKeys) & (1 << i)) != 0;
             if (down != ((keysShown & (1 << i)) != 0))
             {
                 keysShown ^= 1 << i;
@@ -312,7 +312,7 @@ sealed partial class Player
                 else if (now - p.ShownAt > 600) panels.Remove(key);
             }
 
-        string me = watching is { Player.Length: > 0 } wr ? wr.Player : Config.Get("Username", "You");
+        string me = watching is { Player.Length: > 0 } wr ? wr.Player : auto && playback == null ? "osu!" : Config.Get("Username", "You"); // stable's Auto player
         float sd = GetScreenHeight() / 768f;
         foreach (var (key, p) in panels)
         {
@@ -330,7 +330,7 @@ sealed partial class Player
                     new Rectangle(-470 * k, anchor - 20 * k, bg.Width * k, bg.Height * k), Vector2.Zero, 0,
                     A(info == null ? new Color(250, 250, 250, 100) : new Color(0, 0, 0, 150)));
             }
-            if (info != null && r > 0) // the live panel shows no rank in stable
+            if ((info != null || auto || playback != null) && r > 0) // stable shows the live panel's rank only when watching (Auto, replays)
                 EntryText(r.ToString(), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
             Game.TextLight(info?.Player is { Length: > 0 } pl ? pl : info == null ? me : "stable", 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
             // The live panel counts along: current score and current combo.
@@ -382,17 +382,17 @@ sealed partial class Player
                 new Rectangle(left + gx * px, y, s.Width * px, s.Height * px), Vector2.Zero, 0, tint);
     }
 
-    // Active mods as the skin's icons, right to left under the accuracy.
-    // TODO: position/size estimated (no stable capture with mods yet); check against one when available.
+    // Active mods as the skin's icons, right to left under the accuracy: scale 1, the first centred 30.2 units in from the
+    // right at y 94 (measured on a stable Auto play). TODO: the spacing between several icons is unchecked.
     void DrawMods(int w, float u, float sd)
     {
         modIcons ??= [.. SongSelect.ModIcons.OrderByDescending(m => m.Flag)
             .Where(m => mods.HasFlag(m.Flag) && !(m.Flag == Mods.DoubleTime && mods.HasFlag(Mods.Nightcore)) && !(m.Flag == Mods.SuddenDeath && mods.HasFlag(Mods.Perfect)))
             .Select(m => skin.Tex("selection-mod-" + m.Icon)).OfType<Sprite>()];
-        float x = w - 20 * u;
+        float x = w - 30.2f * u;
         foreach (var sp in modIcons)
         {
-            sp.Draw(new Vector2(x, 76 * u), sd * 0.8f, Color.White);
+            sp.Draw(new Vector2(x, 94 * u), sd, Color.White);
             x -= 26 * u;
         }
     }

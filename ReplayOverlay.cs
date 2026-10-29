@@ -24,14 +24,14 @@ sealed partial class Player
     Rectangle OverlayRect(int i, Sprite s)
     {
         float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
-        var c = new Vector2(GetScreenWidth() - 40 * u, (85 + 20 * i) * u);
+        var c = new Vector2(GetScreenWidth() - 40 * u, ((mods != Mods.None ? 140 : 85) + 20 * i) * u); // below the mod icons when there are any (measured)
         return new Rectangle(c.X - s.Width * sd / 2, c.Y - s.Height * sd / 2, s.Width * sd, s.Height * sd);
     }
 
     // Returns true when the replay should end (the End Replay button).
     bool UpdateReplayOverlay()
     {
-        if (playback == null) return false;
+        if (playback == null && !auto) return false; // stable plays Auto as a replay, overlay included
         if (Input.IsKeyPressed(KeyboardKey.H)) overlayHidden = !overlayHidden;
         if (Input.IsKeyPressed(KeyboardKey.F)) CycleSpeed();
         if (overlayHidden) return false;
@@ -64,13 +64,13 @@ sealed partial class Player
 
     void DrawReplayOverlay(int w, float u, double now)
     {
-        if (playback == null || watching == null || overlayHidden) return;
+        if (playback == null && !auto || overlayHidden) return;
         if (double.IsNaN(overlayFrom)) overlayFrom = now;
         double age = now - overlayFrom;
 
         // Banner at y 60: fades in over 4s and crosses from the right edge until fully off the left, each pass
         // lasting 52ms per unit of its width, looping.
-        string who = watching.Player.Length > 0 ? watching.Player : Config.Get("Username", "");
+        string who = watching == null ? "osu!" : watching.Player.Length > 0 ? watching.Player : Config.Get("Username", ""); // Auto plays as "osu!"
         string text = $"REPLAY MODE - Watching {who} play {map.Artist} - {map.Title} [{map.Version}]";
         float tw = Game.TextWidth(text, 13 * u) / u, wu = w / u;
         double pass = age / (tw * 52) % 1;

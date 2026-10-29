@@ -116,6 +116,7 @@ sealed partial class Player
 
         void Watch()
         {
+            if (AutoPlay && Replay == null) { skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume); Leave(new Player(p.map, p.back, p.mods)); return; } // Auto again: the same replay
             if (Replay is not { } r) return;
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
             Leave(new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
@@ -136,8 +137,10 @@ sealed partial class Player
             return (sp, new Rectangle(c.X - sp.Width * sd / 2, c.Y - sp.Height * sd / 2, sp.Width * sd, sp.Height * sd));
         }
 
-        (Sprite Sp, Rectangle Rect)? RetryButton => p.playback == null ? Button("retry", 360) : null;
-        (Sprite Sp, Rectangle Rect)? ReplayButton => Replay != null ? Button("replay", p.playback == null ? 420 : 360) : null;
+        // Auto (a replay in stable): Watch Replay only.
+        bool AutoPlay => p.auto && p.playback == null;
+        (Sprite Sp, Rectangle Rect)? RetryButton => p.playback == null && !AutoPlay ? Button("retry", 360) : null;
+        (Sprite Sp, Rectangle Rect)? ReplayButton => Replay != null || AutoPlay ? Button("replay", RetryButton != null ? 420 : 360) : null;
 
         Rectangle BackRect => BackButton.Rect(h);
         readonly BackButton backButton = new();
@@ -212,7 +215,7 @@ sealed partial class Player
             float scoreScale = (newLayout ? 1.3f : 1.05f) * sd;
             float glyphH = (skin.Glyph(skin.ScorePrefix, '0')?.Height ?? 0) * scoreScale;
             var sp0 = L(220, 94);
-            if (!skin.DrawFont(skin.ScorePrefix, newLayout ? -2 : skin.ScoreOverlap, shown, sp0.X, sp0.Y - glyphH / 2, scoreScale, 0.5f, Color.White))
+            if (!skin.DrawFont(skin.ScorePrefix, newLayout ? -2 : skin.ScoreOverlap, shown, sp0.X, sp0.Y - glyphH / 2, scoreScale, 0.5f, Color.White, constant: true))
                 Game.Text(shown, sp0.X - Game.TextWidth(shown, 30 * u) / 2, sp0.Y - 15 * u, 30 * u, Color.White);
 
             // Grade: drops in from 2x after the rows; good grades get a fading glow copy.
@@ -311,7 +314,7 @@ sealed partial class Player
         {
             DrawRectangle(0, 0, w, (int)(60 * u), new Color(0, 0, 0, 204));
             var map = p.map;
-            string player = p.watching is { Player.Length: > 0 } r ? r.Player : Config.Get("Username", Environment.UserName);
+            string player = p.watching is { Player.Length: > 0 } r ? r.Player : AutoPlay ? "osu!" : Config.Get("Username", Environment.UserName);
             var date = p.watching?.Date ?? DateTime.Now;
             // Measured against stable: its header sits ~3 units in and renders ~3.5% wider than its nominal sizes.
             Game.Text($"{map.Artist} - {map.Title} [{map.Version}]", 3.3f * u, 1 * u, 22.8f * u, Color.White);

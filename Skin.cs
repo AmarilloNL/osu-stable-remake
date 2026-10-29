@@ -57,36 +57,40 @@ sealed class Skin
         return glyphs[(prefix, c)] = GlyphSuffix(c) is { } s ? Tex($"{prefix}-{s}") : null;
     }
 
-    // Draws text with a skin number font (score-0.png ...). alignX: 0 = left edge at x, 1 = right edge at x.
-    // Returns false (drawing nothing) if the skin lacks a glyph, so callers can fall back to plain text.
+    // constant: stable's fixed-width digits (score, accuracy): each digit takes the '5' glyph's width, centred in it
+    // (measured: the default skin's score digits step 31 texels, '5''s width, not '0''s 33).
+    float Advance(string prefix, char c, Sprite g, bool constant) => constant && char.IsAsciiDigit(c) && Glyph(prefix, '5') is { } z ? z.Width : g.Width;
+
     // Width in pixels of text in a skin number font at this scale, or -1 if a glyph is missing.
-    public float FontWidth(string prefix, float overlap, string text, float scale)
+    public float FontWidth(string prefix, float overlap, string text, float scale, bool constant = false)
     {
         float total = 0;
         foreach (char c in text)
         {
             if (Glyph(prefix, c) is not { } g) return -1;
-            total += g.Width * scale;
+            total += Advance(prefix, c, g, constant) * scale;
         }
         return total - overlap * scale * Math.Max(0, text.Length - 1);
     }
 
-    public bool DrawFont(string prefix, float overlap, string text, float x, float y, float scale, float alignX, Color tint)
+    // Draws text with a skin number font (score-0.png ...). alignX: 0 = left edge at x, 1 = right edge at x.
+    // Returns false (drawing nothing) if the skin lacks a glyph, so callers can fall back to plain text.
+    public bool DrawFont(string prefix, float overlap, string text, float x, float y, float scale, float alignX, Color tint, bool constant = false)
     {
         float total = 0;
         foreach (char c in text)
         {
             if (Glyph(prefix, c) is not { } g) return false;
-            total += g.Width * scale;
+            total += Advance(prefix, c, g, constant) * scale;
         }
         total -= overlap * scale * Math.Max(0, text.Length - 1);
         float cx = x - total * alignX;
         foreach (char c in text)
         {
             var g = Glyph(prefix, c)!.Value;
-            float gw = g.Width * scale, gh = g.Height * scale;
-            g.Draw(new Vector2(cx + gw / 2, y + gh / 2), scale, tint);
-            cx += gw - overlap * scale;
+            float cell = Advance(prefix, c, g, constant) * scale, gh = g.Height * scale;
+            g.Draw(new Vector2(cx + cell / 2, y + gh / 2), scale, tint);
+            cx += cell - overlap * scale;
         }
         return true;
     }
@@ -95,6 +99,8 @@ sealed class Skin
     {
         this.dir = dir;
         var ini = Path.Combine(dir, "skin.ini");
+        // No skin folder (stable's "Default", or none chosen): stable's built-in skin, which counts as the latest version.
+        if (!Directory.Exists(dir) || Path.GetFileName(Path.TrimEndingDirectorySeparator(dir)) == "Skins") Version = 99;
         if (!File.Exists(ini)) return;
         var combos = new SortedDictionary<int, Color>();
         foreach (var raw in File.ReadLines(ini))
