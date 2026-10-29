@@ -129,7 +129,7 @@ static class Game
         if (args.Length >= 4 && args[0] == "--fuzz-osr") { FuzzOsr(args[1], int.Parse(args[2]), args[3], args.Length > 4 ? args[4] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-objects") { DumpObjects(args[1], args.Length > 2 ? args[2] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-osr") { Console.WriteLine(string.Join("\n", Replays.OsrText(args[1]).Split(',').Take(args.Length > 2 ? int.Parse(args[2]) : 12))); return; }
-        if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault(a => !a.StartsWith("--")) ?? "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
+        if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() is { } fl && !fl.StartsWith("--") ? fl : "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
         if (args.Length > 0 && !args[0].StartsWith("--")) Config.OsuDir = args[0];
         // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch)
@@ -289,21 +289,31 @@ static class Game
         }
         byte KeysAt(double t) { byte k = 0; foreach (var s in shifted) if (t >= s.Start && t < s.End) k |= s.Bit; return k; }
         Vector2 Wobble(double t) => new((float)(wobble * Math.Sin(t / p1 + a1)), (float)(wobble * Math.Sin(t / p2 + a2)));
-        var times = src.Select(f => f.Time).Concat(shifted.SelectMany(s => new[] { s.Start, s.End }))
-            .Select(t => Math.Round(t)).Distinct().Order().ToList();
+        // A frame every 5ms: stable's replay watcher takes one frame per update and runs game logic only then, at the
+        // frame's time; at 5ms it keeps up (it skips frames when it falls behind), so its judging is exactly frame-stepped.
         var frames = new List<ReplayFrame>();
         int j = 0;
-        foreach (double t in times)
+        for (double t = Math.Round(src[0].Time); t <= Math.Round(src[^1].Time); t += 5)
         {
             while (j + 1 < src.Count && src[j + 1].Time <= t) j++;
-            var basePos = new Vector2(src[j].X, src[j].Y) + Wobble(t);
+            var a = src[j]; var b = j + 1 < src.Count ? src[j + 1] : a;
+            float k = b.Time > a.Time ? (float)((t - a.Time) / (b.Time - a.Time)) : 0;
+            var basePos = Vector2.Lerp(new Vector2(a.X, a.Y), new Vector2(b.X, b.Y), k) + Wobble(t);
             frames.Add(new ReplayFrame(t, MathF.Round(basePos.X * 64) / 64, MathF.Round(basePos.Y * 64) / 64, KeysAt(t)));
         }
         var info = new ReplayInfo { BeatmapMd5 = Replays.Md5Of(file), Player = Path.GetFileNameWithoutExtension(outPath), Mods = play, Date = DateTime.Now, FromStable = true, Path = outPath };
         Replays.SaveOsr(outPath, info, frames);
 
+        Player.FrameStepped = true;
+        Console.Error.WriteLine("--- judging the .osr"); // separates the bot run's VERIFY_LOG lines from the judgement's
         var judge = new Player(Beatmap.Load(file, mods: play), back, play, Replays.ReadOsrFrames(outPath), info);
-        for (int step = 0; step < 50_000_000 && !judge.Result.Done; step++) judge.Update(1000 / 60.0);
+        bool scoreLog = Environment.GetEnvironmentVariable("FUZZ_SCORELOG") == "1"; // "score <ms> <total>" at every change
+        long lastScore = -1;
+        for (int step = 0; step < 50_000_000 && !judge.Result.Done; step++)
+        {
+            judge.Update(scoreLog ? 1 : 1000 / 60.0);
+            if (scoreLog && judge.Score != lastScore) Console.Error.WriteLine($"score {judge.Time:0} {lastScore = judge.Score}");
+        }
         var x = judge.Result;
         Console.WriteLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0} seed {1}: timing sd {2:0}ms wobble {3:0.0}px -> ours {4}/{5}/{6}/{7} {8}x score {9}",
             Path.GetFileName(outPath), seed, timing, wobble, x.N300, x.N100, x.N50, x.NMiss, x.MaxCombo, judge.Score));

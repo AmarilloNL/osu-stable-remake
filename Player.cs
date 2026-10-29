@@ -10,7 +10,7 @@ sealed class ObjState
     public bool Done;
     public int Result = -1;
     public double JudgeTime;
-    public bool HeadDone, HeadHit;
+    public bool HeadDone, HeadHit, HeadMissPending;
     public double HeadTime;
     public int NextCheckpoint, CheckpointsHit;
     public bool Tracking;
@@ -63,6 +63,7 @@ sealed partial class Player : Screen
 
     long score;
     internal long Score => score;
+    internal double Time => time;
     int combo, maxCombo, n300, n100, n50, nMiss, nGeki, nKatu;
     internal readonly List<Vector2> hpGraph = []; // (time, hp 0..1) for the results screen
     readonly double diffMul;
@@ -187,6 +188,8 @@ sealed partial class Player : Screen
 
     // Headless verification (--verify-osr): time advances only by the dt passed to Update, no audio.
     public static bool VirtualClock;
+    public static bool FrameStepped; // test-only, see the replay stepping loop
+    double lastStep;
     static readonly bool VerifyLog = Environment.GetEnvironmentVariable("VERIFY_LOG") == "1"; // per-judgement log for --verify-osr
     double virtualElapsed;
     public (int N300, int N100, int N50, int NMiss, int MaxCombo, bool Done, double Mean) Result =>
@@ -607,8 +610,12 @@ sealed partial class Player : Screen
             double target = time;
             for (double t = Math.Floor(simTime) + 1; t <= Math.Floor(target) && !finished; t++)
             {
+                // Test-only: stable's replay watcher runs game logic only when it takes the next replay frame (at
+                // that frame's time), so --fuzz-osr can compare against it exactly. After the last frame it updates normally.
+                if (FrameStepped && playback != null && pbIndex < playback.Length && playback[pbIndex].Time > t) { simTime = t; continue; }
                 time = t;
-                Step(1);
+                Step(FrameStepped ? t - lastStep : 1);
+                lastStep = t;
                 while (sameTimePending && !finished) { sameTimePending = false; Step(0); }
                 simTime = t;
             }
@@ -644,10 +651,9 @@ sealed partial class Player : Screen
         if (playback == null) AdvanceSpinners(time); // live/auto: up to now on the previous frame's input
         cursor = auto || autopilot ? AutoCursor() : playback != null ? pbCursor : (Input.GetMousePosition() - origin) / scale;
 
-        // Replay presses happened at earlier (recorded) times within this frame: apply them before expiring
-        // anything at the current time, or a press that hit live would find its object already missed.
+        // Input first, then misses, like stable's update: a press in the same update as an object's miss time still
+        // finds it unjudged (a press 1ms after the earlier circle's window closes is notelocked, not a hit on the next).
         if (playback != null) PlaybackInput();
-        MissExpired();
 
         bool held;
         if (auto)
@@ -773,7 +779,6 @@ sealed partial class Player : Screen
             bool split = pbIndex < playback.Length && playback[pbIndex].Time == f.Time;
             if (newly == 0 || relax) { if (split) { sameTimePending = true; break; } continue; }
             time = f.Time;
-            MissExpired();
             for (int b = 0; b < 4; b++)
                 if ((newly >> b & 1) != 0) { pressButton = (b & 1) == 0 ? 1 : 2; HandlePress(); }
             time = now;
@@ -856,34 +861,30 @@ sealed partial class Player : Screen
         offsetShownUntil = Game.NowMs + 1500;
     }
 
-    void MissExpired()
+    void MissExpired(int i)
     {
-        for (int i = firstActive; i < objs.Count && objs[i].Time - map.Preempt <= time; i++)
+        var o = objs[i];
+        var s = st[i];
+        if (time <= o.Time + map.Hit50) return;
+        if (o.Type == ObjType.Circle && !s.Done) Final(i, 0, PosOf(o));
+        else if (o.Type == ObjType.Slider && !s.HeadDone)
         {
-            var o = objs[i];
-            var s = st[i];
-            if (time <= o.Time + map.Hit50) continue;
-            if (o.Type == ObjType.Circle && !s.Done) Final(i, 0, PosOf(o));
-            else if (o.Type == ObjType.Slider && !s.HeadDone)
-            {
-                s.HeadDone = true;
-                if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {o.Time} expired unclicked (cursor {Vector2.Distance(cursor, PosOf(o)) / map.Radius:0.00}r)");
-                BreakCombo();
-                health.Apply(HpEvent.SliderBreak);
-            }
+            s.HeadDone = true;
+            if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {o.Time} expired unclicked (cursor {Vector2.Distance(cursor, PosOf(o)) / map.Radius:0.00}r)");
+            BreakCombo();
+            health.Apply(HpEvent.SliderBreak);
         }
     }
 
-    // A slider shorter than its head's 50 window reaches its end before the head expires: an unhit head is a
-    // missed head (combo break) all the same.
+    // A slider shorter than its head's 50 window reaches its end before the head expires. Like stable, it's judged
+    // then (the head counting as missed) and can't be clicked any more, but the missed head only breaks combo once
+    // its window closes: the slider's own judgement still gets the combo bonus.
     void MissUnclickedHead(int i)
     {
         var s = st[i];
         if (s.HeadDone) return;
         s.HeadDone = true;
-        if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {objs[i].Time} unclicked when the slider ended");
-        BreakCombo();
-        health.Apply(HpEvent.SliderBreak);
+        s.HeadMissPending = true;
     }
 
     // Notelock target: the earliest circle/slider head that hasn't been judged yet.
@@ -993,9 +994,22 @@ sealed partial class Player : Screen
         {
             var o = objs[i];
             var s = st[i];
-            if (s.Done) continue;
+            if (s.Done)
+            {
+                if (s.HeadMissPending && time > o.Time + map.Hit50)
+                {
+                    s.HeadMissPending = false;
+                    if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {o.Time} (slider already judged) expired unclicked");
+                    BreakCombo();
+                    health.Apply(HpEvent.SliderBreak);
+                }
+                continue;
+            }
+            // stable, per object in order: its update (slider ticks, end), then its miss check (an expired circle or
+            // slider head). A slider end judged in the update its head expires still counts, then the head breaks combo.
             if (o.Type == ObjType.Slider) UpdateSlider(i, held);
             else if (o.Type == ObjType.Spinner) UpdateSpinner(i, dtMs);
+            MissExpired(i);
         }
     }
 
@@ -1037,10 +1051,16 @@ sealed partial class Player : Screen
             if (s.Tracking && s.TrackingSince <= cp.Time)
             {
                 s.CheckpointsHit++;
-                score += cp.Kind == CheckpointKind.Tick ? 10 : 30;
+                // stable scores a checkpoint by position, not by what it is: with i = how many checkpoints (in list
+                // order) have passed, the last is an end, every (count / slides)th a repeat, the rest ticks. Spans
+                // with different tick counts make it call some ticks repeats and some repeats ticks (10 vs 30 points).
+                int passed = 0, n = o.Checkpoints.Count;
+                while (passed < n && o.Checkpoints[passed].Time <= time) passed++;
+                bool tickScore = passed != n && passed % Math.Max(1, n / o.Slides) != 0;
+                score += tickScore ? 10 : 30;
                 combo++;
                 maxCombo = Math.Max(maxCombo, combo);
-                health.Apply(cp.Kind == CheckpointKind.Tick ? HpEvent.SliderTick : HpEvent.SliderPoint);
+                health.Apply(tickScore ? HpEvent.SliderTick : HpEvent.SliderPoint);
                 if (cp.Kind == CheckpointKind.Tick)
                 {
                     var tp = map.PointAt(cp.Time);
@@ -1182,6 +1202,7 @@ sealed partial class Player : Screen
 
     void BreakCombo()
     {
+        if (VerifyLog) Console.Error.WriteLine($"  combo break at {time:0} after {combo}");
         if (combo >= 20) skin.Sound("combobreak")?.Play(BeatmapSamples.EffectVolume);
         combo = 0;
         if (mods.HasFlag(Mods.SuddenDeath)) Fail();
