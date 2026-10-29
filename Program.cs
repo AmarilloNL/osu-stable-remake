@@ -126,6 +126,7 @@ static class Game
             }
             return;
         }
+        if (args.Length >= 2 && args[0] == "--dump-objects") { DumpObjects(args[1], args.Length > 2 ? args[2] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-osr") { Console.WriteLine(string.Join("\n", Replays.OsrText(args[1]).Split(',').Take(args.Length > 2 ? int.Parse(args[2]) : 12))); return; }
         if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() ?? ""); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
@@ -249,6 +250,30 @@ static class Game
     }
 
     // Self-check: parse a sample of the real Songs folder and assert the results are sane.
+    // --dump-objects <file.osu> [mods]: every hit object as we compute it, one line each (times, stack, stacked and
+    // base position, and for sliders the path end, velocity in px/s, segment count, last segment and checkpoint times),
+    // for comparing against the same values taken from stable.
+    static void DumpObjects(string file, string mods)
+    {
+        Config.Load();
+        var parsed = ModInfo.Parse(mods);
+        var map = Beatmap.Load(file, mods: parsed);
+        var health = new Health(map, parsed.HasFlag(Mods.HalfTime));
+        Console.WriteLine(string.Format(System.Globalization.CultureInfo.InvariantCulture, "hp rate {0:R} mul {1:R} geki {2:R}", health.DropRate, health.mul, health.mulGeki));
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        string V(Vector2 v) => string.Format(inv, "{0:R},{1:R}", v.X, v.Y);
+        for (int i = 0; i < map.Objects.Count; i++)
+        {
+            var o = map.Objects[i];
+            string kind = o.Type switch { ObjType.Slider => "slider", ObjType.Spinner => "spinner", _ => "circle" };
+            var line = string.Format(inv, "{0} {1} {2} {3} stack {4} pos {5} base {6}", i, kind, (int)o.Time, (int)o.EndTime, o.Stack, V(o.Pos + map.StackOffset(o)), V(o.Pos));
+            if (o.Type == ObjType.Slider && o.Path.Length > 1)
+                line += string.Format(inv, " end {0} v {1:R} segs {2} lastseg {3}->{4} cps {5}", V(o.EndPos + map.StackOffset(o)), o.StableVelocity, o.Path.Length - 1,
+                    V(o.Path[^2] + map.StackOffset(o)), V(o.Path[^1] + map.StackOffset(o)), string.Join(",", o.Checkpoints.Select(c => (int)c.Time)));
+            Console.WriteLine(line);
+        }
+    }
+
     static void Check()
     {
         var files = Directory.EnumerateDirectories(Path.Combine(Config.OsuDir, "Songs"))

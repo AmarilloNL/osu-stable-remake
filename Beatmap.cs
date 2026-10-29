@@ -394,8 +394,10 @@ sealed class Beatmap
         // backwards). A path a hair short of its declared length ends a millisecond early, like stable's does.
         var u = UninheritedAt(o.Time);
         var p = PointAt(o.Time);
-        float svFactor = !p.Uninherited && p.Time >= u.Time && p.BeatLength < 0 ? Math.Clamp((float)-p.BeatLength, 10f, 1000f) / 100f : 1f;
-        double beatSv = u.BeatLength * (double)svFactor, scoringDist = 100.0 * SliderMultiplier / SliderTickRate;
+        // The SV factor is a float clamp, but stable's 32-bit runtime divides by 100 at higher precision and never rounds
+        // back to float (matched bit for bit against stable's in-memory velocity).
+        double svFactor = !p.Uninherited && p.Time >= u.Time && p.BeatLength < 0 ? (double)Math.Clamp((float)-p.BeatLength, 10f, 1000f) / 100.0 : 1;
+        double beatSv = u.BeatLength * svFactor, scoringDist = 100.0 * SliderMultiplier / SliderTickRate;
         o.StableVelocity = beatSv > 0 ? scoringDist * SliderTickRate * (1000.0 / beatSv) : scoringDist * SliderTickRate;
         double clock = o.Time;
         for (int span = 0; span < o.Slides; span++)

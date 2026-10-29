@@ -11,7 +11,7 @@ sealed class Health
     public double Value = Max;
     public readonly double DropRate;
     readonly double hp, calibrationHp;
-    double mul = 1, mulGeki = 1;
+    internal double mul = 1, mulGeki = 1; // internal: --dump-objects prints them
 
     public Health(Beatmap map, bool halfTime = false)
     {
