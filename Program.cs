@@ -175,7 +175,7 @@ static class Game
         Light = LoadUiFont("Aller_Lt", @"C:\Windows\Fonts\segoeuil.ttf", codepoints);
         Mono = LoadUiFont("", @"C:\Windows\Fonts\consola.ttf", codepoints); // the FPS counter's font (Windows')
         // search, gear, desktop, circle, volume, brush, gamepad, pencil, globe, wrench, chevron-circle-left, chevron-down
-        Icons = LoadUiFont("FontAwesome", @"C:\Windows\Fonts\segmdl2.ttf", [0xf002, 0xf013, 0xf108, 0xf10c, 0xf028, 0xf1fc, 0xf11b, 0xf040, 0xf0ac, 0xf0ad, 0xf137, 0xf078, 0xf048, 0xf04b, 0xf04c, 0xf04d, 0xf051, 0xf129, 0xf0c9]);
+        Icons = LoadUiFont("FontAwesome", @"C:\Windows\Fonts\segmdl2.ttf", [0xf002, 0xf013, 0xf108, 0xf10c, 0xf028, 0xf1fc, 0xf11b, 0xf040, 0xf0ac, 0xf0ad, 0xf137, 0xf078, 0xf048, 0xf04b, 0xf04c, 0xf04d, 0xf051, 0xf129, 0xf0c9, 0xf005]);
 
         Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
         var testMods = ModInfo.Parse(Arg("--mods") ?? "") | (args.Contains("--auto") ? Mods.Autoplay : Mods.None);

@@ -42,13 +42,13 @@ sealed class BackButton
         var leftColour = ColorLerp(hover ? Pink : DarkPink, hover ? DarkPink : Pink, Math.Clamp(k, 0, 1));
         DrawTexturePro(layer.Tex, new Rectangle(0, 0, layer.Tex.Width, layer.Tex.Height), new Rectangle(right * u - lw, h - lh, lw, lh), Vector2.Zero, 0, Pink);
         DrawTexturePro(layer.Tex, new Rectangle(0, 0, layer.Tex.Width, layer.Tex.Height), new Rectangle(left * u - lw, h - lh, lw, lh), Vector2.Zero, 0, leftColour);
-        float textX = (right - left) / 2.4f + left, size = 15 * u, drop = Math.Max(1, u / 3), tx = textX * u - Game.TextWidth("back", size) / 2;
+        float textX = (right - left) / 2.4f + left, size = 16 * u, drop = Math.Max(1, u / 3), tx = textX * u - Game.TextWidth("back", size) / 2;
         Game.Text("back", tx + drop, h - 21 * u - size / 2 + drop, size, new Color(0, 0, 0, 128)); // text and icon cast a drop shadow
         Game.Text("back", tx, h - 21 * u - size / 2, size, Color.White);
         float scale = 1;
         if (beat is { } bt && bt.Length > 0)
             scale = (hover ? 1.5f : 0.9f) + (1 - (hover ? 1.5f : 0.9f)) * (float)Easing.Apply(25, (bt.Since + bt.Length / 4) / (3 * bt.Length));
-        Options.DrawIcon(0xf137, icon * u + drop, h - 21 * u + drop, 18 * u * scale, new Color(0, 0, 0, 128));
-        Options.DrawIcon(0xf137, icon * u, h - 21 * u, 18 * u * scale, Color.White);
+        Options.DrawIcon(0xf137, icon * u + drop, h - 21 * u + drop, 15 * u * scale, new Color(0, 0, 0, 128));
+        Options.DrawIcon(0xf137, icon * u, h - 21 * u, 15 * u * scale, Color.White);
     }
 }

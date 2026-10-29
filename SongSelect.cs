@@ -701,7 +701,8 @@ sealed class SongSelect : Screen
         if (view.Count == 0) return 0;
         int n = view[setIndex].Diffs.Count;
         float start = (Grouped ? groupIndex + 1 : 0) + setIndex;
-        float extra = Math.Clamp(row - start + 1, 0, n + 1);
+        int lead = start > 0 ? 1 : 0; // the gap before the first difficulty needs a panel above it
+        float extra = Math.Clamp(row - start + lead, 0, n + lead);
         if (Grouped) extra += Math.Clamp(row - (groupIndex + EntryRows), 0, 1);
         return 10 * U * extra;
     }
@@ -844,7 +845,7 @@ sealed class SongSelect : Screen
         float tx = x + (grade != null ? 100 : 83) * u, lx = tx + 1.67f * u, dy = -u;
         var faded = d >= 0 && !selected ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
         Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 17.2f * u, faded); // stable says 16; renders this wide (measured)
-        Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.3f * u, faded);
+        Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.6f * u, faded);
         if (d < 0) return;
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
         if (view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
@@ -908,7 +909,9 @@ sealed class SongSelect : Screen
     // the top of the song list.
     static Rectangle SortBox(int w) { float u = GetScreenHeight() / 480f; return new Rectangle(w - 129 * u, 18 * u, 119 * u, 14 * u); }
     static Rectangle GroupBox(int w) => SortBox(w) with { X = SortBox(w).X - 168 * GetScreenHeight() / 480f };
-    static Rectangle TabRect(int w, int t) { float u = GetScreenHeight() / 480f, tabW = 78.5f * u; return new Rectangle(w - GroupModes.Length * tabW + t * tabW, 36 * u, tabW - u, 11 * u); }
+    // The group tabs: the selection-tab sprite at 0.6 units per texel (86 x 14), 73.9 apart so each overlaps the one
+    // before, the first 392 units in from the right (measured).
+    static Rectangle TabRect(int w, int t) { float u = GetScreenHeight() / 480f; return new Rectangle(w - (392 - t * 73.9f) * u, 34 * u, 143 * 0.6f * u, 24 * 0.6f * u); }
 
     void DrawTopBar(int w, float s)
     {
@@ -938,23 +941,24 @@ sealed class SongSelect : Screen
                 header = [$"{b.Artist} - {b.Title} [{b.Version}]", $"Mapped by {b.Creator}",
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
-                    $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? stars.ToString("0.##") : "?")}★"];
+                    $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? (Math.Floor(stars * 100) / 100).ToString("0.##") : "?")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after
             }
-            Game.Text(header[0], 21 * u, -3 * u, 18 * u, Color.White);
-            Game.Text(header[1], 23 * u, 12 * u, 12 * u, Color.White);
-            Game.TextBold(header[2], 2 * u, 24 * u, 12 * u, Color.White);
-            Game.Text(header[3], 2 * u, 36 * u, 12 * u, Color.White);
-            Game.Text(header[4], 2 * u, 49 * u, 8 * u, Color.White);
+            Game.Text(header[0], 23.4f * u, -3 * u, 19.1f * u, Color.White); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
+            Game.Text(header[1], 24.6f * u, 12 * u, 12.6f * u, Color.White);
+            Game.TextBold(header[2], 2.5f * u, 24 * u, 12.5f * u, Color.White);
+            Game.Text(header[3], 2.5f * u, 36.5f * u, 12.7f * u, Color.White);
+            Game.Text(header[4], 2 * u, 48 * u, 8.2f * u, Color.White);
+            Options.DrawIcon(0xf005, 2 * u + Game.TextWidth(header[4], 8.2f * u) + 4.5f * u, 52.5f * u, 8 * u, Color.White); // Aller has no star: stable's comes from a fallback font
         }
 
         // Group / Sort: label, then a boxed value. Only sorting is functional; grouping shows stable's default.
         void Box(Rectangle r, string label, Color labelColour, string value)
         {
-            float size = 22 * u;
-            Game.Text(label, r.X - 3 * u - Game.TextWidth(label, size), r.Y + r.Height - size * 0.8f, size, labelColour);
+            float size = 23 * u; // measured sizes throughout: stable's text renders ~3-7% wider than its nominal size here
+            Game.TextLight(label, r.X - 3 * u - Game.LightWidth(label, size), r.Y + r.Height - size * 0.8f + 2 * u, size, labelColour); // Aller Light
             DrawRectangleRec(r, Color.Black);
             DropdownBorder(r, new Color((byte)(labelColour.R * 0.83f), (byte)(labelColour.G * 0.83f), (byte)(labelColour.B * 0.83f), (byte)255)); // label colour at 83% (measured)
-            Game.Text(value, r.X + 2 * u, r.Y + r.Height / 2 - 7.5f * u, 15 * u, Color.White);
+            Game.Text(value, r.X + 2 * u, r.Y + r.Height / 2 - 6 * u, 14 * u, Color.White);
             Options.DrawIcon(0xf078, r.X + r.Width - 9.8f * u, r.Y + r.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
         }
         var sortBox = SortBox(w);
@@ -971,7 +975,7 @@ sealed class SongSelect : Screen
             if (Game.Skin.Tex("selection-tab") is { } tab)
                 DrawTexturePro(tab.Tex, new Rectangle(0, 0, tab.Tex.Width, tab.Tex.Height), tr, Vector2.Zero, 0, active ? Color.White : new Color(235, 30, 70, 255));
             else DrawRectangleRec(tr, active ? Color.White : new Color(235, 30, 70, 255));
-            float size = 9.5f * u;
+            float size = 9.9f * u;
             Game.TextBold(tabs[t], tr.X + tr.Width / 2 - Game.BoldWidth(tabs[t], size) / 2, tr.Y + tr.Height / 2 - size / 2, size, active ? Color.Black : Color.White);
         }
 
@@ -979,10 +983,10 @@ sealed class SongSelect : Screen
         float sx = w - 218 * u;
         string search = filter.Length == 0 ? "Type to search!" : filter;
         if (filter.Length == 0) DrawRectangleRec(new Rectangle(w - 302 * u, 50.7f * u, 302 * u, 11.3f * u), new Color(235, 73, 153, 195)); // the empty search box: a pink bar (measured)
-        Game.TextBold("Search:", sx, 54 * u, 13 * u, new Color(173, 255, 47, 255)); // GreenYellow
-        Game.TextBold(search, sx + Game.BoldWidth("Search: ", 13 * u), 54 * u, 13 * u, Color.White);
+        Game.TextBold("Search:", sx, 54 * u, 13.6f * u, new Color(173, 255, 47, 255)); // GreenYellow
+        Game.TextBold(search, sx + Game.BoldWidth("Search: ", 13.6f * u), 54 * u, 13.6f * u, Color.White);
         if (message.Length > 0 || filter.Length > 0)
-            Game.TextBold(message.Length > 0 ? message : matchesText.Of(matchCount), sx, 67 * u, 11 * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
+            Game.TextBold(message.Length > 0 ? message : matchesText.Of(matchCount), sx, 66.5f * u, 11.35f * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
     }
 
     // Bottom bar buttons: left edges at 140, 197.6, 245.6 and 293.6 units on widescreen, here in
@@ -1033,8 +1037,8 @@ sealed class SongSelect : Screen
             }
 
         // The user panel (offline, so always the guest): name, "Click to sign in!" and an empty level bar (measured).
-        Game.Text("Guest", 443 * u, 431.5f * u, 13 * u, Color.White);
-        Game.Text("Click to sign in!", 442.7f * u, 444 * u, 9.5f * u, Color.White);
+        Game.Text("Guest", 443 * u, 430 * u, 15.8f * u, Color.White);
+        Game.Text("Click to sign in!", 442.7f * u, 445 * u, 10.8f * u, Color.White);
         var bar = new Rectangle(468.7f * u, 472.7f * u, 123.3f * u, 6.7f * u);
         DrawRectangleRounded(bar, 1, 8, new Color(38, 38, 38, 255));
         DrawRectangleRoundedLinesEx(bar, 1, 8, Math.Max(1, u), new Color(90, 90, 90, 255));
