@@ -96,7 +96,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Hit windows, notelock, stacking, slider curves and timing ported from stable's behaviour
 - [x] Slider tracking with stable's button rules
 - [ ] The last ~10% of replay mismatches (mostly cursor right on the slider follow-radius edge)
-- [x] HP drain calibration identical to stable's, with and without HardRock or Easy (checked object by object against a running stable on 39 maps)
+- [x] HP drain calibration identical to stable's, with and without HardRock or Easy (checked object by object against a running stable: 39 maps without mods, 32 with HR or EZ)
 - [x] Slider timing, ticks, repeats and stacking match stable on 39 maps (about 50 of 18,600 objects end 1 ms off where a curve point differs by a float step)
 - [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
