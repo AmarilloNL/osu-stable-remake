@@ -86,7 +86,7 @@ sealed class HitObject
     }
 
     // stable: (double)(1000f * segment length) / velocity, the segment length in float.
-    public double SegmentMs(int k) => (double)(1000f * Vector2.Distance(Path[k - 1], Path[k])) / StableVelocity;
+    public double SegmentMs(int k) => (double)(1000f * SliderPath.Len(Path[k - 1], Path[k])) / StableVelocity;
 
     (int, int, Vector2, Vector2)[] BuildBallMoves()
     {
@@ -388,7 +388,7 @@ sealed class Beatmap
         double velocity = 100 * SliderMultiplier * sv / beat; // osu px per ms
         o.Cumulative = new float[o.Path.Length];
         for (int i = 1; i < o.Path.Length; i++)
-            o.Cumulative[i] = o.Cumulative[i - 1] + Vector2.Distance(o.Path[i - 1], o.Path[i]);
+            o.Cumulative[i] = o.Cumulative[i - 1] + SliderPath.Len(o.Path[i - 1], o.Path[i]);
         o.SpanDuration = Math.Max(1, o.Length / velocity);
         // stable (slider setup): velocity = scoring distance * tick rate * 1000 / (beat * float SV factor),
         // and the end is the truncated sum of every segment's duration over every span (reverse spans walked
@@ -415,7 +415,7 @@ sealed class Beatmap
         double tickFactor = tp.BeatLength < 0 ? (double)Math.Clamp((float)-tp.BeatLength, 10f, 1000f) / 100.0 : 1; // as velocity's
         double tickDist = Math.Min(FormatVersion < 8 ? scoringDist : scoringDist / tickFactor, o.Length);
         double pathLen = 0;
-        for (int j = 1; j < o.Path.Length; j++) pathLen += Vector2.Distance(o.Path[j - 1], o.Path[j]);
+        for (int j = 1; j < o.Path.Length; j++) pathLen += SliderPath.Len(o.Path[j - 1], o.Path[j]);
         double tenMs = 0.01 * o.StableVelocity, travelled = 0, sinceTick = 0;
         // TODO: trick sliders with >100k checkpoints just lose their ticks
         bool ticksOn = tickDist > 0 && pathLen / tickDist * o.Slides < 100_000;
@@ -427,7 +427,7 @@ sealed class Beatmap
             for (int j = 1; j < o.Path.Length; j++)
             {
                 int k = span % 2 == 1 ? o.Path.Length - j : j;
-                sinceTick += Vector2.Distance(o.Path[k - 1], o.Path[k]);
+                sinceTick += SliderPath.Len(o.Path[k - 1], o.Path[k]);
                 while (sinceTick >= tickDist && !stop)
                 {
                     travelled += tickDist;
@@ -504,6 +504,9 @@ sealed class Beatmap
 
 static class SliderPath
 {
+    // XNA's Vector2.Distance as stable's 32-bit runtime runs it: the sum of squares isn't rounded to float before the root.
+    internal static float Len(Vector2 a, Vector2 b) { double dx = (double)a.X - b.X, dy = (double)a.Y - b.Y; return (float)Math.Sqrt(dx * dx + dy * dy); }
+
     // stable's curve setup (slider class): the curve type and the map's format version pick the method.
     public static Vector2[] Build(char type, List<Vector2> pts, ref double length, int version)
     {
@@ -529,7 +532,7 @@ static class SliderPath
         if (dedup.Count == 1) { length = 0; return [dedup[0]]; }
 
         double total = 0;
-        for (int i = 1; i < dedup.Count; i++) total += Vector2.Distance(dedup[i - 1], dedup[i]);
+        for (int i = 1; i < dedup.Count; i++) total += Len(dedup[i - 1], dedup[i]);
         if (length <= 0) length = total;
 
         // stable (slider curve setup): drop end segments covered by the excess, then cut (or extend) the
@@ -540,7 +543,7 @@ static class SliderPath
         while (outPts.Count > 1)
         {
             Vector2 a = outPts[^2], b = outPts[^1];
-            float len = Vector2.Distance(a, b);
+            float len = Len(a, b);
             if (len > excess + 0.0001)
             {
                 outPts[^1] = a + XnaNormalize(b - a) * (len - (float)excess);
