@@ -989,6 +989,18 @@ sealed class SongSelect : Screen
             Game.TextBold(message.Length > 0 ? message : matchesText.Of(matchCount), sx, 66.5f * u, 11.35f * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
     }
 
+    // The user panel (offline, so always the guest): name, "Click to sign in!" and an empty level bar (measured).
+    // x, y: the name's text origin in units (song select 443, 430; main menu 53.1, 0.6).
+    internal static void DrawUserPanel(float x, float y, float alpha)
+    {
+        float u = U;
+        Game.Text("Guest", x * u, y * u, 15.8f * u, ColorAlpha(Color.White, alpha));
+        Game.Text("Click to sign in!", (x - 0.3f) * u, (y + 15) * u, 10.8f * u, ColorAlpha(Color.White, alpha));
+        var bar = new Rectangle((x + 25.7f) * u, (y + 42.7f) * u, 123.3f * u, 6.7f * u);
+        DrawRectangleRounded(bar, 1, 8, ColorAlpha(new Color(38, 38, 38, 255), alpha));
+        DrawRectangleRoundedLinesEx(bar, 1, 8, Math.Max(1, u), ColorAlpha(new Color(90, 90, 90, 255), alpha));
+    }
+
     // Bottom bar buttons: left edges at 140, 197.6, 245.6 and 293.6 units on widescreen, here in
     // 768-scale texels (units / 0.625). Hover swaps to the -over sprite like stable.
     static readonly (string Name, float X)[] BottomButtons = [("selection-mode", 224), ("selection-mods", 316.16f), ("selection-random", 392.96f), ("selection-options", 469.76f)];
@@ -1036,12 +1048,7 @@ sealed class SongSelect : Screen
                 mx += 30 * s;
             }
 
-        // The user panel (offline, so always the guest): name, "Click to sign in!" and an empty level bar (measured).
-        Game.Text("Guest", 443 * u, 430 * u, 15.8f * u, Color.White);
-        Game.Text("Click to sign in!", 442.7f * u, 445 * u, 10.8f * u, Color.White);
-        var bar = new Rectangle(468.7f * u, 472.7f * u, 123.3f * u, 6.7f * u);
-        DrawRectangleRounded(bar, 1, 8, new Color(38, 38, 38, 255));
-        DrawRectangleRoundedLinesEx(bar, 1, 8, Math.Max(1, u), new Color(90, 90, 90, 255));
+        DrawUserPanel(443, 430, 1);
 
         // The osu! cookie: 40 units in from the right at y 450, scale 0.45 -> 0.4 over each beat, with a
         // copy swelling 0.45 -> 0.49 and fading 0.7 -> 0 (a 1s cycle without timing).
@@ -1262,7 +1269,8 @@ sealed class SongSelect : Screen
             trail.RemoveRange(kept, trail.Count - kept);
             foreach (var (p, at) in trail) tr.Draw(p, s, ColorAlpha(Color.White, 1 - (float)((now - at) / 150)));
         }
-        if (skin.Tex("cursor") is { } c) c.Draw(Anchor(c), s, Color.White);
+        if (skin.Tex("cursor") is { } c) c.Draw(Anchor(c), s, Color.White, skin.CursorRotate ? (float)(now % 10000 / 10000 * 360) : 0); // a turn per 10s
         else DrawCircleV(pos, 12 * s, new Color(255, 200, 80, 255));
+        if (middle && skin.Tex("cursormiddle") is { } m) m.Draw(Anchor(m), s, Color.White); // the default cursor's blue centre
     }
 }

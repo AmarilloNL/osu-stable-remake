@@ -40,7 +40,7 @@ sealed class Skin
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
     public Color SongSelectActiveText = Color.Black, SongSelectInactiveText = Color.White;
     public Color MenuGlow = new(0, 78, 155, 255); // main menu visualizer
-    public bool CursorCentre = true;
+    public bool CursorCentre = true, CursorRotate = true;
     public Color InputOverlayText = Color.Black;
     public Color SpinnerBackground = new(100, 100, 100, 255); // stable tints spinner-background with this
     public bool SpinnerNoBlink;
@@ -120,6 +120,7 @@ sealed class Skin
                 case "SpinnerBackground": SpinnerBackground = ParseColour(v) ?? SpinnerBackground; break;
                 case "SpinnerNoBlink": SpinnerNoBlink = v == "1"; break;
                 case "CursorCentre": CursorCentre = v != "0"; break;
+                case "CursorRotate": CursorRotate = v != "0"; break;
                 case "InputOverlayText": InputOverlayText = ParseColour(v) ?? InputOverlayText; break;
                 case "SongSelectInactiveText": SongSelectInactiveText = ParseColour(v) ?? SongSelectInactiveText; break;
                 case "AnimationFramerate": float.TryParse(v, CultureInfo.InvariantCulture, out AnimationFramerate); break;

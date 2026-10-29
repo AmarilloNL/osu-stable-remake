@@ -38,7 +38,7 @@ sealed class MainMenu : Screen
     bool open;
     double openChangedAt = double.MinValue, lastActivity, lastUpdate, quitAt = double.NaN;
     float cookieX; // -120..0 units, animated
-    float clickShrink; // stable dents the cookie by 0.08 per click; springs back
+    float clickShrink; // stable's hover/click scale offset: +0.1 hovered, -0.08 per click
     Vector2 lastMouse;
 
 
@@ -237,6 +237,13 @@ sealed class MainMenu : Screen
         var files = Config.Get("SeasonalBackgrounds", "Sometimes") != "Never" && Directory.Exists(seasonal)
             ? Directory.GetFiles(seasonal, "*.jpg") : [];
         if (files.Length > 0) background = LoadTexture(files[Random.Shared.Next(files.Length)]);
+        // No skin background: one of stable's built-in ones (JPEGs in osu!ui.dll), picked at random.
+        else if (!skin.Own("menu-background") && DefaultSkin.Get($"menu-background-{Random.Shared.Next(1, 8)}@2x") is { Length: > 2 } jpg && jpg[0] == 0xFF
+            && LoadImageFromMemory(".jpg", jpg) is { Width: > 0 } img)
+        {
+            background = LoadTextureFromImage(img);
+            UnloadImage(img);
+        }
         if (background.Id != 0) SetTextureFilter(background, TextureFilter.Bilinear);
     }
 
@@ -321,7 +328,9 @@ sealed class MainMenu : Screen
         float target = open ? -120 : 0;
         float k = (float)Math.Min(1, dtMs / (open ? 100 : 500));
         cookieX += (target - cookieX) * k;
-        clickShrink += (0 - clickShrink) * (float)Math.Min(1, dtMs / 150);
+        // stable: hovering grows the cookie to +0.1 and a click dents it by 0.08, both at 0.012 per 60Hz frame.
+        bool overCookie = Vector2.Distance(mouse, CookiePos) <= CookieRadius * CookieScale;
+        clickShrink = overCookie || clickShrink < 0 ? Math.Min(clickShrink + 0.012f * (float)ticks, 0.1f) : Math.Max(clickShrink - 0.012f * (float)ticks, 0);
 
         int now = -1;
         for (int i = 0; i < Buttons.Length; i++)
@@ -494,6 +503,7 @@ sealed class MainMenu : Screen
             for (int i = 0; i < info.Length; i++) Game.Text(info[i], 210 * u, (i * 13.7f - 1) * u, 14 * u, ColorAlpha(Color.White, infoAlpha * layer));
         DrawTip(now);
         DrawMusicControls();
+        SongSelect.DrawUserPanel(53.1f, 0.6f, layer);
         if (now - toast.At < 3000)
         {
             float a = (float)Math.Min(1, (3000 - (now - toast.At)) / 500);
