@@ -1131,7 +1131,9 @@ sealed partial class Player : Screen
         if (mods.HasFlag(Mods.SpunOut) || autopilot) s.Velocity = 0.03;
         else
         {
-            if (auto) s.Target = 0.05; // stable's Auto spins its cursor at the speed cap; the spinner still accelerates to it
+            // stable's Auto cursor spins at the speed cap and the spinner accelerates to it, from stable's first input tick
+            // inside the spinner: its 60Hz input clock has a random phase there (0-16.7ms), so half a tick on average.
+            if (auto) s.Target = s.SimTime >= o.Time + TickMs / 2 ? 0.05 : 0;
             double a = maxAccel / rate; // acceleration is per real ms; one step is 1ms of map time
             s.Velocity += s.Target > s.Velocity ? Math.Min(s.Target - s.Velocity, a) : Math.Max(s.Target - s.Velocity, -a);
         }

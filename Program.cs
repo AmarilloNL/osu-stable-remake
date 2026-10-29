@@ -128,7 +128,7 @@ static class Game
         }
         if (args.Length >= 2 && args[0] == "--dump-objects") { DumpObjects(args[1], args.Length > 2 ? args[2] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-osr") { Console.WriteLine(string.Join("\n", Replays.OsrText(args[1]).Split(',').Take(args.Length > 2 ? int.Parse(args[2]) : 12))); return; }
-        if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() ?? ""); return; }
+        if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault(a => !a.StartsWith("--")) ?? "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
         if (args.Length > 0 && !args[0].StartsWith("--")) Config.OsuDir = args[0];
         // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch)
@@ -386,7 +386,7 @@ static class Game
 
     // Auto must never miss a 300: plays osu!standard maps (title/version containing the filter) headlessly at
     // several frame lengths and lists any run that isn't all 300s.
-    static void AutoCheck(string filter)
+    static void AutoCheck(string filter, Mods extra)
     {
         Config.Load();
         SetTraceLogLevel(TraceLogLevel.None);
@@ -406,9 +406,9 @@ static class Game
                 Player p;
                 try
                 {
-                    var map = Beatmap.Load(b.FilePath, mods: Mods.Autoplay);
+                    var map = Beatmap.Load(b.FilePath, mods: Mods.Autoplay | extra);
                     if (map.Objects.Count == 0) break; // song select won't start these either
-                    p = new Player(map, back, Mods.Autoplay);
+                    p = new Player(map, back, Mods.Autoplay | extra);
                 }
                 catch (Exception e) when (e is IOException or InvalidDataException or FormatException) { break; }
                 catch (Exception e)
@@ -425,7 +425,7 @@ static class Game
                 if (x.N100 + x.N50 + x.NMiss == 0) continue;
                 // Objects overlapping in time (2B maps) can't all be followed by one cursor - stable's Auto drops
                 // points there too - so those are tagged rather than counted.
-                var objs = Beatmap.Load(b.FilePath, mods: Mods.Autoplay).Objects;
+                var objs = Beatmap.Load(b.FilePath, mods: Mods.Autoplay | extra).Objects;
                 bool twoB = objs.Zip(objs.Skip(1)).Any(p => p.Second.Time < p.First.EndTime);
                 if (!twoB) bad++;
                 Console.WriteLine($"{b.Artist} - {b.Title} [{b.Version}] at {dt:0.##}ms frames: {x.N300}/{x.N100}/{x.N50}/{x.NMiss} {x.MaxCombo}x{(twoB ? " (2B map)" : "")}");
