@@ -212,6 +212,7 @@ sealed class SongSelect : Screen
         groupIndex = g >= 0 ? g : Math.Clamp(groupIndex, 0, Math.Max(0, groups.Count - 1));
         view.Clear();
         if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
+        matchCount = view.Sum(v => v.Diffs.Count);
         int found = keep == null ? -1 : view.FindIndex(v => v.Set == keep);
         setIndex = found >= 0 ? found : 0;
         diffIndex = Math.Clamp(diffIndex, 0, Math.Max(0, (view.Count > 0 ? view[setIndex].Diffs.Count : 1) - 1));
@@ -563,6 +564,7 @@ sealed class SongSelect : Screen
         if (changed) ApplyFilter();
 
         scrollRow += (SelectedRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
+        UpdateCarousel(dtMs, Input.GetMousePosition());
     }
 
     // Rows: one per set, except the selected set, which is replaced by one row per difficulty (like stable).
@@ -595,7 +597,8 @@ sealed class SongSelect : Screen
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods) headerFor;
     string[] header = [];
-    readonly CachedText<int> matchesText = new(v => $"{v} matches");
+    readonly CachedText<int> matchesText = new(v => v == 1 ? "1 match found!" : $"{v} matches found!");
+    int matchCount; // difficulties left after the search filter
     // Per-row text for the leaderboard and grade icons, built once per replay / grade.
     static readonly Dictionary<string, string> smallGrades = [];
     static string SmallGrade(string grade) => smallGrades.TryGetValue(grade, out var s) ? s : smallGrades[grade] = $"ranking-{grade}-small";
@@ -689,10 +692,10 @@ sealed class SongSelect : Screen
         }
     }
 
-    // The selected row sits at the vertical centre; scrollRow eases toward it. Panels are 48 units apart, and
-    // stable adds 10 more around each difficulty of the opened set: (n + 1) x 10 across the block, and 10
-    // before a group header that follows a non-header (here: the first header after the open
-    // group's entries).
+    // stable's carousel (units): rows sit at 200 + 48 per row, and stable adds 10 more around each difficulty of the
+    // opened set: (n + 1) x 10 across the block, and 10 before a group header that follows a non-header (here: the
+    // first header after the open group's entries). It scrolls so the selected row's centre sits at 220 (never
+    // above the first row); scrollRow eases toward the selection. Hovering a panel spreads the rows around it by 10.
     float Extra(float row)
     {
         if (view.Count == 0) return 0;
@@ -703,11 +706,50 @@ sealed class SongSelect : Screen
         return 10 * U * extra;
     }
 
-    float RowY(int row) => GetScreenHeight() / 2f - RowH / 2 + (row - scrollRow) * RowH + Extra(row) - Extra(scrollRow);
+    float Scroll => MathF.Max(0, scrollRow * RowH + Extra(scrollRow) - 20 * U);
+    float RowCentre(int row) => 200 * U + row * RowH + Extra(row) - Scroll + (rowEase.TryGetValue(row, out var e) ? e.Y * U : 0);
+    float RowY(int row) => RowCentre(row) - RowH / 2;
+
+    // Panel x (units, from w/u - 340): the open set's difficulties and group headers 50 left, the hovered panel 45
+    // more, plus min(200, |y/480 - 0.5| x 75) for the curve. Both x and the hover spread ease per row like stable's
+    // (x by 0.95, y by 0.875 per 60Hz frame).
+    readonly Dictionary<int, (float X, float Y)> rowEase = [];
+    int hoveredRow = -1;
+    double hoveredAt;
+
+    float TargetX(int row)
+    {
+        var (_, d, gi) = RowInfo(row);
+        return (gi >= 0 || d >= 0 ? -50 : 0) + (row == hoveredRow ? -45 : 0)
+            + MathF.Min(200, MathF.Abs(RowCentre(row) / GetScreenHeight() - 0.5f) * 75);
+    }
+
+    float PanelX(int row) => (GetScreenWidth() / U - 340 + (rowEase.TryGetValue(row, out var e) ? e.X : TargetX(row))) * U;
+
+    void UpdateCarousel(double dtMs, Vector2 mouse)
+    {
+        int h = GetScreenHeight();
+        int under = mouse.Y > TopH && mouse.Y < h - BottomH && RowAt(mouse.Y) is var r && r >= 0 && r < RowCount && mouse.X >= PanelX(r) ? r : -1;
+        if (under != hoveredRow)
+        {
+            hoveredRow = under;
+            hoveredAt = Game.NowMs;
+            if (under >= 0) Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume);
+        }
+        float fx = (float)Math.Pow(0.95, dtMs / (1000 / 60.0)), fy = (float)Math.Pow(0.875, dtMs / (1000 / 60.0));
+        int first = Math.Max(0, RowAt(0) - 1), last = Math.Min(RowCount - 1, RowAt(h) + 1);
+        foreach (int row in rowEase.Keys.Where(k => k < first || k > last).ToList()) rowEase.Remove(row);
+        for (int row = first; row <= last; row++)
+        {
+            float spread = hoveredRow < 0 || row == hoveredRow ? 0 : row > hoveredRow ? 10 : -10;
+            float tx = TargetX(row);
+            rowEase[row] = rowEase.TryGetValue(row, out var e) ? (tx - (tx - e.X) * fx, spread - (spread - e.Y) * fy) : (tx, spread);
+        }
+    }
 
     int RowAt(float y)
     {
-        int row = (int)MathF.Floor((y - (GetScreenHeight() / 2f - RowH / 2)) / RowH + scrollRow);
+        int row = (int)MathF.Floor((y - 200 * U + Scroll) / RowH);
         while (RowY(row) > y) row--;
         while (RowY(row + 1) <= y) row++;
         return row;
@@ -737,7 +779,7 @@ sealed class SongSelect : Screen
     static string Length(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
 
     // stable's panel colours: other sets pink, the open set's difficulties blue, the selected one white.
-    static readonly Color SetColour = new(235, 73, 153, 230), DiffColour = new(0, 150, 236, 230), SelectedColour = new(255, 255, 255, 240);
+    static readonly Color SetColour = new(235, 73, 153, 240), DiffColour = new(0, 150, 236, 240), SelectedColour = new(255, 255, 255, 240);
 
     public override void Draw()
     {
@@ -762,56 +804,53 @@ sealed class SongSelect : Screen
     }
 
     // Group header: stable's group panel colours (open group lighter), "Name (N maps)".
-    void DrawGroupHeader(int g, float x, float y, float s)
+    // The panel sprite at scale 1, its left edge at x and its centre line at cy, tinted. A hovered panel flashes 30%
+    // lighter and fades back over a second.
+    void DrawPanel(int row, float x, float cy, float s, Color colour)
     {
-        float ps = 0.87f * s, u = GetScreenHeight() / 480f;
-        float panelH = 103 * ps, cy = y + panelH / 2, visibleLeft = x + 122.7f * ps;
-        var colour = g == groupIndex ? new Color(35, 90, 193, 255) : new Color(35, 50, 143, 255);
+        if (row == hoveredRow) colour = ColorLerp(ColorLerp(colour, Color.White, 0.3f), colour, (float)Math.Clamp((Game.NowMs - hoveredAt) / 1000, 0, 1));
         if (Game.Skin.Tex("menu-button-background") is { } panel)
             DrawTexturePro(panel.Tex, new Rectangle(0, 0, panel.Tex.Width, panel.Tex.Height),
-                new Rectangle(x, y, panel.Width * ps, panel.Height * ps), Vector2.Zero, 0, colour);
-        else DrawRectangleRec(new Rectangle(visibleLeft, y + 14 * ps, 576 * ps, 75 * ps), colour);
+                new Rectangle(x, cy - panel.Height * s / 2, panel.Width * s, panel.Height * s), Vector2.Zero, 0, colour);
+        else DrawRectangleRec(new Rectangle(x, cy - 27 * U, 430 * U, 54 * U), colour);
+    }
+
+    void DrawGroupHeader(int row, int g, float x, float cy, float s)
+    {
+        DrawPanel(row, x, cy, s, g == groupIndex ? new Color(35, 90, 193, 255) : new Color(35, 50, 143, 255));
         var (name, entries) = groups[g];
         int maps = entries.Sum(e => e.Diffs.Count);
-        Game.Text(GroupLabel(name, maps), visibleLeft + 10 * u, cy - 9 * u, 18 * u, Color.White);
+        Game.Text(GroupLabel(name, maps), x + 15 * U, cy - 12 * U, 24 * U, Color.White); // stable: 24 at (15, 0), centred
     }
 
     void DrawRow(int row, int w, int h, float s)
     {
         var (si, d, gi) = RowInfo(row);
-        float y = RowY(row);
-        // Panels further from the centre slide right, giving stable's curved carousel.
-        float fromCentre = (y + RowH / 2 - h / 2f) / (h / 2f);
-        float x = w - 560 * s + fromCentre * fromCentre * 120 * s;
-        if (gi >= 0) { DrawGroupHeader(gi, x, y, s); return; }
+        float x = PanelX(row), cy = RowCentre(row), u = U;
+        if (gi >= 0) { DrawGroupHeader(row, gi, x, cy, s); return; }
         var set = view[si];
         var b = d < 0 ? set.Set.First : set.Diffs[d];
         bool selected = d == diffIndex && si == setIndex && d >= 0;
-        if (d >= 0) x -= selected ? 60 * s : 25 * s;
-        else if (si == setIndex) x += 10 * s;
+        DrawPanel(row, x, cy, s, selected ? SelectedColour : d >= 0 ? DiffColour : SetColour);
 
-        var colour = selected ? SelectedColour : d >= 0 ? DiffColour : SetColour;
-        float ps = 0.87f * s, u = GetScreenHeight() / 480f;
-        float panelH = 103 * ps, cy = y + panelH / 2, visibleLeft = x + 122.7f * ps;
-        if (Game.Skin.Tex("menu-button-background") is { } panel)
-            DrawTexturePro(panel.Tex, new Rectangle(0, 0, panel.Tex.Width, panel.Tex.Height),
-                new Rectangle(x, y, panel.Width * ps, panel.Height * ps), Vector2.Zero, 0, colour);
-        else DrawRectangleRec(new Rectangle(visibleLeft, y + 14 * ps, 576 * ps, 75 * ps), colour);
-
-        // stable's panel text (offsets from the panel's centre line, in 640x480 units): title 16 at -16,
-        // artist // creator 12 at -4, version 12 (bold) at +7, stars at +18.
+        // stable's panel text (offsets from the panel's left edge and centre line, in 640x480 units): 75 in (room for
+        // the online thumbnail) plus 8, or 25 beside a difficulty's grade icon; title 16 at -16, artist // creator 12
+        // at -4, version 12 (bold) at +7 (one further in), stars at +18. The grade icon sits at 79.
+        var grade = d >= 0 && BestGrade(b) is { } gr ? Game.Skin.Tex(SmallGrade(gr)) : null;
         var text = selected ? Game.Skin.SongSelectActiveText : Game.Skin.SongSelectInactiveText;
-        // stable centres each line on its offset and its text bitmaps carry padding, so the glyphs sit 2.33 units
-        // lower and 1.67 left of a plain top-left layout (measured).
-        float tx = visibleLeft + 10 * u, lx = tx - 1.67f * u, dy = 2.33f * u;
-        Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 16.5f * u, text); // stable says 16; renders this wide (measured)
-        Game.Text(b.PanelSubtitle, lx, cy - 4 * u - 6 * u + dy, 12 * u, text);
+        // stable centres each line on its offset and its text bitmaps carry padding, so the glyphs sit 1.67 units right
+        // of a plain top-left layout and a unit higher; its text also runs ~3% wider than ours at the same height
+        // (measured on the default skin at 720p).
+        float tx = x + (grade != null ? 100 : 83) * u, lx = tx + 1.67f * u, dy = -u;
+        var faded = d >= 0 && !selected ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
+        Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 17.2f * u, faded); // stable says 16; renders this wide (measured)
+        Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.3f * u, faded);
         if (d < 0) return;
-        Game.TextBold(b.Version, lx, cy + 7 * u - 6 * u + dy + u, 12 * u, text); // a further unit lower (measured)
+        Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
         if (view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
-        DrawStars(b.StarsFor(mods), tx + 6.5f * u, cy + (18 + 3.33f) * u, u, text, Game.NowMs - starsAt); // 3.33 units lower than the offset (measured)
-        if (BestGrade(b) is { } grade && Game.Skin.Tex(SmallGrade(grade)) is { } g)
-            g.Draw(new Vector2(visibleLeft - 14 * u, cy), 0.6f * s, Color.White);
+        float step = (Game.Skin.Tex("star")?.Width ?? 46) * 0.6f * s;
+        DrawStars(b.StarsFor(mods), tx + step / 2, cy + 18 * u, u, text, Game.NowMs - starsAt);
+        if (grade is { } g) g.Draw(new Vector2(x + 79 * u + g.Width * s / 2, cy), s, Color.White);
     }
 
     // stable's star row: ten faint stars (alpha 30) under the filled ones, the last filled one scaled by the
@@ -845,8 +884,10 @@ sealed class SongSelect : Screen
 
     string? BestGrade(DbBeatmap b)
     {
-        if (!scores.TryGetValue(b.Md5, out var list) || list.Count == 0) return null;
-        return GradeOf(list[0]);
+        if (!scores.TryGetValue(b.Md5, out var list)) return null;
+        string me = Config.Get("Username", ""); // like stable: the local player's own scores only (as Personal Best)
+        foreach (var r in list) if (!r.FromStable || r.Player.Equals(me, StringComparison.OrdinalIgnoreCase)) return GradeOf(r);
+        return null;
     }
 
     static string GradeOf(ReplayInfo r)
@@ -879,8 +920,10 @@ sealed class SongSelect : Screen
         if (Selected is { } b)
         {
             // Ranked-status icon (osu!.db status: 4 ranked, 5 approved, 6 qualified, 7 loved).
-            string status = b.Status switch { 4 => "selection-ranked", 5 or 6 => "selection-approved", 7 => "selection-loved", _ => "selection-notranked" };
-            if (Game.Skin.Tex(status) is { } icon) icon.Draw(new Vector2(11 * u, 11 * u), 15 * u / Math.Max(1, icon.Width), Color.White);
+            // Unknown / not submitted (an install that never went online): stable's question mark, at scale 1 (measured).
+            string status = b.Status switch { 4 => "selection-ranked", 5 or 6 => "selection-approved", 7 => "selection-loved", 2 or 3 => "selection-notranked", _ => "selection-question" };
+            if (status == "selection-question" && Game.Skin.Tex(status) is { } q) q.Draw(new Vector2(12 * u, 12 * u), s, Color.White);
+            else if (Game.Skin.Tex(status) is { } icon) icon.Draw(new Vector2(11 * u, 11 * u), 15 * u / Math.Max(1, icon.Width), Color.White);
             if (headerFor != (b, mods)) // the header text only changes with the selection or mods
             {
                 headerFor = (b, mods);
@@ -935,15 +978,18 @@ sealed class SongSelect : Screen
         // Search, at the top of the song list.
         float sx = w - 218 * u;
         string search = filter.Length == 0 ? "Type to search!" : filter;
+        if (filter.Length == 0) DrawRectangleRec(new Rectangle(w - 302 * u, 50.7f * u, 302 * u, 11.3f * u), new Color(235, 73, 153, 195)); // the empty search box: a pink bar (measured)
         Game.TextBold("Search:", sx, 54 * u, 13 * u, new Color(173, 255, 47, 255)); // GreenYellow
         Game.TextBold(search, sx + Game.BoldWidth("Search: ", 13 * u), 54 * u, 13 * u, Color.White);
         if (message.Length > 0 || filter.Length > 0)
-            Game.Text(message.Length > 0 ? message : matchesText.Of(view.Count), sx, 67 * u, 11 * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
+            Game.TextBold(message.Length > 0 ? message : matchesText.Of(matchCount), sx, 67 * u, 11 * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
     }
 
     // Bottom bar buttons: left edges at 140, 197.6, 245.6 and 293.6 units on widescreen, here in
     // 768-scale texels (units / 0.625). Hover swaps to the -over sprite like stable.
     static readonly (string Name, float X)[] BottomButtons = [("selection-mode", 224), ("selection-mods", 316.16f), ("selection-random", 392.96f), ("selection-options", 469.76f)];
+
+    readonly BackButton backButton = new();
 
     Rectangle ButtonRect(string name, float x, int h, float s)
     {
@@ -959,11 +1005,7 @@ sealed class SongSelect : Screen
         else DrawRectangle(0, h - (int)BottomH, w, (int)BottomH, new Color(0, 0, 0, 220));
 
         var mouse = Input.GetMousePosition();
-        if (Game.Skin.Tex("menu-back") is { } back)
-        {
-            var r = new Rectangle(0, h - back.Height * s, back.Width * s, back.Height * s);
-            back.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), s, CheckCollisionPointRec(mouse, r) ? Color.White : ColorAlpha(Color.White, 0.85f));
-        }
+        backButton.Draw(h, mouse, Beat() is { } bt ? (bt.Phase * bt.Length, bt.Length) : null);
         foreach (var (name, bx) in BottomButtons)
         {
             var r = ButtonRect(name, bx, h, s);
@@ -990,6 +1032,13 @@ sealed class SongSelect : Screen
                 mx += 30 * s;
             }
 
+        // The user panel (offline, so always the guest): name, "Click to sign in!" and an empty level bar (measured).
+        Game.Text("Guest", 443 * u, 431.5f * u, 13 * u, Color.White);
+        Game.Text("Click to sign in!", 442.7f * u, 444 * u, 9.5f * u, Color.White);
+        var bar = new Rectangle(468.7f * u, 472.7f * u, 123.3f * u, 6.7f * u);
+        DrawRectangleRounded(bar, 1, 8, new Color(38, 38, 38, 255));
+        DrawRectangleRoundedLinesEx(bar, 1, 8, Math.Max(1, u), new Color(90, 90, 90, 255));
+
         // The osu! cookie: 40 units in from the right at y 450, scale 0.45 -> 0.4 over each beat, with a
         // copy swelling 0.45 -> 0.49 and fading 0.7 -> 0 (a 1s cycle without timing).
         if (Game.Skin.Tex("menu-osu") is { } cookie)
@@ -1013,7 +1062,7 @@ sealed class SongSelect : Screen
     {
         int w = GetScreenWidth(), h = GetScreenHeight();
         float s = S;
-        if (Game.Skin.Tex("menu-back") is { } back && CheckCollisionPointRec(mouse, new Rectangle(0, h - back.Height * s, back.Width * s, back.Height * s)))
+        if (CheckCollisionPointRec(mouse, BackButton.Rect(h)))
         {
             Back();
             return true;

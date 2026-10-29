@@ -32,8 +32,11 @@ sealed class DbBeatmap
     static int StarSlot(int mods) => ((mods & (int)Mods.Easy) != 0 ? 1 : 0) | ((mods & (int)Mods.HardRock) != 0 ? 2 : 0)
         | ((mods & (int)Mods.DoubleTime) != 0 ? 4 : 0) | ((mods & (int)Mods.HalfTime) != 0 ? 8 : 0);
 
+    // Newer databases also list HD/FL combinations; those would land in (and overwrite) these slots, so they're skipped.
+    // (So HD/FL ratings aren't shown; the header would need wider slots for them.)
     public void SetStars(int mods, float value)
     {
+        if ((mods & ~(int)(Mods.Easy | Mods.HardRock | Mods.DoubleTime | Mods.HalfTime)) != 0) return;
         if (stars == null) { stars = new float[16]; Array.Fill(stars, float.NaN); }
         stars[StarSlot(mods)] = value;
     }

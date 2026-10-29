@@ -139,7 +139,8 @@ sealed partial class Player
         (Sprite Sp, Rectangle Rect)? RetryButton => p.playback == null ? Button("retry", 360) : null;
         (Sprite Sp, Rectangle Rect)? ReplayButton => Replay != null ? Button("replay", p.playback == null ? 420 : 360) : null;
 
-        Rectangle BackRect => skin.Tex("menu-back") is { } b ? new Rectangle(0, h - b.Height * sd, b.Width * sd, b.Height * sd) : default;
+        Rectangle BackRect => BackButton.Rect(h);
+        readonly BackButton backButton = new();
 
         public override void Update(double dtMs)
         {
@@ -243,11 +244,7 @@ sealed partial class Player
             float bright = 178 / 255f;
             if (RetryButton is { } rb) rb.Sp.Draw(new(rb.Rect.X + rb.Rect.Width / 2, rb.Rect.Y + rb.Rect.Height / 2), sd, ColorAlpha(Color.White, CheckCollisionPointRec(mouse, rb.Rect) ? 1 : bright));
             if (ReplayButton is { } pb) pb.Sp.Draw(new(pb.Rect.X + pb.Rect.Width / 2, pb.Rect.Y + pb.Rect.Height / 2), sd, ColorAlpha(Color.White, CheckCollisionPointRec(mouse, pb.Rect) ? 1 : bright));
-            if (skin.Tex("menu-back") is { } back)
-            {
-                var r = BackRect;
-                back.Draw(new(r.X + r.Width / 2, r.Y + r.Height / 2), sd, CheckCollisionPointRec(mouse, r) ? Color.White : ColorAlpha(Color.White, 0.85f));
-            }
+            backButton.Draw(h, mouse);
 
             if (p.watching is { FromStable: true } sr && (sr.N300, sr.N100, sr.N50, sr.NMiss, sr.MaxCombo) != (p.n300, p.n100, p.n50, p.nMiss, p.maxCombo))
             {
