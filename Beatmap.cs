@@ -85,8 +85,8 @@ sealed class HitObject
         return m.From + (m.To - m.From) * (1 - (float)(m.End - t) / (m.End - m.Start));
     }
 
-    // stable: (double)(1000f * segment length) / velocity, the segment length in float.
-    public double SegmentMs(int k) => (double)(1000f * SliderPath.Len(Path[k - 1], Path[k])) / StableVelocity;
+    // stable: 1000f * segment length / velocity; the 32-bit runtime never rounds the product back to float.
+    public double SegmentMs(int k) => 1000.0 * SliderPath.Len(Path[k - 1], Path[k]) / StableVelocity;
 
     (int, int, Vector2, Vector2)[] BuildBallMoves()
     {
@@ -125,7 +125,7 @@ sealed class Beatmap
     public static double Range(double d, double min, double mid, double max) =>
         d > 5 ? mid + (max - mid) * (d - 5) / 5 : d < 5 ? mid - (mid - min) * (5 - d) / 5 : mid;
 
-    public double Preempt => (int)Range(AR, 1800, 1200, 450); // stable keeps it in whole ms
+    public double Preempt => (int)Range((float)AR, 1800, 1200, 450); // stable: AR is a float, preempt whole ms
     public double FadeIn => 400 * Math.Min(1, Preempt / 450);
     // stable keeps OD as a float and truncates the windows to whole milliseconds.
     public int Hit300 => (int)Range((float)OD, 80, 50, 20);
