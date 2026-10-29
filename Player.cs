@@ -147,8 +147,7 @@ sealed partial class Player : Screen
         key2 = Config.Key("keyOsuRight", KeyboardKey.X);
         mouseButtons = !Config.GetBool("MouseDisableButtons", false);
 
-        double drain = Math.Max(1, (objs[^1].EndTime - objs[0].Time) / 1000);
-        diffMul = Math.Round((map.HP + map.CS + map.OD + Math.Clamp(objs.Count / drain * 8, 0, 16)) / 38 * 5);
+        diffMul = map.DifficultyMultiplier;
 
         music = Track.Load(Path.Combine(map.Folder, map.AudioFilename), rate, mods.HasFlag(Mods.Nightcore), tempo: playback != null);
         if (music != null)

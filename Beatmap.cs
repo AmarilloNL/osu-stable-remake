@@ -125,12 +125,12 @@ sealed class Beatmap
     public static double Range(double d, double min, double mid, double max) =>
         d > 5 ? mid + (max - mid) * (d - 5) / 5 : d < 5 ? mid - (mid - min) * (5 - d) / 5 : mid;
 
-    public double Preempt => (int)Range((float)AR, 1800, 1200, 450); // stable: AR is a float, preempt whole ms
+    public double Preempt => (int)Range(AR, 1800, 1200, 450); // whole ms, like stable
     public double FadeIn => 400 * Math.Min(1, Preempt / 450);
-    // stable keeps OD as a float and truncates the windows to whole milliseconds.
-    public int Hit300 => (int)Range((float)OD, 80, 50, 20);
-    public int Hit100 => (int)Range((float)OD, 140, 100, 60);
-    public int Hit50 => (int)Range((float)OD, 200, 150, 100);
+    // stable truncates the windows to whole milliseconds.
+    public int Hit300 => (int)Range(OD, 80, 50, 20);
+    public int Hit100 => (int)Range(OD, 140, 100, 60);
+    public int Hit50 => (int)Range(OD, 200, 150, 100);
     public double SpinsPerSecond => Range(OD, 3, 5, 7.5);
     public float Radius => (float)(54.4 - 4.48 * CS) * 1.00041f; // stable's fudge factor
 
@@ -162,22 +162,30 @@ sealed class Beatmap
             catch (IndexOutOfRangeException) { }
         }
         if (map.AR < 0) map.AR = map.OD; // old maps had no separate AR
-        if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3f, 1.4f);
-        if (mods.HasFlag(Mods.Easy)) map.ScaleDifficulty(0.5f, 0.5f);
+        map.AR = (float)map.AR; map.OD = (float)map.OD; // stable stores them as floats
+        if (map.Objects.Count > 0) // stable's score multiplier: unmodded values, drain = whole seconds of first to last start minus breaks
+        {
+            int drain = ((int)map.Objects[^1].Time - (int)map.Objects[0].Time - map.Breaks.Sum(b => (int)b.End - (int)b.Start)) / 1000;
+            float density = drain == 0 ? 16 : Math.Clamp((float)map.Objects.Count / drain * 8f, 0f, 16f);
+            map.DifficultyMultiplier = (int)Math.Round(((float)map.HP + (float)map.CS + (float)map.OD + density) / 38f * 5f);
+        }
+        if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3f, 1.4);
+        if (mods.HasFlag(Mods.Easy)) map.ScaleDifficulty(0.5f, 0.5);
         if (!metadataOnly) map.Finish();
         return map;
     }
 
     bool flipY;
     public List<(double Start, double End)> Breaks = [];
+    public int DifficultyMultiplier;
 
-    // In float, like stable, so window truncation lands on the same millisecond.
-    void ScaleDifficulty(float cs, float rest)
+    // CS and HP in float; AR and OD in double on the float value, like stable's difficulty ranges (AR 7 * 1.4 = 480ms, not 479).
+    void ScaleDifficulty(float cs, double rest)
     {
         CS = Math.Min(10f, (float)CS * cs);
-        AR = Math.Min(10f, (float)AR * rest);
-        OD = Math.Min(10f, (float)OD * rest);
-        HP = Math.Min(10f, (float)HP * rest);
+        AR = Math.Min(10, AR * rest);
+        OD = Math.Min(10, OD * rest);
+        HP = Math.Min(10f, (float)HP * (float)rest);
     }
 
     Vector2 ReadPoint(string x, string y) => new((float)D(x), flipY ? 384 - (float)D(y) : (float)D(y));
@@ -448,7 +456,7 @@ sealed class Beatmap
     // are pushed up-left by radius/10 per stack level.
     void ApplyStacking()
     {
-        double threshold = Preempt * StackLeniency;
+        float threshold = (float)Preempt * (float)StackLeniency; // a float, like stable: 1380 * 0.7 lands on exactly 966
         const float dist = 3;
         for (int i = Objects.Count - 1; i > 0; i--)
         {
@@ -461,7 +469,7 @@ sealed class Beatmap
                 {
                     var on = Objects[n];
                     if (on.Type == ObjType.Spinner) continue;
-                    if (oi.Time - on.EndTime > threshold) break;
+                    if ((float)(oi.Time - on.EndTime) > threshold) break;
                     if (on.Type == ObjType.Slider && Vector2.Distance(on.EndPos, oi.Pos) < dist)
                     {
                         int offset = oi.Stack - on.Stack + 1;
@@ -482,7 +490,7 @@ sealed class Beatmap
                 {
                     var on = Objects[n];
                     if (on.Type == ObjType.Spinner) continue;
-                    if (oi.Time - on.Time > threshold) break;
+                    if ((float)(oi.Time - on.Time) > threshold) break;
                     if (Vector2.Distance(on.EndPos, oi.Pos) < dist)
                     {
                         on.Stack = oi.Stack + 1;
