@@ -12,6 +12,7 @@ sealed class Health
     public readonly double DropRate;
     readonly double hp, calibrationHp;
     internal double mul = 1, mulGeki = 1; // internal: --dump-objects prints them
+    internal double[] SimHp = [];
 
     public Health(Beatmap map, bool halfTime = false)
     {
@@ -58,6 +59,7 @@ sealed class Health
         {
             bool retry = false;
             double value = Max, uncapped = Max;
+            if (SimHp.Length != objs.Count) SimHp = new double[objs.Count];
             void Change(double d) { value = Math.Clamp(value + d, 0, Max); uncapped += d; }
 
             double last = objs[0].Time - map.Preempt;
@@ -94,7 +96,7 @@ sealed class Health
                 }
                 if (overshoot > 0 && value - overshoot <= lowestEver) { retry = true; rate *= 0.96; break; }
 
-                bool comboEnd = i == objs.Count - 1 || objs[i + 1].ComboNumber == 1;
+                bool comboEnd = i == objs.Count - 1 || objs[i + 1].StartsCombo;
                 if (comboEnd)
                 {
                     Change(mulGeki * 14 + mul * 6);
@@ -106,6 +108,7 @@ sealed class Health
                     }
                 }
                 else Change(mul * 6);
+                SimHp[i] = value; // the last pass's values stay: HP after each object (--dump-objects compares them with stable)
             }
 
             if (!retry && value < lowestEnd)

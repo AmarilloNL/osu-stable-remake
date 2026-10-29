@@ -976,7 +976,7 @@ sealed partial class Player : Screen
             if (mods.HasFlag(Mods.SuddenDeath)) Fail();
         }
         comboWorst = Math.Min(comboWorst, result);
-        if (i == objs.Count - 1 || objs[i + 1].ComboNumber == 1)
+        if (i == objs.Count - 1 || objs[i + 1].StartsCombo) // the next object starts a combo (spinners included)
         {
             health.Add(health.ComboEnd(comboWorst, lastHit: result > 0));
             if (comboWorst == 300) nGeki++;

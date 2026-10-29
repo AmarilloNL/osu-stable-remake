@@ -266,7 +266,7 @@ static class Game
         {
             var o = map.Objects[i];
             string kind = o.Type switch { ObjType.Slider => "slider", ObjType.Spinner => "spinner", _ => "circle" };
-            var line = string.Format(inv, "{0} {1} {2} {3} stack {4} pos {5} base {6}", i, kind, (int)o.Time, (int)o.EndTime, o.Stack, V(o.Pos + map.StackOffset(o)), V(o.Pos));
+            var line = string.Format(inv, "{0} {1} {2} {3} stack {4} pos {5} base {6} hpsim {7:R}", i, kind, (int)o.Time, (int)o.EndTime, o.Stack, V(o.Pos + map.StackOffset(o)), V(o.Pos), health.SimHp[i]);
             if (o.Type == ObjType.Slider && o.Path.Length > 1)
                 line += string.Format(inv, " end {0} v {1:R} segs {2} lastseg {3}->{4} cps {5}", V(o.EndPos + map.StackOffset(o)), o.StableVelocity, o.Path.Length - 1,
                     V(o.Path[^2] + map.StackOffset(o)), V(o.Path[^1] + map.StackOffset(o)), string.Join(",", o.Checkpoints.Select(c => (int)c.Time)));

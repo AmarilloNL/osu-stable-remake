@@ -24,6 +24,7 @@ sealed class HitObject
     public double Time, EndTime;
     public bool NewCombo;
     public int ComboSkip, ComboNumber, ColourIndex, Stack;
+    public bool StartsCombo; // stable's new-combo flag after Finish (a spinner keeps its own; the object after one is forced)
     public int HitSound, NormalSet, AdditionSet, SampleIndex, Volume;
 
     // Sliders
@@ -359,6 +360,7 @@ sealed class Beatmap
             bool newCombo = o.NewCombo;
             for (; nextBreak < breaks.Count && breaks[nextBreak].End < o.Time; nextBreak++) newCombo = true;
             int skip = ignoreSkips ? 0 : o.ComboSkip;
+            o.StartsCombo = o.Type == ObjType.Spinner ? newCombo : force || newCombo || i == 0;
             if (o.Type == ObjType.Spinner)
             {
                 if (FormatVersion <= 8) force = true;
