@@ -1129,9 +1129,9 @@ sealed partial class Player : Screen
     void StepSpinner(HitObject o, ObjState s, double maxAccel)
     {
         if (mods.HasFlag(Mods.SpunOut) || autopilot) s.Velocity = 0.03;
-        else if (auto) s.Velocity = 0.05;
         else
         {
+            if (auto) s.Target = 0.05; // stable's Auto spins its cursor at the speed cap; the spinner still accelerates to it
             double a = maxAccel / rate; // acceleration is per real ms; one step is 1ms of map time
             s.Velocity += s.Target > s.Velocity ? Math.Min(s.Target - s.Velocity, a) : Math.Max(s.Target - s.Velocity, -a);
         }
