@@ -20,6 +20,7 @@ static class Config
         Read(Path.Combine(OsuDir, "osu!.cfg"), values);
         Read(Path.Combine(OsuDir, $"osu!.{Environment.UserName}.cfg"), values);
         foreach (var kv in own) values[kv.Key] = kv.Value;
+        Beatmap.PlayfieldHeight = GetBool("Fullscreen", false) ? GetInt("HeightFullscreen", GetInt("Height", 720)) : GetInt("Height", 720);
     }
 
     static void Read(string path, Dictionary<string, string> into)

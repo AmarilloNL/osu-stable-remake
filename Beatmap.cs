@@ -132,7 +132,19 @@ sealed class Beatmap
     public int Hit100 => (int)Range(OD, 140, 100, 60);
     public int Hit50 => (int)Range(OD, 200, 150, 100);
     public double SpinsPerSecond => Range(OD, 3, 5, 7.5);
-    public float Radius => (float)(54.4 - 4.48 * CS) * 1.00041f; // stable's fudge factor
+    // The window height stable plays at: its circle radius comes from the playfield size, so it differs by float steps
+    // between resolutions. Stable's configured height by default; the player sets the real window's.
+    public static float PlayfieldHeight = 720;
+    // stable: (float)(field width / 8 * (1 - 0.7 * (CS - 5) / 5)) / 2 / ratio * 1.00041 (its fudge factor), the tail unrounded.
+    public float Radius
+    {
+        get
+        {
+            float r = PlayfieldHeight / 480f, ratio = 384f * r / 384f;
+            float x = (float)(512f * r / 8f * (1.0 - 0.699999988079071 * ((CS - 5) / 5)));
+            return (float)((double)x / 2f / ratio * 1.00041f);
+        }
+    }
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static double D(string s) => double.Parse(s.Trim(), Inv);
@@ -162,15 +174,15 @@ sealed class Beatmap
             catch (IndexOutOfRangeException) { }
         }
         if (map.AR < 0) map.AR = map.OD; // old maps had no separate AR
-        map.AR = (float)map.AR; map.OD = (float)map.OD; // stable stores them as floats
+        map.AR = (float)map.AR; map.OD = (float)map.OD; map.CS = (float)map.CS; // stable stores them as floats
         if (map.Objects.Count > 0) // stable's score multiplier: unmodded values, drain = whole seconds of first to last start minus breaks
         {
             int drain = ((int)map.Objects[^1].Time - (int)map.Objects[0].Time - map.Breaks.Sum(b => (int)b.End - (int)b.Start)) / 1000;
             float density = drain == 0 ? 16 : Math.Clamp((float)map.Objects.Count / drain * 8f, 0f, 16f);
             map.DifficultyMultiplier = (int)Math.Round(((float)map.HP + (float)map.CS + (float)map.OD + density) / 38f * 5f);
         }
-        if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3f, 1.4);
-        if (mods.HasFlag(Mods.Easy)) map.ScaleDifficulty(0.5f, 0.5);
+        if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3, 1.4);
+        if (mods.HasFlag(Mods.Easy)) map.ScaleDifficulty(0.5, 0.5);
         if (!metadataOnly) map.Finish();
         return map;
     }
@@ -179,10 +191,10 @@ sealed class Beatmap
     public List<(double Start, double End)> Breaks = [];
     public int DifficultyMultiplier;
 
-    // CS and HP in float; AR and OD in double on the float value, like stable's difficulty ranges (AR 7 * 1.4 = 480ms, not 479).
-    void ScaleDifficulty(float cs, double rest)
+    // HP in float; CS, AR and OD in double on the float value, like stable's difficulty ranges (AR 7 * 1.4 = 480ms, not 479).
+    void ScaleDifficulty(double cs, double rest)
     {
-        CS = Math.Min(10f, (float)CS * cs);
+        CS = Math.Min(10, CS * cs);
         AR = Math.Min(10, AR * rest);
         OD = Math.Min(10, OD * rest);
         HP = Math.Min(10f, (float)HP * (float)rest);
@@ -501,14 +513,18 @@ sealed class Beatmap
         }
     }
 
-    // stable: the per-level offset is radius / 10 as a float, then multiplied by the stack height.
-    public Vector2 StackOffset(HitObject o) => new(-(o.Stack * (Radius / 10f)));
+    // stable: position - stack * (radius / 10f), rounded once (x87); the object (and its whole path) moves by that delta.
+    public Vector2 StackOffset(HitObject o)
+    {
+        double off = o.Stack * (Radius / 10f);
+        return new Vector2((float)(o.Pos.X - off), (float)(o.Pos.Y - off)) - o.Pos;
+    }
 }
 
 static class SliderPath
 {
-    // XNA's Vector2.Distance as stable's 32-bit runtime runs it: the sum of squares isn't rounded to float before the root.
-    internal static float Len(Vector2 a, Vector2 b) { double dx = (double)a.X - b.X, dy = (double)a.Y - b.Y; return (float)Math.Sqrt(dx * dx + dy * dy); }
+    // XNA's (b - a).Length() as stable's 32-bit runtime runs it: float difference, the sum of squares unrounded before the root.
+    internal static float Len(Vector2 a, Vector2 b) { float dx = a.X - b.X, dy = a.Y - b.Y; return (float)Math.Sqrt((double)dx * dx + (double)dy * dy); }
 
     // stable's curve setup (slider class): the curve type and the map's format version pick the method.
     public static Vector2[] Build(char type, List<Vector2> pts, ref double length, int version)
@@ -558,11 +574,12 @@ static class SliderPath
         return outPts.ToArray();
     }
 
-    // XNA's Vector2.Normalize multiplies by the reciprocal length; System.Numerics divides (can differ by a float step).
+    // XNA's Vector2.Normalize: 1f / (float)Math.Sqrt(x*x + y*y), times each component. On stable's 32-bit runtime only the
+    // explicit float cast of the root rounds; the sum of squares and the reciprocal stay unrounded (2328/2338 linear ends).
     static Vector2 XnaNormalize(Vector2 v)
     {
-        float inv = 1f / MathF.Sqrt(v.X * v.X + v.Y * v.Y);
-        return new Vector2(v.X * inv, v.Y * inv);
+        double inv = 1.0 / (float)Math.Sqrt((double)v.X * v.X + (double)v.Y * v.Y);
+        return new Vector2((float)(v.X * inv), (float)(v.Y * inv));
     }
 
     // Red anchors (a repeated point) split a Bezier into pieces. How depends on the format version, like stable:
@@ -642,7 +659,8 @@ static class SliderPath
                 for (int i = 1; i < n - 1; i++)
                 {
                     int k = 2 * i;
-                    output.Add(0.25f * (left[k - 1] + 2f * left[k] + left[k + 1]));
+                    Vector2 p0 = left[k - 1], p1 = left[k], p2 = left[k + 1]; // XNA operators, rounded once at the store (x87)
+                    output.Add(new Vector2((float)(0.25 * ((double)p0.X + 2.0 * p1.X + p2.X)), (float)(0.25 * ((double)p0.Y + 2.0 * p1.Y + p2.Y))));
                 }
                 free.Push(parent);
                 continue;
@@ -663,14 +681,16 @@ static class SliderPath
     {
         Vector2 a = p[0], b = p[1], c = p[2];
         if ((b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y) == 0f) return null;
-        float d = 2f * (a.X * (b.Y - c.Y) + b.X * (c.Y - a.Y) + c.X * (a.Y - b.Y));
-        float aSq = a.LengthSquared(), bSq = b.LengthSquared(), cSq = c.LengthSquared();
+        // Float code in stable, but its 32-bit runtime only rounds on stores: the centre is worked out unrounded.
+        double ax = a.X, ay = a.Y, bx = b.X, by = b.Y, cx = c.X, cy = c.Y;
+        double d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
+        double aSq = ax * ax + ay * ay, bSq = bx * bx + by * by, cSq = cx * cx + cy * cy;
         var centre = new Vector2(
-            (aSq * (b.Y - c.Y) + bSq * (c.Y - a.Y) + cSq * (a.Y - b.Y)) / d,
-            (aSq * (c.X - b.X) + bSq * (a.X - c.X) + cSq * (b.X - a.X)) / d);
-        float r = Vector2.Distance(centre, a);
-        double t0 = Math.Atan2(a.Y - centre.Y, a.X - centre.X), mid = Math.Atan2(b.Y - centre.Y, b.X - centre.X);
-        double t1 = Math.Atan2(c.Y - centre.Y, c.X - centre.X);
+            (float)((aSq * (by - cy) + bSq * (cy - ay) + cSq * (ay - by)) / d),
+            (float)((aSq * (cx - bx) + bSq * (ax - cx) + cSq * (bx - ax)) / d));
+        float r = (float)Math.Sqrt((ax - centre.X) * (ax - centre.X) + (ay - centre.Y) * (ay - centre.Y)); // XNA Distance, unrounded locals
+        double t0 = Math.Atan2(ay - centre.Y, ax - centre.X), mid = Math.Atan2(by - centre.Y, bx - centre.X);
+        double t1 = Math.Atan2(cy - centre.Y, cx - centre.X);
         const double Tau = 6.2831854820251465; // (float)(2 pi), as stable has it
         while (mid < t0) mid += Tau;
         while (t1 < t0) t1 += Tau;

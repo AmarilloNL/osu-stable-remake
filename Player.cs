@@ -98,6 +98,7 @@ sealed partial class Player : Screen
 
     public Player(Beatmap map, SongSelect back, Mods mods, ReplayFrame[]? playback = null, ReplayInfo? watching = null)
     {
+        if (!VirtualClock) Beatmap.PlayfieldHeight = GetScreenHeight(); // headless runs keep stable's configured height
         this.playback = playback;
         this.watching = watching;
         this.map = map;
