@@ -34,7 +34,6 @@ sealed class HitObject
     public int Slides = 1;
     public int[] EdgeSounds = [];
     public (int Normal, int Addition)[] EdgeSets = [];
-    public float[] TickDistances = [];
     public List<Checkpoint> Checkpoints = [];
 
     // stable: the path's own end point (start after an even number of slides), not the ball at EndTime (EndTime is
@@ -405,32 +404,47 @@ sealed class Beatmap
                 clock += o.SegmentMs(span % 2 == 1 ? o.Path.Length - j : j);
         o.EndTime = (int)clock;
 
-        // Ticks (stable: no tick within 10ms-equivalent of the span end)
-        double tickDist = 100 * SliderMultiplier * (FormatVersion < 8 ? 1 : sv) / SliderTickRate;
-        double minEnd = Math.Max(0, velocity * 10);
-        var ticks = new List<float>();
+        // Checkpoints, walked like stable: distance runs along the path segment by segment with a tick every tick
+        // distance; a span's ticks stop once what's left of it is within 10ms of travel; the leftover carries into the
+        // next span mirrored. Every span end is a checkpoint at (int)(start + (float)distance / velocity * 1000), and
+        // the last one becomes the end check max(start + duration / 2, span end - 36). The list stays in this order
+        // (not sorted): stable judges it in order, so an end check earlier than the last repeat waits for it.
+        var tp = PointAt(o.Time);
+        double tickFactor = tp.BeatLength < 0 ? (double)Math.Clamp((float)-tp.BeatLength, 10f, 1000f) / 100.0 : 1; // as velocity's
+        double tickDist = Math.Min(FormatVersion < 8 ? scoringDist : scoringDist / tickFactor, o.Length);
+        double pathLen = 0;
+        for (int j = 1; j < o.Path.Length; j++) pathLen += Vector2.Distance(o.Path[j - 1], o.Path[j]);
+        double tenMs = 0.01 * o.StableVelocity, travelled = 0, sinceTick = 0;
         // TODO: trick sliders with >100k checkpoints just lose their ticks
-        if (tickDist > 0 && o.Length / tickDist * o.Slides < 100_000)
-            for (double d = tickDist; d < o.Length - minEnd; d += tickDist) ticks.Add((float)d);
-        o.TickDistances = ticks.ToArray();
-
+        bool ticksOn = tickDist > 0 && pathLen / tickDist * o.Slides < 100_000;
+        int Ms(double d) => (int)(o.Time + (double)(float)d / o.StableVelocity * 1000.0);
         for (int span = 0; span < o.Slides; span++)
         {
-            double start = o.Time + span * o.SpanDuration;
-            bool reverse = span % 2 == 1;
-            for (int t = 0; t < ticks.Count; t++)
+            double remaining = pathLen;
+            bool stop = !ticksOn;
+            for (int j = 1; j < o.Path.Length; j++)
             {
-                double d = reverse ? o.Length - ticks[ticks.Count - 1 - t] : ticks[t];
-                o.Checkpoints.Add(new Checkpoint((int)(start + d / velocity), CheckpointKind.Tick, span));
+                int k = span % 2 == 1 ? o.Path.Length - j : j;
+                sinceTick += Vector2.Distance(o.Path[k - 1], o.Path[k]);
+                while (sinceTick >= tickDist && !stop)
+                {
+                    travelled += tickDist;
+                    sinceTick -= tickDist;
+                    remaining -= tickDist;
+                    if (stop = remaining <= tenMs) break;
+                    o.Checkpoints.Add(new Checkpoint(Ms(travelled), CheckpointKind.Tick, span));
+                }
             }
-            if (span < o.Slides - 1)
-                o.Checkpoints.Add(new Checkpoint((int)(start + o.SpanDuration), CheckpointKind.Repeat, span));
+            travelled += sinceTick;
+            if (span < o.Slides - 1) o.Checkpoints.Add(new Checkpoint(Ms(travelled), CheckpointKind.Repeat, span));
+            else
+            {
+                int startMs = (int)o.Time;
+                o.Checkpoints.Add(new Checkpoint(Math.Max(startMs + ((int)o.EndTime - startMs) / 2, Ms(travelled) - 36), CheckpointKind.End, span));
+            }
+            if (stop) sinceTick = 0;
+            else { travelled -= tickDist - sinceTick; sinceTick = tickDist - sinceTick; }
         }
-        // stable judges the slider end 36ms early, in integer ms: max(start + length/2, end - 36)
-        int startMs = (int)o.Time, endMs = (int)o.EndTime;
-        double endCheck = Math.Max(startMs + (endMs - startMs) / 2, endMs - 36);
-        o.Checkpoints.Add(new Checkpoint(endCheck, CheckpointKind.End, o.Slides - 1));
-        o.Checkpoints.Sort((a, b) => a.Time.CompareTo(b.Time));
     }
 
     // stable's stacking for format v6+: objects within StackLeniency*preempt at (almost) the same spot
@@ -482,7 +496,8 @@ sealed class Beatmap
         }
     }
 
-    public Vector2 StackOffset(HitObject o) => new(-o.Stack * Radius / 10f);
+    // stable: the per-level offset is radius / 10 as a float, then multiplied by the stack height.
+    public Vector2 StackOffset(HitObject o) => new(-(o.Stack * (Radius / 10f)));
 }
 
 static class SliderPath

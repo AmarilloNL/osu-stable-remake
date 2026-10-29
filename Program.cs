@@ -276,6 +276,7 @@ static class Game
 
     static void Check()
     {
+        Config.Load(); // OsuDir comes from remake.cfg
         var files = Directory.EnumerateDirectories(Path.Combine(Config.OsuDir, "Songs"))
             .Where((_, i) => i % 10 == 0)
             .SelectMany(d => Directory.EnumerateFiles(d, "*.osu").Take(2))
