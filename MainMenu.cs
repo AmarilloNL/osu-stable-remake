@@ -306,6 +306,7 @@ sealed class MainMenu : Screen
         songs.Ambient(menu: true);
         if (Game.NowMs - lastUpdate > 250) lastActivity = Game.NowMs; // back from another screen: not idle
         lastUpdate = Game.NowMs;
+        coverAlpha = Math.Min(1, coverAlpha + (float)(dtMs / 200));
         UpdateVisuals(dtMs);
         if (!double.IsNaN(quitAt))
         {
@@ -492,7 +493,23 @@ sealed class MainMenu : Screen
         EndBlendMode();
     }
 
+    // Covered by the options panel: stable keeps the cookie and visualizer going but hides the bars, info, user panel,
+    // music controls and tip (faded over 200ms here).
+    float coverAlpha = 1;
+    internal void UpdateCovered(double dtMs)
+    {
+        coverAlpha = Math.Max(0, coverAlpha - (float)(dtMs / 200));
+        UpdateVisuals(dtMs);
+    }
+
     public override void Draw()
+    {
+        float idleLayer = layer;
+        layer *= coverAlpha;
+        try { DrawMenu(); } finally { layer = idleLayer; }
+    }
+
+    void DrawMenu()
     {
         w = GetScreenWidth(); h = GetScreenHeight();
         u = h / 480f; sd = h / 768f;
@@ -508,8 +525,8 @@ sealed class MainMenu : Screen
         else songs.DrawBackground(w, h);
 
         // stable's black bars top and bottom (54 units, 40%).
-        DrawRectangle(0, 0, w, (int)(54 * u), new Color(0, 0, 0, 102));
-        DrawRectangle(0, h - (int)(54 * u), w, (int)(54 * u), new Color(0, 0, 0, 102));
+        DrawRectangle(0, 0, w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * coverAlpha)));
+        DrawRectangle(0, h - (int)(54 * u), w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * coverAlpha)));
         // stable's info lines, top left of the bar (size 14 at x 210).
         double up = Game.NowMs / 1000;
         var clock = DateTime.Now;

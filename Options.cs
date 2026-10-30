@@ -202,6 +202,7 @@ sealed class Options : Screen
         w = GetScreenWidth(); h = GetScreenHeight();
         u = h / 480f;
         songs.Ambient();
+        if (back is MainMenu menu) menu.UpdateCovered(dtMs); // the cookie keeps beating behind the panel
         if (!double.IsNaN(closingAt))
         {
             if (Game.NowMs - closingAt > 200) Game.Screen = back;
