@@ -532,6 +532,7 @@ sealed partial class Player : Screen
         }
         // The hint: osu!ui's "unpause" image (icon and text baked in) at screen centre.
         skin.DefaultTex("unpause")?.Draw(new Vector2(w / 2f, h / 2f), sd, Color.White);
+        if (Vector2.Distance(Input.GetMousePosition(), at) <= 12 * u) Options.DrawTooltip("Click to resume gameplay.", Input.GetMousePosition()); // stable's hover tooltip
     }
 
     void Skip()

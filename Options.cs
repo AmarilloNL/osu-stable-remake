@@ -470,9 +470,9 @@ sealed class Options : Screen
     }
 
     // stable's tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint white edge.
-    void DrawTooltip(string text, Vector2 mouse)
+    internal static void DrawTooltip(string text, Vector2 mouse)
     {
-        float ts = 7 * u, bw = Game.TextWidth(text, ts) + 4 * u;
+        float u = GetScreenHeight() / 480f, ts = 7 * u, bw = Game.TextWidth(text, ts) + 4 * u;
         var box = new Rectangle(mouse.X + 4 * u, mouse.Y + 3.3f * u, bw, 8 * u);
         DrawRectangleRec(box, new Color(0, 0, 0, 128));
         DrawRectangleLinesEx(box, 1, new Color(255, 255, 255, 40));
