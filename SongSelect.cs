@@ -1028,6 +1028,7 @@ sealed class SongSelect : Screen
         float sx = w - 218 * u;
         string search = filter.Length == 0 ? "Type to search!" : filter;
         if (filter.Length == 0) DrawRectangleRec(new Rectangle(w - 302 * u, 50.7f * u, 302 * u, 11.3f * u), new Color(235, 73, 153, 195)); // the empty search box: a pink bar (measured)
+        else DrawRectangleRec(new Rectangle(w - 227.5f * u, 51.1f * u, 227.5f * u, 29.9f * u), new Color(0, 0, 0, 95)); // a search typed: a dark box behind it (measured; stable's edges are soft)
         Game.TextBold("Search:", sx, 54 * u, 13.6f * u, new Color(173, 255, 47, 255)); // GreenYellow
         Game.TextBold(search, sx + Game.BoldWidth("Search: ", 13.6f * u), 54 * u, 13.6f * u, Color.White);
         if (message.Length > 0 || filter.Length > 0)
