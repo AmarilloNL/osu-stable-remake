@@ -478,16 +478,14 @@ sealed class SongSelect : Screen
         if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
 
         // F1: stable's mod select, with stable's hotkeys.
-        if (Input.IsKeyPressed(KeyboardKey.F1)) modSelect = !modSelect;
-        if (modSelect)
+        if (Input.IsKeyPressed(KeyboardKey.F1)) OpenModSelect(!modSelect);
+        else if (modSelect)
         {
             while (Input.GetCharPressed() != 0) { } // keep mod hotkeys out of the search box
-            foreach (var k in ModKeys)
-                if (Input.IsKeyPressed(k)) mods = ModInfo.Toggle(mods, k);
-            if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter)) modSelect = false;
-            if (Input.IsKeyPressed(KeyboardKey.Backspace)) mods = Mods.None;
+            UpdateModSelect();
             return;
         }
+        if (modSelect) { while (Input.GetCharPressed() != 0) { } return; }
 
         int page = Math.Max(1, (int)((GetScreenHeight() - TopH - BottomH) / RowH) - 2);
         if (Pressed(KeyboardKey.Down)) MoveDiff(1);
@@ -1126,7 +1124,7 @@ sealed class SongSelect : Screen
         {
             if (!CheckCollisionPointRec(mouse, ButtonRect(name, bx, h, s))) continue;
             Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
-            if (name == "selection-mods") modSelect = !modSelect;
+            if (name == "selection-mods") OpenModSelect(!modSelect);
             else if (name == "selection-random" && view.Count > 0) MoveSet(Random.Shared.Next(view.Count) - setIndex);
             else if (name == "selection-options") Game.Screen = new Options(this, this);
             return true;
@@ -1202,39 +1200,86 @@ sealed class SongSelect : Screen
             Game.Text("No personal record set", 63 * u, 394.5f * u - 6.5f * u, 13 * u, Color.White);
         }
     }
+    // stable's mod select: a dialog titled with its blurb, "Score Multiplier" centred 20 units above the content, three
+    // labelled rows (size 24 at x 20; green, orange-red, white) of icons 66 units apart from x 240, rows 60 apart from 35
+    // units under the content start, then Reset All Mods / Close. A selected icon springs to 1.2x and 0.1 rad (elastic,
+    // 400ms) over a sky-blue glow. 1 / 2 press the buttons; stable's letter hotkeys toggle mods.
+    static readonly (string Label, Color Colour, (KeyboardKey Key, Mods Flag, Mods Alt, string Icon, string AltIcon)[] Mods)[] ModRows =
+    [
+        ("Difficulty Reduction", new Color(50, 205, 50, 255), [(KeyboardKey.Q, Mods.Easy, Mods.None, "easy", ""), (KeyboardKey.W, Mods.NoFail, Mods.None, "nofail", ""), (KeyboardKey.E, Mods.HalfTime, Mods.None, "halftime", "")]),
+        ("Difficulty Increase", new Color(255, 69, 0, 255), [(KeyboardKey.A, Mods.HardRock, Mods.None, "hardrock", ""), (KeyboardKey.S, Mods.SuddenDeath, Mods.Perfect, "suddendeath", "perfect"),
+            (KeyboardKey.D, Mods.DoubleTime, Mods.Nightcore, "doubletime", "nightcore"), (KeyboardKey.F, Mods.Hidden, Mods.None, "hidden", ""), (KeyboardKey.G, Mods.Flashlight, Mods.None, "flashlight", "")]),
+        ("Special", Color.White, [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.X, Mods.Autopilot, Mods.None, "relax2", ""), (KeyboardKey.C, Mods.SpunOut, Mods.None, "spunout", ""), (KeyboardKey.V, Mods.Autoplay, Mods.None, "autoplay", "")]),
+    ];
+    const string ModBlurb = "Mods provide different ways to enjoy gameplay. Some have an effect on the score you can achieve during ranked play. Others are just for fun.";
+    double modSelectAt, modButtonFlashAt = double.MinValue;
+    int modButtonFlashed = -1;
+    readonly Dictionary<Mods, (bool On, double At)> modAnim = [];
+    float modContentY; // units, from the last draw (the title wraps with the window width)
+
+    void OpenModSelect(bool open)
+    {
+        modSelect = open;
+        if (open) { modSelectAt = Game.NowMs; modButtonFlashed = -1; }
+    }
+
+    Vector2 ModIconPos(int row, int col) { float u = U; return new Vector2((240 + col * 66) * u, (modContentY + 35 + row * 60) * u); }
+
+    void UpdateModSelect()
+    {
+        foreach (var k in ModKeys)
+            if (Input.IsKeyPressed(k)) mods = ModInfo.Toggle(mods, k);
+        var mouse = Input.GetMousePosition();
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (click)
+            for (int r = 0; r < ModRows.Length; r++)
+                for (int c = 0; c < ModRows[r].Mods.Length; c++)
+                    if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * U) mods = ModInfo.Toggle(mods, ModRows[r].Mods[c].Key);
+        float buttonsY = modContentY + 35 + 180;
+        bool reset = Input.IsKeyPressed(KeyboardKey.One) || Input.IsKeyPressed(KeyboardKey.Backspace) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(buttonsY));
+        bool close = Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter)
+            || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(buttonsY + 50));
+        if (reset) { mods = Mods.None; modButtonFlashed = 0; modButtonFlashAt = Game.NowMs; }
+        if (close) OpenModSelect(false);
+    }
+
     void DrawModSelect(int w, int h)
     {
-        float s = S;
-        (string Title, (string Key, Mods Flag, string Icon, string Name)[] Mods)[] groups =
-        [
-            ("Difficulty Reduction", [("Q", Mods.Easy, "easy", "Easy"), ("W", Mods.NoFail, "nofail", "No Fail"), ("E", Mods.HalfTime, "halftime", "Half Time")]),
-            ("Difficulty Increase", [
-                ("A", Mods.HardRock, "hardrock", "Hard Rock"),
-                ("S", Mods.SuddenDeath, mods.HasFlag(Mods.Perfect) ? "perfect" : "suddendeath", mods.HasFlag(Mods.Perfect) ? "Perfect" : "Sudden Death"),
-                ("D", Mods.DoubleTime, mods.HasFlag(Mods.Nightcore) ? "nightcore" : "doubletime", mods.HasFlag(Mods.Nightcore) ? "Nightcore" : "Double Time"),
-                ("F", Mods.Hidden, "hidden", "Hidden"), ("G", Mods.Flashlight, "flashlight", "Flashlight")]),
-            ("Special", [("Z", Mods.Relax, "relax", "Relax"), ("X", Mods.Autopilot, "relax2", "Autopilot"), ("C", Mods.SpunOut, "spunout", "Spun Out"), ("V", Mods.Autoplay, "autoplay", "Auto")]),
-        ];
-        DrawRectangle(0, 0, w, h, new Color(0, 0, 0, 210));
-        float y = h * 0.18f;
-        Game.TextBold("Mods", w / 2f - Game.BoldWidth("Mods", 40 * s) / 2, y - 70 * s, 40 * s, Color.White);
-        foreach (var (title, list) in groups)
+        float u = U, s = S;
+        double now = Game.NowMs, age = now - modSelectAt;
+        float fade = (float)Math.Clamp(age / 200, 0, 1);
+        Dialog.Backdrop(fade);
+        modContentY = Dialog.Title(ModBlurb, fade);
+        string mult = $"Score Multiplier: {mods.ScoreMultiplier():0.00}x";
+        float ms = 31.1f * u; // stable's 30, measured
+        Game.Text(mult, w / 2f - Game.TextWidth(mult, ms) / 2, (modContentY - 20) * u - ms / 2, ms, ColorAlpha(Color.White, fade));
+        for (int r = 0; r < ModRows.Length; r++)
         {
-            Game.TextBold(title, w * 0.12f, y + 30 * s, 22 * s, new Color(255, 204, 34, 255));
-            float x = w * 0.12f + 260 * s;
-            foreach (var (key, flag, icon, name) in list)
+            var (label, colour, list) = ModRows[r];
+            float ls = 25.2f * u, cy = (modContentY + 35 + r * 60) * u;
+            Game.Text(label, 23 * u, cy - ls / 2, ls, ColorAlpha(colour, fade));
+            for (int c = 0; c < list.Length; c++)
             {
+                var (_, flag, alt, icon, altIcon) = list[c];
                 bool on = mods.HasFlag(flag);
-                var c = new Vector2(x + 50 * s, y + 45 * s);
-                if (Game.Skin.Tex("selection-mod-" + icon) is { } sp)
-                    sp.Draw(c, s * (on ? 1.1f : 0.95f), on ? Color.White : ColorAlpha(Color.White, 0.45f), on ? 8 : 0);
-                Game.Text($"{name} ({key})", c.X - Game.TextWidth($"{name} ({key})", 14 * s) / 2, c.Y + 50 * s, 14 * s, on ? Color.White : Color.Gray);
-                x += 120 * s;
+                if (!modAnim.TryGetValue(flag, out var an) || an.On != on) modAnim[flag] = an = (on, now);
+                float e = (float)Easing.Apply(25, (now - an.At) / 400);
+                float scale = on ? 1 + 0.2f * e : 1.2f - 0.2f * e, rot = on ? 0.1f * e : 0.1f * (1 - e);
+                var pos = ModIconPos(r, c);
+                if (on && Game.Skin.Tex("lighting") is { } glow)
+                {
+                    BeginBlendMode(BlendMode.Additive);
+                    glow.Draw(pos, s, ColorAlpha(Color.SkyBlue, 0.2f * fade));
+                    EndBlendMode();
+                }
+                string name = alt != Mods.None && mods.HasFlag(alt) ? altIcon : icon;
+                Game.Skin.Tex("selection-mod-" + name)?.Draw(pos, scale * s, ColorAlpha(Color.White, fade), rot * 180 / MathF.PI);
             }
-            y += 150 * s;
         }
-        string mult = $"Score Multiplier: {mods.ScoreMultiplier():0.00}x      F1 / Enter: close      Backspace: reset";
-        Game.Text(mult, w / 2f - Game.TextWidth(mult, 20 * s) / 2, y + 10 * s, 20 * s, Color.LightGray);
+        var mouse = Input.GetMousePosition();
+        float buttonsY = modContentY + 35 + 180;
+        Dialog.Button(0, "Reset All Mods", new Color(255, 69, 0, 255), buttonsY, age, mouse, modButtonFlashed == 0 ? now - modButtonFlashAt : double.MaxValue);
+        Dialog.Button(1, "Close", Color.Gray, buttonsY + 50, age, mouse);
     }
 
     // ---------------------------------------------------------------- background (loaded off the main thread)

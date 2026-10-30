@@ -312,6 +312,7 @@ sealed class MainMenu : Screen
             if (Game.NowMs >= quitAt) Game.Quit = true;
             return;
         }
+        if (!double.IsNaN(exitAskedAt)) { UpdateExitDialog(); return; }
 
         var mouse = Input.GetMousePosition();
         bool moved = Vector2.Distance(mouse, lastMouse) > 5;
@@ -363,7 +364,7 @@ sealed class MainMenu : Screen
         else if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
             if (open) SetOpen(false);
-            else Activate(3);
+            else exitAskedAt = Game.NowMs; // stable asks first
         }
     }
 
@@ -571,8 +572,37 @@ sealed class MainMenu : Screen
             Game.TextBold("osu!", CookiePos.X - Game.BoldWidth("osu!", 80 * u) / 2, CookiePos.Y - 40 * u, 80 * u, Color.White);
         }
 
+        if (!double.IsNaN(exitAskedAt)) DrawExitDialog(now);
         if (!double.IsNaN(quitAt))
             DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((quitAt - now) / 1500, 0, 1)));
         SongSelect.DrawCursor();
+    }
+
+    // Esc on the closed menu: stable's "Are you sure you want to exit osu!?" dialog. 1 / Enter quits, 2 / Esc cancels.
+    double exitAskedAt = double.NaN;
+    const string ExitQuestion = "Are you sure you want to exit osu!?";
+    float exitButtonsY;
+
+    void UpdateExitDialog()
+    {
+        var mouse = Input.GetMousePosition();
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (Input.IsKeyPressed(KeyboardKey.One) || Input.IsKeyPressed(KeyboardKey.Enter) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(exitButtonsY)))
+        {
+            exitAskedAt = double.NaN;
+            Activate(3);
+        }
+        else if (Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(exitButtonsY + 50)))
+            exitAskedAt = double.NaN;
+    }
+
+    void DrawExitDialog(double now)
+    {
+        double age = now - exitAskedAt;
+        Dialog.Backdrop((float)Math.Clamp(age / 200, 0, 1));
+        exitButtonsY = Dialog.Title(ExitQuestion, (float)Math.Clamp(age / 200, 0, 1));
+        var mouse = Input.GetMousePosition();
+        Dialog.Button(0, "Let's do it!", new Color(154, 205, 50, 255), exitButtonsY, age, mouse);
+        Dialog.Button(1, "Cancel", new Color(255, 69, 0, 255), exitButtonsY + 50, age, mouse);
     }
 }
