@@ -186,6 +186,7 @@ sealed partial class Player
             }
 
             if (skin.Tex("ranking-panel") is { } panel) panel.Draw(Centre(panel, L(0, newLayout ? 64 : 46), Vector2.Zero, sd), sd, Color.White);
+            DrawGraph(t, mouse); // under the rows: stable's "Perfect" overlaps it
 
             // Hit counts, max combo, accuracy, perfect: one every 300ms, sprite shrinks in, number slides in.
             float textScale = 1.12f * sd;
@@ -241,7 +242,6 @@ sealed partial class Player
                 if (ma > 0 && skin.Tex(modIconTex[m]) is { } mi) mi.Draw(R(40 + 20 * m, 260), (2 - ma) * sd, ColorAlpha(Color.White, ma));
             }
 
-            DrawGraph(t, mouse);
             DrawTopBar();
 
             float bright = 178 / 255f;
