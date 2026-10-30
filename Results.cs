@@ -72,9 +72,8 @@ sealed partial class Player
             // Gameplay already has the background loaded (decoding it again here cost ~80ms on the transition frame);
             // only a storyboard-drawn one (which gameplay skips) is loaded here, and then owned.
             var bgPath = Path.Combine(p.map.Folder, p.map.Background);
-            float dim = 1 - Config.GetInt("DimLevel", 80) / 100f; // stable dims the ranking background like gameplay
             if (p.bg.Id != 0) bg = p.bg;
-            else if (p.map.Background.Length > 0 && dim > 0 && File.Exists(bgPath))
+            else if (p.map.Background.Length > 0 && File.Exists(bgPath))
             {
                 bg = LoadTexture(bgPath); ownsBg = true;
                 if (bg.Id != 0) SetTextureFilter(bg, TextureFilter.Bilinear);
@@ -172,9 +171,12 @@ sealed partial class Player
 
             if (bg.Id != 0)
             {
-                float k = Math.Max(w / (float)bg.Width, h / (float)bg.Height);
+                // stable's menu background: 60% bright whatever the dim setting, with the menu parallax.
+                bool parallax = Config.GetBool("MenuParallax", true);
+                float k = Math.Max(w / (float)bg.Width, h / (float)bg.Height) * (parallax ? 1.01f : 1);
+                var shift = parallax ? -(mouse - new Vector2(w / 2f, h / 2f)) / 180 : Vector2.Zero;
                 DrawTexturePro(bg, new Rectangle(0, 0, bg.Width, bg.Height),
-                    new Rectangle((w - bg.Width * k) / 2, (h - bg.Height * k) / 2, bg.Width * k, bg.Height * k), Vector2.Zero, 0, ColorAlpha(Color.White, 1 - Config.GetInt("DimLevel", 80) / 100f));
+                    new Rectangle((w - bg.Width * k) / 2 + shift.X, (h - bg.Height * k) / 2 + shift.Y, bg.Width * k, bg.Height * k), Vector2.Zero, 0, new Color(153, 153, 153, 255));
             }
 
             // Rotating light behind the grade (one turn per 20s).

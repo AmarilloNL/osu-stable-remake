@@ -1374,7 +1374,7 @@ sealed class SongSelect : Screen
         bool parallax = Config.GetBool("MenuParallax", true);
         float k = Math.Max(w / (float)bgTex.Width, h / (float)bgTex.Height) * (parallax ? 1.01f : 1);
         var shift = parallax ? -(Input.GetMousePosition() - new Vector2(w / 2f, h / 2f)) / 180 : Vector2.Zero;
-        float a = (float)Math.Clamp((Game.NowMs - bgShownAt) / 250, 0, 1) * 0.75f;
+        float a = (float)Math.Clamp((Game.NowMs - bgShownAt) / 250, 0, 1) * 0.6f; // stable: the menu background at 60% (measured)
         DrawTexturePro(bgTex, new Rectangle(0, 0, bgTex.Width, bgTex.Height),
             new Rectangle((w - bgTex.Width * k) / 2 + shift.X, (h - bgTex.Height * k) / 2 + shift.Y, bgTex.Width * k, bgTex.Height * k),
             Vector2.Zero, 0, ColorAlpha(Color.White, a));
