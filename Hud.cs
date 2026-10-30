@@ -28,7 +28,7 @@ sealed partial class Player
     readonly int[] keyCounts = new int[4];
     // HUD text, rebuilt only when the value changes.
     readonly CachedText<long> scoreText = new(v => v.ToString("00000000"));
-    readonly CachedText<double> accText = new(v => $"{v:0.00}%");
+    readonly CachedText<double> accText = new(v => $"{v:00.00}%"); // stable: two integer digits at least ("00.00%")
     readonly CachedText<int> comboText2 = new(v => $"{v}x");
     readonly CachedText<int>[] keyText = [.. Enumerable.Range(0, 4).Select(_ => new CachedText<int>(v => v.ToString()))];
     readonly NumberText entryNumber = new(v => v.ToString("N0")), entryCombo = new(v => v > 0 ? $"{v:N0}x" : "0");
