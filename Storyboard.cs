@@ -406,7 +406,8 @@ sealed class Storyboard
         {
             if (t < e.Start || t > e.End || (e.Layer == 4) != overlay) continue;
             if (e.Layer == 1 && Passing || e.Layer == 2 && !Passing) continue;
-            float alpha = Value(e.Tracks[(int)Track.Fade], t, 1) * dim;
+            // stable dims a storyboard by darkening its colours, not by fading it: opaque sprites stay opaque.
+            float alpha = Value(e.Tracks[(int)Track.Fade], t, 1);
             if (alpha <= 0) continue;
             int frame = 0;
             if (e.Frames > 1 && e.FrameDelay > 0)
@@ -422,9 +423,9 @@ sealed class Storyboard
             float x = Value(e.Tracks[(int)Track.X], t, e.X), y = Value(e.Tracks[(int)Track.Y], t, e.Y);
             float rot = Value(e.Tracks[(int)Track.Rotation], t, 0);
             var colour = new Color(
-                (byte)Math.Clamp(Value(e.Tracks[(int)Track.R], t, 255), 0, 255),
-                (byte)Math.Clamp(Value(e.Tracks[(int)Track.G], t, 255), 0, 255),
-                (byte)Math.Clamp(Value(e.Tracks[(int)Track.B], t, 255), 0, 255),
+                (byte)Math.Clamp(Value(e.Tracks[(int)Track.R], t, 255) * dim, 0, 255),
+                (byte)Math.Clamp(Value(e.Tracks[(int)Track.G], t, 255) * dim, 0, 255),
+                (byte)Math.Clamp(Value(e.Tracks[(int)Track.B], t, 255) * dim, 0, 255),
                 (byte)Math.Clamp(alpha * 255, 0, 255));
             bool flipH = Param(e, t, 'H') ^ sx < 0, flipV = Param(e, t, 'V') ^ sy < 0;
             float dw = tex.Width * Math.Abs(sx) * s, dh = tex.Height * Math.Abs(sy) * s;
