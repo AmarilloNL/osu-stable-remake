@@ -1387,6 +1387,7 @@ sealed class SongSelect : Screen
     // left at the cursor, fading out over 150ms.
     static readonly List<(Vector2 Pos, double At)> trail = [];
     static double lastTrail = double.MinValue;
+    static Vector2? smoothFrom;
 
     public static void DrawCursorAt(Vector2 pos)
     {
@@ -1395,8 +1396,6 @@ sealed class SongSelect : Screen
         // CursorCentre: 0 anchors the sprite's top-left at the cursor instead of its centre.
         Vector2 Anchor(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * s / 2;
         double now = Game.NowMs;
-        // stable takes cursormiddle from wherever the cursor came from, so stable's default one doesn't count here.
-        // TODO: skins with their own cursormiddle get no trail; stable draws its smooth (dense) trail for those.
         bool middle = skin.Own("cursor") ? skin.Own("cursormiddle") : skin.Tex("cursormiddle") != null;
         if (skin.Tex("cursortrail") is { Width: >= 5 } tr && !middle)
         {
@@ -1405,6 +1404,32 @@ sealed class SongSelect : Screen
             for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 150) trail[kept++] = trail[i];
             trail.RemoveRange(kept, trail.Count - kept);
             foreach (var (p, at) in trail) tr.Draw(p, s, ColorAlpha(Color.White, 1 - (float)((now - at) / 150)));
+        }
+        else if (skin.Tex("cursortrail") is { Width: >= 5 } smooth)
+        {
+            // stable's smooth trail (with cursormiddle): copies every 1/2.5 of the sprite's width along the path,
+            // added on, fading (1 - age/300ms)^1.7.
+            var at = Anchor(smooth);
+            float step = smooth.Width * s / 2.5f;
+            if (smoothFrom is not { } from || Vector2.Distance(from, at) > GetScreenWidth()) smoothFrom = at;
+            else
+            {
+                var d = at - from;
+                float len = d.Length();
+                while (len >= step)
+                {
+                    from += d / len * step;
+                    len -= step;
+                    trail.Add((from, now));
+                }
+                smoothFrom = from;
+            }
+            int kept = 0;
+            for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 300) trail[kept++] = trail[i];
+            trail.RemoveRange(kept, trail.Count - kept);
+            BeginBlendMode(BlendMode.Additive);
+            foreach (var (p, t) in trail) smooth.Draw(p, s, ColorAlpha(Color.White, MathF.Pow(1 - (float)((now - t) / 300), 1.7f)));
+            EndBlendMode();
         }
         if (skin.Tex("cursor") is { } c) c.Draw(Anchor(c), s, Color.White, skin.CursorRotate ? (float)(now % 10000 / 10000 * 360) : 0); // a turn per 10s
         else DrawCircleV(pos, 12 * s, new Color(255, 200, 80, 255));

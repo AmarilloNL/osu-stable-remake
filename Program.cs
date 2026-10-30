@@ -137,9 +137,10 @@ static class Game
         if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() is { } fl && !fl.StartsWith("--") ? fl : "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
         if (args.Length > 0 && !args[0].StartsWith("--")) Config.OsuDir = args[0];
-        // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch)
+        // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch), --song-shots 12000 (song ms)
         string? Arg(string name) => Array.IndexOf(args, name) is int i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;
         double[] shots = Arg("--shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? [];
+        double[] songShots = Arg("--song-shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? []; // song ms, during play
         double exitAfter = Arg("--exit-after") is { } ea ? double.Parse(ea, System.Globalization.CultureInfo.InvariantCulture) : double.MaxValue;
         int shotIndex = 0;
         if (Arg("--input") is { } script) Input.Load(script); // test hook: scripted input
@@ -223,7 +224,7 @@ static class Game
             Notification.Draw();
             stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
             double secs = now / 1000;
-            if (shotIndex < shots.Length && secs >= shots[shotIndex])
+            if (shotIndex < shots.Length && secs >= shots[shotIndex] || shotIndex < songShots.Length && Screen is Player sp && sp.SongTime >= songShots[shotIndex])
             {
                 Rlgl.DrawRenderBatchActive(); // screenshots read the framebuffer, so flush pending draws first
                 TakeScreenshot($"shot-{shotIndex++}.png");
