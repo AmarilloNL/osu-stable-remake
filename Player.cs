@@ -1927,6 +1927,11 @@ sealed partial class Player : Screen
     double hpShown, hpLast = double.NaN, hpPulseAt = double.MinValue, hpFlashAt = double.MinValue;
     bool hpFilling = true;
 
+    // stable's intro fill: 0.02 per ms, but always full by the first object (rate 200 / (first + lead-in) when it comes
+    // within 10s); it starts at -lead-in, or 10s before a late first object.
+    double HpFillRate => objs[0].Time * 0.02 < 200 ? 200.0 / Math.Max(1, objs[0].Time + map.AudioLeadIn) : 0.02;
+    double HpFillStart => map.AudioLeadIn > 0 ? -map.AudioLeadIn : objs[0].Time * 0.02 >= 200 && objs[0].Time > 10000 ? objs[0].Time - 10000 : 0;
+
     void UpdateHealthShown()
     {
         double now = Game.NowMs, dt = GetFrameTime() * 1000, actual = health.Value;
@@ -1940,9 +1945,9 @@ sealed partial class Player : Screen
         {
             if (hpFilling)
             {
-                if (time > -map.AudioLeadIn)
+                if (time > HpFillStart)
                 {
-                    hpShown = Math.Min(200, hpShown + 0.02 * dt);
+                    hpShown = Math.Min(200, hpShown + HpFillRate * dt);
                     if (now - hpPulseAt >= 150) hpPulseAt = now;
                 }
             }
@@ -1969,9 +1974,9 @@ sealed partial class Player : Screen
             // New-style skins (with scorebar-marker) place the fill differently from old ones.
             bool newStyle = skin.Tex("scorebar-marker") != null;
             var tint = Color.White;
-            bool additive = newStyle;
-            if (newStyle && hpShown < 40) { tint = ColorLerp(Color.Black, Color.Red, (float)((40 - hpShown) / 40)); additive = false; }
-            else if (newStyle && hpShown < 100) { tint = ColorLerp(Color.White, Color.Black, (float)((100 - hpShown) / 100)); additive = false; }
+            bool additive = newStyle, coloured = newStyle && (!hpFilling || HpFillStart > 0); // stable leaves the bar white while it fills
+            if (coloured && hpShown < 40) { tint = ColorLerp(Color.Black, Color.Red, (float)((40 - hpShown) / 40)); additive = false; }
+            else if (coloured && hpShown < 100) { tint = ColorLerp(Color.White, Color.Black, (float)((100 - hpShown) / 100)); additive = false; }
             var at = (newStyle ? new Vector2(12f, 12.5f) * s : new Vector2(5f, 16f) * s) + new Vector2(0, by);
             tint = ColorAlpha(tint, ba);
             var tex = colour.Tex;
