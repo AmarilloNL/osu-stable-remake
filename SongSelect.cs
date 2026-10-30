@@ -478,6 +478,8 @@ sealed class SongSelect : Screen
         if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
 
         // F1: stable's mod select, with stable's hotkeys.
+        if (beatmapOptions) { while (Input.GetCharPressed() != 0) { } UpdateBeatmapOptions(); return; }
+        if (Input.IsKeyPressed(KeyboardKey.F3) && !modSelect) { OpenBeatmapOptions(); return; }
         if (Input.IsKeyPressed(KeyboardKey.F1)) OpenModSelect(!modSelect);
         else if (modSelect)
         {
@@ -802,6 +804,7 @@ sealed class SongSelect : Screen
         DrawBottomBar(w, h, s);
         DrawCursor();
         if (modSelect) DrawModSelect(w, h);
+        if (beatmapOptions) DrawBeatmapOptions();
     }
 
     // Group header: stable's group panel colours (open group lighter), "Name (N maps)".
@@ -1126,7 +1129,7 @@ sealed class SongSelect : Screen
             Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
             if (name == "selection-mods") OpenModSelect(!modSelect);
             else if (name == "selection-random" && view.Count > 0) MoveSet(Random.Shared.Next(view.Count) - setIndex);
-            else if (name == "selection-options") Game.Screen = new Options(this, this);
+            else if (name == "selection-options") OpenBeatmapOptions(); // stable's Beatmap Options dialog
             return true;
         }
         if (Vector2.Distance(mouse, new Vector2(w - 70 * s, h - 60 * s)) < 60 * s) { Play(mods); return true; }
@@ -1200,6 +1203,47 @@ sealed class SongSelect : Screen
             Game.Text("No personal record set", 63 * u, 394.5f * u - 6.5f * u, 13 * u, Color.White);
         }
     }
+    // F3 / Beatmap Options: stable's dialog for the selected set. Offline, the actions that would change stable's files
+    // (collections, deleting, the unplayed flag, local scores) or need the editor only explain themselves.
+    static readonly (string Label, Color Colour, string? Notice)[] BeatmapOptions =
+    [
+        ("Manage Collections", new Color(154, 205, 50, 255), "Collections are read from stable; manage them in osu!stable."),
+        ("Delete...", new Color(255, 69, 0, 255), "This remake never deletes your beatmaps; delete them in osu!stable."),
+        ("Remove from Unplayed", new Color(207, 124, 215, 255), "The remake doesn't write osu!stable's database."),
+        ("Clear local scores", new Color(207, 124, 215, 255), "Your scores are kept; clear them in osu!stable."),
+        ("Edit", new Color(255, 69, 0, 255), "The beatmap editor isn't part of this offline remake."),
+        ("Cancel", Color.Gray, null),
+    ];
+    bool beatmapOptions;
+    double beatmapOptionsAt;
+    float beatmapOptionsY;
+
+    void OpenBeatmapOptions() { if (Selected != null) { beatmapOptions = true; beatmapOptionsAt = Game.NowMs; } }
+
+    void UpdateBeatmapOptions()
+    {
+        var mouse = Input.GetMousePosition();
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) ? BeatmapOptions.Length - 1 : -1;
+        for (int i = 0; i < BeatmapOptions.Length && chosen < 0; i++)
+            if (Input.IsKeyPressed(KeyboardKey.One + i) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(beatmapOptionsY + i * 50))) chosen = i;
+        if (chosen < 0) return;
+        beatmapOptions = false;
+        if (BeatmapOptions[chosen].Notice is { } notice) Notification.Show(notice, 3000);
+    }
+
+    void DrawBeatmapOptions()
+    {
+        if (Selected is not { } b) return;
+        double age = Game.NowMs - beatmapOptionsAt;
+        float fade = (float)Math.Clamp(age / 200, 0, 1);
+        Dialog.Backdrop(fade);
+        beatmapOptionsY = Dialog.Title($"{b.Artist} - {b.Title}\nWhat do you want to do with this beatmap?", fade);
+        var mouse = Input.GetMousePosition();
+        for (int i = 0; i < BeatmapOptions.Length; i++)
+            Dialog.Button(i, BeatmapOptions[i].Label, BeatmapOptions[i].Colour, beatmapOptionsY + i * 50, age, mouse);
+    }
+
     // stable's mod select: a dialog titled with its blurb, "Score Multiplier" centred 20 units above the content, three
     // labelled rows (size 24 at x 20; green, orange-red, white) of icons 66 units apart from x 240, rows 60 apart from 35
     // units under the content start, then Reset All Mods / Close. A selected icon springs to 1.2x and 0.1 rad (elastic,

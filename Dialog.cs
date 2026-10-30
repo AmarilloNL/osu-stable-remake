@@ -22,14 +22,17 @@ static class Dialog
     {
         float u = U, size = TitleSize * u, max = GetScreenWidth() - 4 * u;
         lines.Clear();
-        string line = "";
-        foreach (var word in text.Split(' '))
+        foreach (var paragraph in text.Split('\n'))
         {
-            string next = line.Length == 0 ? word : line + " " + word;
-            if (line.Length > 0 && Game.TextWidth(next, size) > max) { lines.Add(line); line = word; }
-            else line = next;
+            string line = "";
+            foreach (var word in paragraph.Split(' '))
+            {
+                string next = line.Length == 0 ? word : line + " " + word;
+                if (line.Length > 0 && Game.TextWidth(next, size) > max) { lines.Add(line); line = word; }
+                else line = next;
+            }
+            lines.Add(line);
         }
-        if (line.Length > 0) lines.Add(line);
         for (int i = 0; i < lines.Count; i++) Game.Text(lines[i], 5 * u, (2 + i * LineH) * u, size, ColorAlpha(Color.White, alpha)); // 2 units in, plus stable's text padding
         return 2 + lines.Count * LineH + 50;
     }
@@ -63,8 +66,8 @@ static class Dialog
         }
         else DrawRectangleRec(r, tint);
         string text = $"{index + 1}. {label}";
-        float size = 14 * 40 / 18f * 1.05f * u;
-        Game.Text(text, r.X + r.Width / 2 - Game.TextWidth(text, size) / 2, r.Y + r.Height / 2 - size / 2 - 1.3f * u, size, ColorAlpha(Color.White, alpha));
+        float size = 14 * 40 / 18f * u; // stable's size, in bold (measured)
+        Game.TextBold(text, r.X + r.Width / 2 - Game.BoldWidth(text, size) / 2, r.Y + r.Height / 2 - size / 2 - 1.3f * u, size, ColorAlpha(Color.White, alpha)); // bold
         return hover;
     }
 }
