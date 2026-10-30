@@ -50,6 +50,10 @@ static class Game
 
     public static float TextWidth(string s, float size) => MeasureTextEx(Ui(size), OldStyle(s), size, 0).X;
 
+    // Regular Aller at any size (stable picks the weight by its nominal size, not pixels).
+    public static void TextRegular(string s, float x, float y, float size, Color c) =>
+        DrawTextEx(Font, OldStyle(s), new Vector2(x, y), size, 0, c);
+
     public static void TextBold(string s, float x, float y, float size, Color c) =>
         DrawTextEx(Bold, OldStyle(s), new Vector2(x, y), size, 0, c);
 
