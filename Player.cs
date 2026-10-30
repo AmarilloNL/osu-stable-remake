@@ -167,7 +167,8 @@ sealed partial class Player : Screen
         if (!VirtualClock) ApplyToggles();
         SetupCountdown();
 
-        clockOrigin = Math.Min(-map.AudioLeadIn, objs[0].Time - map.Preempt - 1000);
+        // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
+        clockOrigin = Math.Min(Math.Min(-map.AudioLeadIn, storyboard?.EarliestEvent ?? 0), objs[0].Time - Math.Max(1800, map.Preempt));
         playStart = clockOrigin;
         sw.Start();
     }

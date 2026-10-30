@@ -55,6 +55,8 @@ sealed class Storyboard
     int nextSample;
 
     public bool IsEmpty => elements.Count == 0 && samples.Count == 0;
+    // The earliest event (sprite command or sample), capped at 0: stable starts the map early enough to show it.
+    public double EarliestEvent => Math.Min(0, Math.Min(elements.Count > 0 ? elements.Min(e => e.Start) : 0, samples.Count > 0 ? samples.Min(s => s.Time) : 0));
     public bool UsesFile(string file) => elements.Any(e => e.Path.Equals(file, StringComparison.OrdinalIgnoreCase));
 
     Storyboard(string folder, bool widescreen)
