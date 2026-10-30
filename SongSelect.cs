@@ -1039,7 +1039,7 @@ sealed class SongSelect : Screen
     internal static void DrawUserPanel(float x, float y, float alpha)
     {
         float u = U;
-        Game.TextLight("Guest", x * u, y * u, 15.8f * u, ColorAlpha(Color.White, alpha));
+        Game.TextLight("Guest", x * u, (y + 0.9f) * u, 14.5f * u, ColorAlpha(Color.White, alpha)); // measured at 1080p
         Game.TextLight("Click to sign in!", (x - 0.3f) * u, (y + 15) * u, 10.8f * u, ColorAlpha(Color.White, alpha));
         var bar = new Rectangle((x + 25.7f) * u, (y + 42.7f) * u, 123.3f * u, 6.7f * u);
         DrawRectangleRounded(bar, 1, 8, ColorAlpha(new Color(38, 38, 38, 255), alpha));
