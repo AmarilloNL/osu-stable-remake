@@ -112,7 +112,7 @@ sealed class Beatmap
 {
     public string Folder = "", File = "";
     public int FormatVersion = 14, Mode;
-    public string AudioFilename = "", Background = "", Title = "", Artist = "", Version = "", Creator = "";
+    public string AudioFilename = "", Background = "", Title = "", Artist = "", Version = "", Creator = "", Source = "";
     public double AudioLeadIn, PreviewTime, StackLeniency = 0.7;
     public int Countdown = 1, CountdownOffset; // 0 none, 1 normal, 2 half speed, 3 double speed
     public double HP = 5, CS = 5, OD = 5, AR = -1, SliderMultiplier = 1.4, SliderTickRate = 1;
@@ -224,6 +224,7 @@ sealed class Beatmap
                     case "Artist": Artist = v; break;
                     case "Version": Version = v; break;
                     case "Creator": Creator = v; break;
+                    case "Source": Source = v; break;
                     case "HPDrainRate": HP = D(v); break;
                     case "CircleSize": CS = D(v); break;
                     case "OverallDifficulty": OD = D(v); break;

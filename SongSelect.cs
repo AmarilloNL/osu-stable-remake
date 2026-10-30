@@ -565,6 +565,7 @@ sealed class SongSelect : Screen
 
         scrollRow += (SelectedRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
         UpdateCarousel(dtMs, Input.GetMousePosition());
+        UpdateSparkles();
     }
 
     // Rows: one per set, except the selected set, which is replaced by one row per difficulty (like stable).
@@ -787,6 +788,7 @@ sealed class SongSelect : Screen
         int w = GetScreenWidth(), h = GetScreenHeight();
         float s = S;
         DrawBackground(w, h);
+        DrawBackdrop(w, h, s);
         if (loading != null)
         {
             Game.TextBold("Loading osu!.db…", 40 * s, 40 * s, 36 * s, Color.White);
@@ -805,6 +807,47 @@ sealed class SongSelect : Screen
     }
 
     // Group header: stable's group panel colours (open group lighter), "Name (N maps)".
+    // stable's song select backdrop, between the background and the carousel: the mode icon at the screen centre (additive,
+    // alpha 80 -> 50 over each beat), and star bursts: on every update in a window just before each beat (300ms early,
+    // min(100ms, beat/10) long; beats over 150ms) five star2s fly left from 100 units past the right edge along the
+    // selected panel (+-20 units), 140-900 units over a second (Out), growing 1 -> 2, fading out and turning randomly.
+    // Stable spawns once per update, so its density follows its frame rate; here at most one burst per 4ms.
+    readonly List<(double At, float Y, float Dist, float R0, float R1)> sparkles = [];
+    double lastSparkle;
+
+    void UpdateSparkles()
+    {
+        double now = Game.NowMs;
+        sparkles.RemoveAll(sp => now - sp.At >= 1000);
+        if (modSelect || view.Count == 0 || now - lastSparkle < 4 || Beat() is not { } b || b.Length <= 150) return;
+        if (Math.Abs(MusicMs + 300 - b.RedTime) % b.Length >= Math.Min(100, b.Length / 10)) return;
+        lastSparkle = now;
+        float y = RowCentre(SelectedRow);
+        for (int i = 0; i < 5; i++)
+            sparkles.Add((now, y + Random.Shared.Next(-20, 20) * U, Random.Shared.Next(140, 900), Random.Shared.NextSingle() * 4 - 2, Random.Shared.NextSingle() * 4 - 2));
+    }
+
+    void DrawBackdrop(int w, int h, float s)
+    {
+        float u = U;
+        if (Game.Skin.Tex("mode-osu") is { } mode)
+        {
+            double phase = BeatPhase() is var p && !double.IsNaN(p) ? p : 0;
+            BeginBlendMode(BlendMode.Additive);
+            mode.Draw(new Vector2(w / 2f, 240 * u), s, ColorAlpha(Color.White, (float)((80 - phase * 30) / 255 * 70 / 255))); // its colour carries alpha 70 too
+            EndBlendMode();
+        }
+        if (sparkles.Count == 0 || Game.Skin.Tex("star2") is not { } star) return;
+        double now = Game.NowMs;
+        BeginBlendMode(BlendMode.Additive);
+        foreach (var (at, y, dist, r0, r1) in sparkles)
+        {
+            float e = (float)Easing.Apply(1, (now - at) / 1000);
+            star.Draw(new Vector2(w + (100 - dist * e) * u, y), (1 + e) * s, ColorAlpha(Color.White, 1 - e), (r0 + (r1 - r0) * e) * 180 / MathF.PI);
+        }
+        EndBlendMode();
+    }
+
     // The panel sprite at scale 1, its left edge at x and its centre line at cy, tinted. A hovered panel flashes 30%
     // lighter and fades back over a second.
     void DrawPanel(int row, float x, float cy, float s, Color colour)
@@ -938,7 +981,8 @@ sealed class SongSelect : Screen
                 float k = mods.HasFlag(Mods.HardRock) ? 1.4f : mods.HasFlag(Mods.Easy) ? 0.5f : 1;
                 float kcs = mods.HasFlag(Mods.HardRock) ? 1.3f : k;
                 float stars = b.StarsFor(mods);
-                header = [$"{b.Artist} - {b.Title} [{b.Version}]", $"Mapped by {b.Creator}",
+                header = [$"{(b.Source.Length > 0 ? $"{b.Source} ({b.Artist})" : b.Artist)} - {b.Title} [{b.Version}]", // stable: "Source (Artist)" when there is one
+                    $"Mapped by {b.Creator}",
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
                     $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? (Math.Floor(stars * 100) / 100).ToString("0.##") : "?")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after
