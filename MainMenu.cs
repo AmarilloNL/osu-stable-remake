@@ -544,7 +544,7 @@ sealed class MainMenu : Screen
         }
         var info = infoLines;
         if (infoAlpha * layer > 0)
-            for (int i = 0; i < info.Length; i++) Game.Text(info[i], 210 * u, (i * 13.7f - 1) * u, 14 * u, ColorAlpha(Color.White, infoAlpha * layer));
+            for (int i = 0; i < info.Length; i++) Game.Text(info[i], 211.3f * u, (i * 13.7f - 0.1f) * u, 14.45f * u, ColorAlpha(Color.White, infoAlpha * layer));
         DrawTip(now);
         DrawMusicControls();
         SongSelect.DrawUserPanel(53.1f, 0.6f, layer);

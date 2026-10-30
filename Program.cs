@@ -25,9 +25,10 @@ static class Game
 
     public static double NowMs => Clock.Elapsed.TotalMilliseconds;
 
-    // stable's text renderer: Aller Light by default but regular Aller below 20px, and old-style digits
-    // (Aller's private-use glyphs at digit + 63500) in every Aller weight.
-    static Font Ui(float size) => size < 20 ? Font : Light;
+    // stable's text renderer: Aller Light by default but regular Aller below size 20 in its 640x480 units (not pixels:
+    // at 1080p a size-16 line is still regular), and old-style digits (Aller's private-use glyphs at digit + 63500) in
+    // every Aller weight.
+    static Font Ui(float size) => size / (GetScreenHeight() / 480f) < 20 ? Font : Light;
 
     // Cached: UI text is mostly the same strings every frame (main thread only).
     static readonly Dictionary<string, string> oldStyle = [];

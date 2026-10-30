@@ -888,8 +888,8 @@ sealed class SongSelect : Screen
         // (measured on the default skin at 720p).
         float tx = x + (grade != null ? 100 : 83) * u, lx = tx + 1.67f * u, dy = -u;
         var faded = d >= 0 && !selected ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
-        Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 17.2f * u, faded); // stable says 16; renders this wide (measured)
-        Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.6f * u, faded);
+        Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 16.55f * u, faded); // stable says 16; renders this wide (measured)
+        Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.1f * u, faded);
         if (d < 0) return;
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
         if (view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
@@ -988,10 +988,10 @@ sealed class SongSelect : Screen
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
                     $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? (Math.Floor(stars * 100) / 100).ToString("0.##") : "?")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after
             }
-            Game.Text(header[0], 23.4f * u, -3 * u, 19.1f * u, Color.White); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
-            Game.Text(header[1], 24.6f * u, 12 * u, 12.6f * u, Color.White);
+            Game.Text(header[0], 23.4f * u, -3 * u, 18.4f * u, Color.White); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
+            Game.Text(header[1], 24.6f * u, 12 * u, 12.45f * u, Color.White);
             Game.TextBold(header[2], 2.5f * u, 24 * u, 12.5f * u, Color.White);
-            Game.Text(header[3], 2.5f * u, 36.5f * u, 12.7f * u, Color.White);
+            Game.Text(header[3], 2.5f * u, 36.5f * u, 12.4f * u, Color.White);
             Game.Text(header[4], 2 * u, 48 * u, 8.2f * u, Color.White);
             Options.DrawIcon(0xf005, 2 * u + Game.TextWidth(header[4], 8.2f * u) + 4.5f * u, 52.5f * u, 8 * u, Color.White); // Aller has no star: stable's comes from a fallback font
         }
@@ -1039,8 +1039,8 @@ sealed class SongSelect : Screen
     internal static void DrawUserPanel(float x, float y, float alpha)
     {
         float u = U;
-        Game.Text("Guest", x * u, y * u, 15.8f * u, ColorAlpha(Color.White, alpha));
-        Game.Text("Click to sign in!", (x - 0.3f) * u, (y + 15) * u, 10.8f * u, ColorAlpha(Color.White, alpha));
+        Game.TextLight("Guest", x * u, y * u, 15.8f * u, ColorAlpha(Color.White, alpha));
+        Game.TextLight("Click to sign in!", (x - 0.3f) * u, (y + 15) * u, 10.8f * u, ColorAlpha(Color.White, alpha));
         var bar = new Rectangle((x + 25.7f) * u, (y + 42.7f) * u, 123.3f * u, 6.7f * u);
         DrawRectangleRounded(bar, 1, 8, ColorAlpha(new Color(38, 38, 38, 255), alpha));
         DrawRectangleRoundedLinesEx(bar, 1, 8, Math.Max(1, u), ColorAlpha(new Color(90, 90, 90, 255), alpha));
