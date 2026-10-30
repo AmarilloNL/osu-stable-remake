@@ -256,6 +256,15 @@ sealed partial class Player
     readonly List<object> boardKeys = [];
 
     double hintFrom = double.NaN;
+    // stable cuts names wider than 90 units and adds "..." (cached: drawn every frame).
+    readonly Dictionary<(string, float), string> panelNames = [];
+    string PanelName(string name, float u)
+    {
+        if (panelNames.TryGetValue((name, u), out var s)) return s;
+        s = name;
+        while (s.Length > 1 && Game.LightWidth(s, 14.4f * u) / u > 90) s = s[..^1];
+        return panelNames[(name, u)] = s.Length < name.Length ? s + "..." : s;
+    }
 
     void DrawScoreboard(float u)
     {
@@ -328,7 +337,9 @@ sealed partial class Player
             var info = key as ReplayInfo;
             int r = ranks.TryGetValue(key, out var row) ? row.Rank : 0;
             float y = PanelY(p, now) * u, anchor = y + 4.65f * u; // stable positions the panel's parts from here
-            Color A(Color c) => ColorAlpha(c, c.A / 255f * a * boardAlpha);
+            // stable fades other players' panels to 0.8 - (rank - 1) / count x 0.3; the live player's stays at 1.
+            float dim = info != null && r > 0 ? 0.8f - (r - 1) / (float)Math.Max(1, ranks.Count) * 0.3f : 1;
+            Color A(Color c) => ColorAlpha(c, c.A / 255f * a * boardAlpha * dim);
             // menu-button-background at 0.62 scale with its origin at texel (470, 20).
             if (skin.Tex("menu-button-background") is { } bg)
             {
@@ -339,7 +350,7 @@ sealed partial class Player
             }
             if (r > 0) // every panel shows its rank (stable hides it only on its online personal-best extra panel)
                 EntryText(r.ToString(), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
-            Game.TextLight(info?.Player is { Length: > 0 } pl ? pl : info == null ? me : "stable", 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
+            Game.TextLight(PanelName(info?.Player is { Length: > 0 } pl ? pl : info == null ? me : "stable", u), 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
             // The live panel counts along: current score and current combo.
             long panelScore = info?.Score ?? score; // stable writes nothing for a zero score, and a zero combo without its x
             if (panelScore > 0) EntryText(entryNumber.Of(panelScore), 2 * u, anchor + 18 * u, 1, true, 2.5f, 0, A(Color.White));
