@@ -379,10 +379,31 @@ sealed class MainMenu : Screen
     readonly List<(double At, float Scale)> shockwaves = [];
     (double At, float Peak, double Ms) flashLeft, flashRight;
 
-    float CookieScale => (float)(1 + 0.05 * Math.Pow(1 - (double.IsNaN(songs.BeatPhase()) ? 1 : songs.BeatPhase()), 2) + clickShrink);
+    // stable's cookie pulse: eases (x0.5 per 60Hz tick) toward 1 - (beat phase + 1 - (level - average level) / 0.5) / 2,
+    // where level = (L + R peak) / 65536 x music volume and the average follows it by 10% a tick; the cookie is
+    // 1.05 - 0.05 x pulse (+ hover/click), its glowing copy 1.05 + 0.03 x pulse at 0.4 x (1 - pulse) (0.1 in kiai).
+    float cookiePulse, levelAvg, glowLevel = 1;
+    float CookieScale => 1.05f - 0.05f * cookiePulse + clickShrink;
+
+    void UpdatePulse(double dtMs)
+    {
+        double ticks = dtMs / (1000 / 60.0);
+        int level = 32768;
+        if (songs.Music is { } m) { var (l, r) = m.Level; level = l + r; }
+        float now = level / 65536f * (float)(Config.GetDouble("VolumeMusic", 100) / 100);
+        float a = (float)Math.Pow(0.9, ticks);
+        levelAvg = levelAvg * a + now * (1 - a);
+        double phase = songs.BeatPhase() is var p && !double.IsNaN(p) ? p : 0.5;
+        float target = Math.Clamp(1 - ((float)phase * 0.5f + (1 - (now - levelAvg) / 0.5f) * 0.5f), 0, 1);
+        float k = (float)Math.Pow(0.5, ticks);
+        cookiePulse = cookiePulse * k + target * (1 - k);
+        float g = songs.Beat() is { Kiai: true } ? 1 : 0.6f + Math.Clamp((level - 30000) / 35536f, 0, 1) * 0.4f, gk = (float)Math.Pow(0.8, ticks);
+        glowLevel = glowLevel * gk + g * (1 - gk);
+    }
 
     void UpdateVisuals(double dtMs)
     {
+        UpdatePulse(dtMs);
         if (songs.Music is { } music) music.Fft(fft);
         else Array.Clear(fft);
         double left = Math.Min(dtMs, 1000);
@@ -558,14 +579,14 @@ sealed class MainMenu : Screen
             }
         }
 
-        // The cookie: swells to 1.05x on each beat and settles back; a fading 1.05->1.08x copy rides the beat.
+        // The cookie and its glowing copy (see UpdatePulse).
         if (skin.Tex("menu-osu") is { } cookie)
         {
-            double phase = songs.BeatPhase();
-            float beat = double.IsNaN(phase) ? 0 : (float)Math.Pow(1 - phase, 2);
             cookie.Draw(CookiePos, CookieScale * sd, Color.White);
-            if (!double.IsNaN(phase))
-                cookie.Draw(CookiePos, (1.05f + 0.03f * (float)phase + clickShrink) * sd, ColorAlpha(Color.White, 0.4f * beat));
+            bool kiai = songs.Beat() is { Kiai: true };
+            if (kiai) BeginBlendMode(BlendMode.Additive);
+            cookie.Draw(CookiePos, (1.05f + 0.03f * cookiePulse + clickShrink) * sd, ColorAlpha(Color.White, (kiai ? 0.1f : 0.4f) * (1 - cookiePulse) * glowLevel));
+            if (kiai) EndBlendMode();
         }
         else
         {
