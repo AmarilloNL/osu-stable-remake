@@ -255,9 +255,16 @@ sealed partial class Player
     readonly Dictionary<object, (ReplayInfo? Info, int Rank)> boardRanks = [];
     readonly List<object> boardKeys = [];
 
+    double hintFrom = double.NaN;
+
     void DrawScoreboard(float u)
     {
         if (Input.IsKeyPressed(KeyboardKey.Tab)) scoreboardOn = !scoreboardOn;
+        // stable's "Hit <Tab> to toggle scoreboard!" when the board appears: bold 12 just above it, fading out over 6s.
+        hintFrom = double.IsNaN(hintFrom) ? Game.NowMs : hintFrom;
+        double hintAge = Game.NowMs - hintFrom;
+        if (hintAge < 6000 && scoreboardOn && !overlayHidden)
+            Game.TextBold("Hit <Tab> to toggle scoreboard!", 2 * u, 186.3f * u, 12.4f * u, ColorAlpha(Color.White, (float)(1 - hintAge / 6000)));
         // stable: the board fades 0.08 a 60Hz tick, in from 0 at the start, out when hidden or failed.
         boardAlpha = Math.Clamp(boardAlpha + (scoreboardOn && !failed ? 0.08f : -0.08f) * GetFrameTime() * 60, 0, 1);
         if (boardAlpha <= 0 || overlayHidden) return;
@@ -328,7 +335,7 @@ sealed partial class Player
                 float k = 0.62f * sd;
                 DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height),
                     new Rectangle(-470 * k, anchor - 20 * k, bg.Width * k, bg.Height * k), Vector2.Zero, 0,
-                    A(info == null ? new Color(250, 250, 250, 100) : new Color(0, 0, 0, 150)));
+                    A(info != null ? new Color(31, 115, 153, 150) : auto || playback != null ? new Color(0, 0, 0, 150) : new Color(250, 250, 250, 100))); // stable: stored scores blue, the live player light (dark when watching)
             }
             if (r > 0) // every panel shows its rank (stable hides it only on its online personal-best extra panel)
                 EntryText(r.ToString(), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
