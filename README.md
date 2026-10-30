@@ -56,7 +56,7 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 - Reads stable's `osu!.db` directly, in the background (a 100k-map library is ready in a few seconds)
 - Stable's carousel, search with filters (`stars>5 ar=9 length<120`), sorting and grouping (collections, recently played, artist, difficulty)
 - Mod-adjusted star ratings, preview music, local leaderboard and personal best
-- Mod select (`F1`), random (`F2`) and rewind (`Shift+F2`), play with Auto (`Ctrl+Enter`), watch a local score (`Ctrl+1`–`9`)
+- Mod select (`F1`) and beatmap options (`F3`) as stable's dialogs, random (`F2`) and rewind (`Shift+F2`), play with Auto (`Ctrl+Enter`), watch a local score (`Ctrl+1`–`9`)
 </details>
 
 <details>
@@ -95,18 +95,20 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Accuracy vs stable**
 - [x] Hit windows, notelock, stacking, slider curves and timing ported from stable's behaviour
 - [x] Slider tracking with stable's button rules
-- [ ] The last ~10% of replay mismatches (mostly cursor right on the slider follow-radius edge)
+- [x] Judging identical to a running stable (300/100/50/miss, max combo and score) on 39 maps with generated sloppy replays
+- [ ] The last ~10% of mismatches on real 60Hz replays (mostly cursor right on the slider follow-radius edge)
 - [x] HP drain calibration identical to stable's, with and without HardRock or Easy (checked object by object against a running stable: 39 maps without mods, 32 with HR or EZ)
 - [x] Slider curves, timing, ticks, repeats and stacking bit-identical to stable on 39 maps (18,602 objects, also with HR and EZ; one HR slider ends a float step off)
+- [x] Song select, main menu, mod select, dialogs, HUD, pause/fail and ranking screens measured pixel by pixel against stable at 720p, 900p and 1080p
 - [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**
 - [ ] Smooth (dense) cursor trail for skins with a `cursormiddle`
 - [ ] Hit lighting, combo bursts and cursor ripples
-- [ ] Beatmap options menu (`F3`): delete maps, manage collections
+- [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
 - [ ] Remember Visual Settings per map (currently per session)
 - [ ] Faster fallback when `osu!.db` is missing (folder scan is slow on big libraries)
-- [ ] Verify guessed details: HUD mod icon placement, the Qualified warning text, some notice texts
+- [ ] Verify guessed details: the Qualified warning text, some notice texts
 
 **Not planned**
 - Online features of any kind (login, multiplayer, online leaderboards, score submission)
