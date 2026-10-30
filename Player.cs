@@ -66,6 +66,7 @@ sealed partial class Player : Screen
     internal double Time => time;
     int combo, maxCombo, n300, n100, n50, nMiss, nGeki, nKatu;
     internal readonly List<Vector2> hpGraph = []; // (time, hp 0..1) for the results screen
+    internal readonly List<Vector2> perfGraph = []; // stable's ranking graph (see Final)
     readonly double diffMul;
     readonly List<double> hitErrors = [];
     readonly List<(Vector2 Pos, double Time, int Result)> popups = [];
@@ -1001,6 +1002,8 @@ sealed partial class Player : Screen
             else if (comboWorst == 100) nKatu++;
             comboWorst = 300;
         }
+        // stable's ranking graph: a point per judgement, HP against what a perfect play would have here (capped at 1).
+        if (i < health.SimHp.Length && health.SimHp[i] > 0) perfGraph.Add(new((float)time, (float)Math.Min(1, health.Value / health.SimHp[i])));
     }
 
     void UpdateObjects(bool held, double dtMs)

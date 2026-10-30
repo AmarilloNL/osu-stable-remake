@@ -56,7 +56,7 @@ sealed partial class Player
 
             // HP graph: a stable replay shows the graph stable saved in it, else ours; thinned to <= 100 points the
             // way stable does it (drop every other one from the end).
-            var pts = new List<Vector2>(p.hpGraph);
+            var pts = new List<Vector2>(p.perfGraph.Count >= 2 ? p.perfGraph : p.hpGraph);
             if (p.watching is { FromStable: true } w)
                 try { if (Replays.OsrLifeBar(w.Path) is { Count: >= 2 } saved) pts = saved; }
                 catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { }
