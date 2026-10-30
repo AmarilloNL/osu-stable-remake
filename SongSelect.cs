@@ -1370,10 +1370,13 @@ sealed class SongSelect : Screen
     internal void DrawBackground(int w, int h)
     {
         if (bgTex.Id == 0) return;
-        float k = Math.Max(w / (float)bgTex.Width, h / (float)bgTex.Height);
+        // stable's menu background parallax (MenuParallax): 1/180 of the cursor's offset from the centre, scaled 1.01.
+        bool parallax = Config.GetBool("MenuParallax", true);
+        float k = Math.Max(w / (float)bgTex.Width, h / (float)bgTex.Height) * (parallax ? 1.01f : 1);
+        var shift = parallax ? -(Input.GetMousePosition() - new Vector2(w / 2f, h / 2f)) / 180 : Vector2.Zero;
         float a = (float)Math.Clamp((Game.NowMs - bgShownAt) / 250, 0, 1) * 0.75f;
         DrawTexturePro(bgTex, new Rectangle(0, 0, bgTex.Width, bgTex.Height),
-            new Rectangle((w - bgTex.Width * k) / 2, (h - bgTex.Height * k) / 2, bgTex.Width * k, bgTex.Height * k),
+            new Rectangle((w - bgTex.Width * k) / 2 + shift.X, (h - bgTex.Height * k) / 2 + shift.Y, bgTex.Width * k, bgTex.Height * k),
             Vector2.Zero, 0, ColorAlpha(Color.White, a));
     }
 
