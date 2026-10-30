@@ -39,7 +39,7 @@ sealed class Skin
     public string ScorePrefix = "score", ComboPrefix = "score";
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
     public Color SongSelectActiveText = Color.Black, SongSelectInactiveText = Color.White;
-    public Color MenuGlow = new(0, 78, 155, 255); // main menu visualizer
+    public Color MenuGlow = new(128, 128, 160, 255); // main menu visualizer (stable's built-in default)
     public bool CursorCentre = true, CursorRotate = true;
     public Color InputOverlayText = Color.Black;
     public Color SpinnerBackground = new(100, 100, 100, 255); // stable tints spinner-background with this
