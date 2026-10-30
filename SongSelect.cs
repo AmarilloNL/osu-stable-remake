@@ -1003,7 +1003,7 @@ sealed class SongSelect : Screen
             Game.TextLight(label, r.X - 3 * u - Game.LightWidth(label, size), r.Y + r.Height - size * 0.8f + 2 * u, size, labelColour); // Aller Light
             DrawRectangleRec(r, Color.Black);
             DropdownBorder(r, new Color((byte)(labelColour.R * 0.83f), (byte)(labelColour.G * 0.83f), (byte)(labelColour.B * 0.83f), (byte)255)); // label colour at 83% (measured)
-            Game.Text(value, r.X + 2 * u, r.Y + r.Height / 2 - 6 * u, 14 * u, Color.White);
+            Game.Text(value, r.X + 0.7f * u, r.Y + r.Height / 2 - 7.3f * u, 13.4f * u, Color.White);
             Options.DrawIcon(0xf078, r.X + r.Width - 9.8f * u, r.Y + r.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
         }
         var sortBox = SortBox(w);
