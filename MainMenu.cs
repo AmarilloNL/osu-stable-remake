@@ -249,7 +249,11 @@ sealed class MainMenu : Screen
 
     float u, sd;
     int w, h;
-    Vector2 Centre => new(w / 2f, h / 2f);
+    // stable's menu parallax (MenuParallax): the cookie, buttons and visualizer move against the cursor by 1/60 of its offset
+    // from the centre in 640x480 units, the background by 1/180 (scaled 1.01 to hide its edges).
+    static bool ParallaxOn => Config.GetBool("MenuParallax", true);
+    Vector2 CursorOffset => ParallaxOn ? (Input.GetMousePosition() - new Vector2(w / 2f, h / 2f)) / u : Vector2.Zero;
+    Vector2 Centre => new Vector2(w / 2f, h / 2f) - CursorOffset / 60 * u;
 
     Rectangle ButtonRect(int i)
     {
@@ -518,9 +522,10 @@ sealed class MainMenu : Screen
         var bgTex = background.Id != 0 ? background : skin.Tex("menu-background")?.Tex ?? default;
         if (bgTex.Id != 0)
         {
-            float k = Math.Max(w / (float)bgTex.Width, h / (float)bgTex.Height);
+            float k = Math.Max(w / (float)bgTex.Width, h / (float)bgTex.Height) * (ParallaxOn ? 1.01f : 1);
+            var shift = -CursorOffset / 180 * u;
             DrawTexturePro(bgTex, new Rectangle(0, 0, bgTex.Width, bgTex.Height),
-                new Rectangle((w - bgTex.Width * k) / 2, (h - bgTex.Height * k) / 2, bgTex.Width * k, bgTex.Height * k), Vector2.Zero, 0, Color.White);
+                new Rectangle((w - bgTex.Width * k) / 2 + shift.X, (h - bgTex.Height * k) / 2 + shift.Y, bgTex.Width * k, bgTex.Height * k), Vector2.Zero, 0, Color.White);
         }
         else songs.DrawBackground(w, h);
 
