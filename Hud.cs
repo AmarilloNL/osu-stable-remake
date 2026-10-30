@@ -108,14 +108,30 @@ sealed partial class Player
         if (!skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, acc, right, accY, accScale, 1, Color.White, constant: true))
             Game.Text(acc, right - Game.TextWidth(acc, 20 * u / 3), accY, 20 * u / 3, Color.White);
 
-        if (Config.Get("ProgressBarType", "Pie") != "Pie") return;
         float accW = skin.FontWidth(skin.ScorePrefix, skin.ScoreOverlap, "00.00%", accScale, constant: true);
+        DrawBreakGrade(new Vector2(right - Math.Max(0, accW) - 52 * u, accY + glyphH * accScale / 2), sd);
+        if (Config.Get("ProgressBarType", "Pie") != "Pie") return;
         var centre = new Vector2(right - Math.Max(0, accW) - 24 * u, accY + glyphH * accScale / 2);
         double first = objs[0].Time, last = objs[^1].EndTime;
         double frac = time < first ? -Math.Clamp((first - time) / Math.Max(1, first - playStart), 0, 1) : Math.Clamp((time - first) / Math.Max(1, last - first), 0, 1);
         var fill = frac < 0 ? new Color(199, 255, 47, 153) : new Color(255, 255, 255, 153);
         if (frac != 0) DrawCircleSector(centre, 10 * u, -90, -90 + 360 * (float)Math.Abs(frac), 48, fill);
         skin.Tex("circularmetre")?.Draw(centre, sd, Color.White); // osu!gameplay.dll
+    }
+
+    // stable's grade during breaks (measured at 1080p): ranking-X-small 28 units left of the pie, shown from 350ms
+    // into the break until a second before its end, with an echo behind it growing 0.3 a second and fading from 50%.
+    void DrawBreakGrade(Vector2 at, float sd)
+    {
+        foreach (var (start, end) in map.Breaks)
+        {
+            double t = time - (start + 350);
+            if (t < 0 || time > end - 1000) continue;
+            if (skin.Tex($"ranking-{Grade()}-small") is not { } g) return;
+            if (t < 1000) g.Draw(at, sd * (1 + 0.3f * (float)t / 1000), ColorAlpha(Color.White, 0.5f * (1 - (float)t / 1000)));
+            g.Draw(at, sd, Color.White);
+            return;
+        }
     }
 
     // stable hides parts of the HUD in breaks: the combo fades out over 1s sliding 80 units left (In),
