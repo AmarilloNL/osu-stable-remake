@@ -64,7 +64,7 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 
 - Main menu with the beating cookie, audio visualizer, seasonal backgrounds, tips and music controls
 - Ranking screen with stable's layout, HP graph and replay watching
-- Options panel in stable's layout (graphics, gameplay, audio, skin, input)
+- Options panel as stable's: all nine sections with dropdowns, buttons and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
 - Volume overlay, stable's FPS / frame time counter, notifications
 </details>
 

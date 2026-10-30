@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using Raylib_cs;
@@ -5,20 +6,35 @@ using static Raylib_cs.Raylib;
 
 namespace OsuStableRemake;
 
-// stable's options panel over the screen it was opened from (main menu or song select), laid out from a stable
-// capture in 640x480 units: a black icon strip (sections), the translucent panel, search on top, big section
-// titles, bold sub-headers with a rule, circle checkboxes, line sliders, a pink "back" tab. Only settings this
-// client reads are listed; changes apply live and go to remake.cfg, never stable's own cfg.
+// stable's options panel over the screen it was opened from (main menu or song select), laid out from stable
+// captures in 640x480 units: a black icon strip (sections), the translucent panel, search on top, big section
+// titles, bold sub-headers with a rule, circle checkboxes, line sliders, dropdowns, buttons, a pink "back" tab.
+// Every section and setting stable shows is here; the ones this client reads apply live. All changes go to
+// remake.cfg, never stable's own cfg. Online parts (sign in, updates, chat) are shown but do nothing: this client
+// never connects anywhere.
 sealed class Options : Screen
 {
-    enum Kind { Section, Header, Toggle, Slider, Choice, Key }
+    enum Kind { Section, Header, Toggle, Slider, Choice, Key, Button, Text, Warning, Field, Preview, Version }
 
     sealed record Item(Kind Kind, string Label, string Key = "", double Min = 0, double Max = 0, double Def = 0,
-        string Format = "0", string Unit = "", string[]? Values = null, string[]? Names = null, string DefValue = "", int Icon = 0);
+        string Format = "0", string Unit = "", string[]? Values = null, string[]? Names = null, string DefValue = "", int Icon = 0,
+        Color Colour = default, Action? Click = null, Func<bool>? Visible = null);
 
-    static readonly string[] Limiters = ["VSync", "PowerSaving", "Optimal", "Unlimited"];
-    static readonly Color Pink = new(235, 117, 140, 255), Title = new(70, 175, 206, 255),
-        Rule = new(68, 65, 77, 255), Strip = new(8, 8, 8, 255), BackPink = new(237, 52, 152, 255);
+    static readonly Color Pink = new(235, 117, 140, 255), Title = new(70, 175, 206, 255), Rule = new(68, 65, 77, 255),
+        Strip = new(8, 8, 8, 255), Panel = new(9, 9, 9, 191), Yellow = new(254, 197, 23, 255),
+        Blue = new(14, 132, 165, 255), Green = new(117, 162, 25, 255), Grey = new(107, 107, 107, 255), ButtonPink = new(214, 96, 119, 255),
+        BoxHover = new(186, 17, 119, 255), FieldEdge = new(179, 179, 179, 255);
+
+    static Item S(string label, int icon) => new(Kind.Section, label, Icon: icon);
+    static Item H(string label) => new(Kind.Header, label);
+    static Item T(string label, string key, bool def = false) => new(Kind.Toggle, label, key, Def: def ? 1 : 0);
+    static Item B(string label, Color c, Action? click = null) => new(Kind.Button, label, Colour: c, Click: click);
+    static Item F(string label) => new(Kind.Field, label);
+
+    static void Explore(string dir)
+    {
+        if (Directory.Exists(dir)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
+    }
 
     readonly Screen back;
     readonly SongSelect songs;
@@ -26,12 +42,14 @@ sealed class Options : Screen
     string? jumpTo;
     string search = "";
     float scroll, scrollTarget;
-    int dragging = -1, binding = -1;
+    int dragging = -1, binding = -1, dropdown = -1, dropFirst;
+    bool showKeys;
     double openedAt = Game.NowMs, closingAt = double.NaN;
 
-    // Layout of the visible items (content y, height), rebuilt each frame; slider tracks from the last draw.
+    // Layout of the visible items (content y, height), rebuilt each frame; slider tracks and dropdown boxes from the last draw.
     readonly List<(int Item, float Y, float H)> layout = [];
     readonly Dictionary<int, (float X0, float X1)> tracks = [];
+    readonly Dictionary<int, Rectangle> boxes = [];
 
     public Options(Screen back, SongSelect songs, string? jumpTo = null)
     {
@@ -41,60 +59,180 @@ sealed class Options : Screen
         var skinDir = Path.Combine(Config.OsuDir, "Skins");
         var skins = Directory.Exists(skinDir) ? Directory.GetDirectories(skinDir).Select(Path.GetFileName).OfType<string>().Order(StringComparer.OrdinalIgnoreCase).ToArray() : [];
         int m = GetCurrentMonitor();
-        var resolutions = new[] { (1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160), (GetMonitorWidth(m), GetMonitorHeight(m)) }
+        var resolutions = new[] { (800, 600), (1024, 768), (1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160), (GetMonitorWidth(m), GetMonitorHeight(m)) }
             .Where(r => r.Item1 <= GetMonitorWidth(m) && r.Item2 <= GetMonitorHeight(m)).Distinct().OrderBy(r => r.Item1).Select(r => $"{r.Item1}x{r.Item2}").ToArray();
+        string build = $"b{File.GetLastWriteTime(Environment.ProcessPath ?? AppContext.BaseDirectory):yyyyMMdd}";
         items =
         [
-            new(Kind.Section, "GRAPHICS", Icon: 0xf108),
-            new(Kind.Header, "LAYOUT"),
-            new(Kind.Choice, "Display mode", "DisplayMode", Values: ["Windowed", "Borderless", "Fullscreen"], DefValue: Game.DisplayMode()),
-            new(Kind.Choice, "Resolution", "Resolution", Values: resolutions, DefValue: $"{Game.Resolution().W}x{Game.Resolution().H}"),
-            new(Kind.Header, "RENDERER"),
-            new(Kind.Choice, "Frame limiter", "FrameSync", Values: Limiters, Names: ["VSync", "Power saving (2x)", "Optimal (8x)", "Unlimited"], DefValue: "Unlimited"),
-            new(Kind.Header, "DETAIL SETTINGS"),
-            new(Kind.Toggle, "Snaking sliders", "SnakingSliders", Def: 1),
+            S("GENERAL", 0xf013),
+            H("SIGN IN"),
+            F("Username"),
+            F("Password"),
+            T("Remember Username", "SaveUsername", true),
+            T("Remember Password", "SavePassword"),
+            B("Sign In", Blue),
+            B("Create an account", Blue),
+            H("LANGUAGE"),
+            new(Kind.Choice, "Select language:", "Language", Values: ["en"], Names: ["English"], DefValue: "en"),
+            T("Prefer metadata in original language", "ShowUnicode"),
+            T("Use alternative font for chat display", "AlternativeChatFont"),
+            H("UPDATES"),
+            new(Kind.Choice, "Release stream:", "_ReleaseStream", Values: ["Stable", "Beta", "CuttingEdge"], Names: ["Stable", "Beta", "Cutting Edge"], DefValue: "Stable"),
+            B("Try out the new osu!(lazer) client!", Green),
+            B("Open osu! folder", Blue, () => Explore(Config.OsuDir)),
 
-            new(Kind.Section, "GAMEPLAY", Icon: 0xf10c),
-            new(Kind.Header, "GENERAL"),
-            new(Kind.Slider, "Background dim", "DimLevel", 0, 100, 80, "0", "%"),
-            new(Kind.Choice, "Progress display", "ProgressBarType", Values: ["Pie", "Off"], Names: ["Pie", "Off"], DefValue: "Pie"),
-            new(Kind.Choice, "Score meter type", "ScoreMeter", Values: ["Error", "None"], Names: ["Hit Error", "None"], DefValue: "Error"),
-            new(Kind.Slider, "Score meter size", "ScoreMeterScale", 0.5, 2, 1, "0.0", "x"),
-            new(Kind.Toggle, "Show key overlay", "KeyOverlay"),
+            S("GRAPHICS", 0xf108),
+            H("RENDERER"),
+            new(Kind.Choice, "Frame limiter:", "FrameSync", Values: ["VSync", "PowerSaving", "Optimal", "Unlimited"],
+                Names: ["VSync", "Power saving (2x refresh)", "Optimal (8x refresh)", "Unlimited (gameplay)"], DefValue: "Optimal"),
+            new(Kind.Warning, "Using unlimited frame limiter can lead to stutters. \"Optimal\" is recommended.", Visible: () => Config.Get("FrameSync", "Optimal") == "Unlimited"),
+            T("Show FPS counter", "FpsCounter"),
+            T("Compatibility mode", "CompatibilityContext"),
+            T("Reduce dropped frames", "ForceFrameFlush"),
+            T("Detect performance issues", "DetectPerformanceIssues", true),
+            H("LAYOUT"),
+            new(Kind.Choice, "Resolution:", "Resolution", Values: resolutions, DefValue: $"{Game.Resolution().W}x{Game.Resolution().H}"),
+            T("Fullscreen mode", "Fullscreen", true),
+            new(Kind.Warning, "Running without fullscreen mode will increase your input latency!", Visible: () => Game.DisplayMode() != "Fullscreen"),
+            T("Minimise on alt-tab during fullscreen", "MinimiseOnAltTabFullscreen", true),
+            T("Render at native resolution", "HighResolution"),
+            new(Kind.Slider, "Horizontal position", "LetterboxPositionX", -100, 100, 0, "0", "%"),
+            new(Kind.Slider, "Vertical position", "LetterboxPositionY", -100, 100, 0, "0", "%"),
+            H("DETAIL SETTINGS"),
+            T("Snaking sliders", "SnakingSliders", true),
+            T("Background video", "Video", true),
+            T("Storyboards", "ShowStoryboard", true),
+            T("Combo bursts", "ComboBurst"),
+            T("Hit lighting", "HitLighting", true),
+            T("Shaders", "Shaders"),
+            T("Softening filter", "BloomSoftening"),
+            new(Kind.Choice, "Screenshot format:", "ScreenshotFormat", Values: ["Jpg", "Png"], Names: ["JPEG (web-friendly)", "PNG (lossless)"], DefValue: "Jpg"),
+            H("MAIN MENU"),
+            T("Snow", "MenuSnow"),
+            T("Parallax", "MenuParallax", true),
+            T("Menu tips", "ShowMenuTips", true),
+            T("Interface voices", "MenuVoice", true),
+            T("osu! music theme", "MenuMusic", true),
+            new(Kind.Choice, "Seasonal backgrounds", "SeasonalBackgrounds", Values: ["Never", "Sometimes", "Always"], DefValue: "Sometimes"),
+            H("SONG SELECT"),
+            T("Show thumbnails", "SongSelectThumbnails", true),
 
-            new(Kind.Section, "AUDIO", Icon: 0xf028),
-            new(Kind.Header, "VOLUME"),
-            new(Kind.Slider, "Master", "VolumeUniversal", 0, 100, 100, "0", "%"),
-            new(Kind.Slider, "Music", "VolumeMusic", 0, 100, 100, "0", "%"),
-            new(Kind.Slider, "Effect", "VolumeEffect", 0, 100, 100, "0", "%"),
-            new(Kind.Toggle, "Ignore beatmap hitsounds", "IgnoreBeatmapSamples"),
-            new(Kind.Header, "OFFSET ADJUSTMENT"),
-            new(Kind.Slider, "Universal offset", "RemakeOffset", -300, 300, 0, "0", "ms"),
-            new(Kind.Header, "OTHER"),
-            new(Kind.Toggle, "osu! music theme in the main menu", "MenuMusic", Def: 1),
+            S("GAMEPLAY", 0xf10c),
+            H("GENERAL"),
+            new(Kind.Slider, "Background dim:", "DimLevel", 0, 100, 80, "0", "%"),
+            T("Don't change dim level during breaks", "IHateHavingFun"),
+            T("Show leaderboard during gameplay", "ScoreboardVisible", true),
+            new(Kind.Choice, "Progress display:", "ProgressBarType", Values: ["Off", "Pie", "TopRight", "BottomRight", "Bottom"],
+                Names: ["Off", "Top-Right (Pie)", "Top-Right (Bar)", "Bottom-Right (Bar)", "Bottom (Bar)"], DefValue: "Pie"),
+            new(Kind.Choice, "Score meter type:", "ScoreMeter", Values: ["None", "Colour", "Error"], Names: ["None", "Colour", "Hit error"], DefValue: "Error"),
+            new(Kind.Slider, "Score meter size:", "ScoreMeterScale", 0.5, 2, 1, "0.0", "x"),
+            T("Always show key overlay", "KeyOverlay"),
+            T("Show approach circle on first \"Hidden\" object", "HiddenShowFirstApproach", true),
+            T("Scale osu!mania scroll speed with BPM", "ManiaSpeedBPMScale"),
+            T("Remember osu!mania scroll speed per beatmap", "UsePerBeatmapManiaSpeed"),
+            H("SONG SELECT"),
+            new(Kind.Slider, "Display beatmaps from", "DisplayStarsMinimum", 0, 10, 0, "0.0", " stars"),
+            new(Kind.Slider, "up to", "DisplayStarsMaximum", 0, 10, 10, "0.0", " stars"),
 
-            new(Kind.Section, "SKIN", Icon: 0xf1fc),
-            new(Kind.Header, "SKIN"),
-            new(Kind.Choice, "Current skin", "Skin", Values: skins),
-            new(Kind.Toggle, "Ignore all beatmap skins", "IgnoreBeatmapSkins"),
-            new(Kind.Header, "CURSOR"),
-            new(Kind.Slider, "Cursor size", "CursorSize", 0.5, 2, 1, "0.00", "x"),
+            S("AUDIO", 0xf026),
+            H("DEVICES"),
+            new(Kind.Choice, "Output device:", "AudioDevice", Values: ["Default"], DefValue: "Default"),
+            T("Audio compatibility mode", "AudioCompatibility"),
+            H("VOLUME"),
+            new(Kind.Slider, "Master:", "VolumeUniversal", 0, 100, 100, "0", "%"),
+            new(Kind.Slider, "Music:", "VolumeMusic", 0, 100, 80, "0", "%"),
+            new(Kind.Slider, "Effect:", "VolumeEffect", 0, 100, 80, "0", "%"),
+            T("Ignore beatmap hitsounds", "IgnoreBeatmapSamples"),
+            H("OFFSET ADJUSTMENT"),
+            new(Kind.Slider, "Universal offset:", "RemakeOffset", -300, 300, 0, "0", "ms"),
+            B("Offset wizard", Grey),
 
-            new(Kind.Section, "INPUT", Icon: 0xf11b),
-            new(Kind.Header, "MOUSE"),
-            new(Kind.Toggle, "Disable mouse buttons in play mode", "MouseDisableButtons"),
-            new(Kind.Header, "KEYBOARD"),
-            new(Kind.Key, "Left click key", "keyOsuLeft", Def: (int)KeyboardKey.Z),
-            new(Kind.Key, "Right click key", "keyOsuRight", Def: (int)KeyboardKey.X),
+            S("SKIN", 0xf1fc),
+            H("SKIN"),
+            new(Kind.Preview, ""),
+            new(Kind.Choice, "Current skin:", "Skin", Values: skins),
+            B("Preview gameplay", ButtonPink),
+            B("Open current skin folder", Blue, () => Explore(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")))),
+            B("Export as .osk", Blue),
+            T("Ignore all beatmap skins", "IgnoreBeatmapSkins"),
+            T("Use skin's sound samples", "SkinSamples", true),
+            T("Use Taiko skin for Taiko mode", "UseTaikoSkin"),
+            T("Always use skin cursor", "UseSkinCursor"),
+            new(Kind.Slider, "Cursor size:", "CursorSize", 0.5, 2, 1, "0.00", "x"),
+            T("Automatic cursor size", "AutomaticCursorSizing"),
+            T("Use combo colour as tint for slider ball", "ComboColourSliderBall", true),
+
+            S("INPUT", 0xf11b),
+            H("MOUSE"),
+            new(Kind.Slider, "Sensitivity:", "MouseSpeed", 0.4, 6, 1, "0.00", "x"),
+            T("Raw input", "RawInput"),
+            T("Map absolute raw input to the osu! window", "AbsoluteToOsuWindow"),
+            new(Kind.Choice, "Confine mouse cursor:", "ConfineMouse", Values: ["Never", "Fullscreen", "Always"],
+                Names: ["Never", "Only when fullscreen", "Always"], DefValue: "Fullscreen"),
+            T("Disable mouse wheel in play mode", "MouseDisableWheel"),
+            T("Disable mouse buttons in play mode", "MouseDisableButtons"),
+            T("Cursor ripples", "CursorRipple"),
+            H("KEYBOARD"),
+            B("Change keyboard bindings", Blue, () => showKeys = !showKeys),
+            new(Kind.Key, "Left click:", "keyOsuLeft", Def: (int)KeyboardKey.Z, Visible: () => showKeys),
+            new(Kind.Key, "Right click:", "keyOsuRight", Def: (int)KeyboardKey.X, Visible: () => showKeys),
+            B("osu!mania layout", Blue),
+            H("OTHER"),
+            T("OS TabletPC support", "Tablet"),
+            T("Wiimote/TaTaCon Drum support", "Wiimote"),
+
+            S("EDITOR", 0xf040),
+            H("GENERAL"),
+            T("Background video", "EditorVideo", true),
+            T("Always use default skin", "EditorDefaultSkin"),
+            T("Snaking sliders", "EditorSnakingSliders", true),
+            T("Hit animations", "EditorHitAnimations"),
+            T("Follow points", "EditorFollowPoints", true),
+            T("Stacking", "EditorStacking", true),
+
+            S("ONLINE", 0xf0ac),
+            H("ALERTS AND PRIVACY"),
+            T("Chat ticker", "Ticker"),
+            T("Automatically hide chat during gameplay", "AutoChatHide", true),
+            T("Show a notification popup when someone says your name", "ChatHighlightName", true),
+            T("Show chat message notifications", "ChatMessageNotification", true),
+            T("Play a sound when someone says your name", "ChatAudibleHighlight", true),
+            T("Share your city location with others", "DisplayCityLocation"),
+            T("Show spectators", "ShowSpectators", true),
+            T("Automatically link beatmaps to spectators", "AutoSendNowPlaying", true),
+            T("Show notification popups instantly during gameplay", "PopupDuringGameplay", true),
+            T("Show notification popups when friends change status", "NotifyFriends", true),
+            T("Allow multiplayer game invites from all users", "AllowPublicInvites", true),
+            H("INTEGRATION"),
+            T("Discord Rich Presence", "DiscordRichPresence", true),
+            T("Integrate with Yahoo! status display", "YahooIntegration"),
+            T("Integrate with MSN Live status display", "MsnIntegration"),
+            T("Automatically start osu!direct downloads", "AutomaticDownload", true),
+            T("Prefer no-video downloads", "AutomaticDownloadNoVideo"),
+            H("IN-GAME CHAT"),
+            T("Filter offensive words", "ChatFilter"),
+            T("Filter foreign characters", "ChatRemoveForeign"),
+            T("Log private messages", "LogPrivateMessages"),
+            T("Block private messages from non-friends", "BlockNonFriendPM"),
+            F("Chat ignore list (space-separated list)"),
+            F("Chat highlight words (space-separated list)"),
+
+            S("MAINTENANCE", 0xf0ad),
+            H("GENERAL"),
+            B("Delete all unranked maps", Blue),
+            B("Repair folder permissions", Blue),
+            B("Mark all maps as played", Blue),
+            B("Run osu! updater", Blue),
+            new(Kind.Version, build),
         ];
     }
 
     float u;
     int w, h;
     // ContentTop: first section, below stable's header (title 40, blurb 60, search 100) when not scrolled (stable's
-    // 140, +3 measured). Header pieces scroll with the content but stop after StickAt, which leaves the search line
+    // 140, -1 measured at 1080p). Header pieces scroll with the content but stop after StickAt, which leaves the search line
     // pinned at the top. JumpTop: where a jump puts a section's band (stable: element at 70).
-    const float StripW = 40, PanelR = 313, ContentTop = 143, StickAt = 90, JumpTop = 65, RowH = 13.333f;
+    const float StripW = 40, PanelR = 313, ContentTop = 139, StickAt = 90, JumpTop = 65, RowH = 13.333f, LineH = 12, TextSize = 12.3f;
 
     // stable: the last section whose element is no more than 70 + a quarter screen (120) below the scroll.
     int CurrentSection()
@@ -109,11 +247,19 @@ sealed class Options : Screen
 
     double Value(Item it) => Config.GetDouble(it.Key, it.Def);
 
+    // Fullscreen follows the display mode in use rather than a stored flag.
+    bool On(Item it) => it.Key == "Fullscreen" ? Game.DisplayMode() == "Fullscreen" : Config.GetBool(it.Key, it.Def != 0);
+
+    string ChoiceValue(Item it) => Config.Get(it.Key, it.DefValue.Length > 0 ? it.DefValue : it.Values is { Length: > 0 } vs ? vs[0] : "");
+
+    string NameOf(Item it, int idx) => it.Names != null && idx >= 0 ? it.Names[idx] : it.Values![idx];
+
     string ChoiceText(Item it)
     {
-        string v = Config.Get(it.Key, it.DefValue.Length > 0 ? it.DefValue : it.Values is { Length: > 0 } vs ? vs[0] : "");
+        string v = ChoiceValue(it);
         int idx = it.Values == null ? -1 : Array.FindIndex(it.Values, x => x.Equals(v, StringComparison.OrdinalIgnoreCase));
-        return it.Names != null && idx >= 0 ? it.Names[idx] : v;
+        string text = idx >= 0 ? NameOf(it, idx) : v;
+        return it.Key == "Resolution" && Game.DisplayMode() == "Borderless" ? text + " (borderless)" : text;
     }
 
     static readonly byte[] DefaultRamp = [255, 160, 120, 80, 40, 5];
@@ -124,14 +270,14 @@ sealed class Options : Screen
     {
         Kind.Toggle => it.Def != 0 ? "1" : "0",
         Kind.Slider => Show(it.Def, it with { Unit = "" }),
-        Kind.Choice when it.DefValue.Length > 0 && it.Key is not ("DisplayMode" or "Resolution") => it.DefValue,
+        Kind.Choice when it.DefValue.Length > 0 && it.Key != "Resolution" => it.DefValue,
         Kind.Key => ((KeyboardKey)(int)it.Def).ToString(),
         _ => null,
     };
 
     bool IsDefault(Item it) => DefaultOf(it) is not { } d || it.Kind switch
     {
-        Kind.Toggle => Config.GetBool(it.Key, it.Def != 0) == (it.Def != 0),
+        Kind.Toggle => On(it) == (it.Def != 0),
         Kind.Slider => Math.Abs(Value(it) - it.Def) < 1e-6,
         Kind.Choice => Config.Get(it.Key, d).Equals(d, StringComparison.OrdinalIgnoreCase),
         _ => Config.Key(it.Key, (KeyboardKey)(int)it.Def) == (KeyboardKey)(int)it.Def,
@@ -139,6 +285,14 @@ sealed class Options : Screen
 
     void Set(Item it, string value)
     {
+        int m = GetCurrentMonitor();
+        bool MonitorSized() => Game.Resolution() is var (rw, rh) && rw >= GetMonitorWidth(m) && rh >= GetMonitorHeight(m);
+        if (it.Key == "Fullscreen")
+        {
+            Config.SetOwn("DisplayMode", value == "1" ? "Fullscreen" : MonitorSized() ? "Borderless" : "Windowed");
+            Game.ApplyDisplay();
+            return;
+        }
         if (Config.Get(it.Key, "") == value) return;
         Config.SetOwn(it.Key, value);
         switch (it.Key)
@@ -148,7 +302,11 @@ sealed class Options : Screen
                 if (value == "VSync") SetWindowState(ConfigFlags.VSyncHint);
                 else ClearWindowState(ConfigFlags.VSyncHint);
                 break;
-            case "DisplayMode" or "Resolution": Game.ApplyDisplay(); break;
+            case "Resolution":
+                // stable: the monitor's own size outside fullscreen is borderless.
+                if (Game.DisplayMode() != "Fullscreen") Config.SetOwn("DisplayMode", MonitorSized() ? "Borderless" : "Windowed");
+                Game.ApplyDisplay();
+                break;
             case "Skin":
                 Game.Skin.Unload();
                 Game.Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", value));
@@ -163,39 +321,84 @@ sealed class Options : Screen
         closingAt = Game.NowMs;
     }
 
+    // Labels wrap like stable's (toggles and plain text): lines of 12 units, up to the panel's right edge.
+    readonly Dictionary<int, string[]> wrapped = [];
+    float wrappedU;
+    string[] Lines(int i)
+    {
+        if (wrappedU != u) { wrapped.Clear(); wrappedU = u; }
+        if (wrapped.TryGetValue(i, out var cached)) return cached;
+        var it = items[i];
+        if (it.Kind is not (Kind.Toggle or Kind.Text or Kind.Warning)) return wrapped[i] = [it.Label];
+        float max = (305 - TextX(it)) * u, size = TextSize * u;
+        var lines = new List<string>();
+        string line = "";
+        foreach (var word in it.Label.Split(' '))
+        {
+            string next = line.Length == 0 ? word : line + " " + word;
+            if (line.Length > 0 && Game.TextWidth(next, size) > max) { lines.Add(line); line = word; }
+            else line = next;
+        }
+        lines.Add(line);
+        return wrapped[i] = lines.ToArray();
+    }
+
+    static float TextX(Item it) => it.Kind == Kind.Toggle ? 77.7f : 62;
+
+    // Element heights (measured at 1080p): rows 13.33 plus 12 a wrapped line, buttons 19.8 (a 17-unit bar 2.4 down),
+    // text fields 31.8 (label, then the box), the skin preview 80.
+    float Height(int i) => items[i].Kind switch
+    {
+        Kind.Section => 10,
+        Kind.Header => 14,
+        Kind.Button => 19.8f,
+        Kind.Field => 31.8f,
+        Kind.Preview => 80,
+        _ => RowH + LineH * (Lines(i).Length - 1),
+    };
+
+    static bool IsGroup(Kind k) => k is Kind.Section or Kind.Header;
+
     // Items shown for the current search (sections/headers kept when anything under them matches).
     void BuildLayout()
     {
         layout.Clear();
-        bool Match(Item it) => search.Length == 0 || it.Label.Contains(search, StringComparison.OrdinalIgnoreCase);
+        bool Match(Item it) => (it.Visible?.Invoke() ?? true) && (search.Length == 0 || it.Label.Length > 0 && it.Label.Contains(search, StringComparison.OrdinalIgnoreCase));
         // stable's stacking: each element is its height plus 10 apart (section 10, group header 14 after a 20-unit
         // gap, row 13.33 - measured, the code's 13.125 grows with the text); entries hold the row band (5 above).
         float y = ContentTop;
         for (int i = 0; i < items.Length; i++)
         {
             var it = items[i];
-            if (it.Kind is Kind.Section or Kind.Header)
+            if (IsGroup(it.Kind))
             {
                 bool any = false;
-                for (int k = i + 1; k < items.Length && (items[k].Kind != Kind.Section) && !(it.Kind == Kind.Header && items[k].Kind == Kind.Header); k++)
-                    if (items[k].Kind is not (Kind.Section or Kind.Header) && Match(items[k])) { any = true; break; }
+                for (int k = i + 1; k < items.Length && items[k].Kind != Kind.Section && !(it.Kind == Kind.Header && items[k].Kind == Kind.Header); k++)
+                    if (!IsGroup(items[k].Kind) && Match(items[k])) { any = true; break; }
                 if (!any) continue;
-                if (it.Kind == Kind.Header) y += 20;
-                float hgt = it.Kind == Kind.Section ? 10 : 14;
-                layout.Add((i, y - 5, hgt + 10));
-                y += hgt + 10;
             }
-            else if (Match(it))
-            {
-                layout.Add((i, y - 5, RowH + 10));
-                y += RowH + 10;
-            }
+            else if (!Match(it)) continue;
+            if (it.Kind == Kind.Header) y += 20;
+            else if (it.Kind == Kind.Version) y += 10;
+            float hgt = Height(i);
+            layout.Add((i, y - 5, hgt + 10));
+            y += hgt + 10;
         }
     }
 
-    float ContentHeight => layout.Count == 0 ? 0 : layout[^1].Y + layout[^1].H + 40;
+    float ContentHeight => layout.Count == 0 ? 0 : layout[^1].Y + layout[^1].H + 115; // measured: stable scrolls the end up to 115 above the bottom
 
-    Rectangle BackRect => new(0, 444 * u, 57.6f * u, 27 * u);
+    readonly BackButton backButton = new();
+
+    // An open dropdown: its options under the box, as many as fit on screen (the wheel scrolls the rest).
+    float OptionH => 15 * u;
+    (Rectangle List, int Count) DropList()
+    {
+        var box = boxes.TryGetValue(dropdown, out var b) ? b : default;
+        int n = items[dropdown].Values!.Length;
+        int count = Math.Max(1, Math.Min(n, (int)((h - box.Y - box.Height) / OptionH)));
+        return (new Rectangle(box.X, box.Y + box.Height, box.Width, count * OptionH), count);
+    }
 
     public override void Update(double dtMs)
     {
@@ -220,6 +423,25 @@ sealed class Options : Screen
             }
             return;
         }
+        var mouse = Input.GetMousePosition();
+        bool pressed = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (dropdown >= 0)
+        {
+            var it = items[dropdown];
+            var (list, count) = DropList();
+            dropFirst = Math.Clamp(dropFirst - (int)VolumeControl.Wheel, 0, it.Values!.Length - count);
+            if (Input.IsKeyPressed(KeyboardKey.Escape)) dropdown = -1;
+            else if (pressed)
+            {
+                if (CheckCollisionPointRec(mouse, list))
+                {
+                    Set(it, it.Values[Math.Min(it.Values.Length - 1, dropFirst + (int)((mouse.Y - list.Y) / OptionH))]);
+                    Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+                }
+                dropdown = -1;
+            }
+            return;
+        }
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
             if (search.Length > 0) search = "";
@@ -239,9 +461,7 @@ sealed class Options : Screen
         scrollTarget = Math.Clamp(scrollTarget - VolumeControl.Wheel * 60, 0, Math.Max(0, ContentHeight - 480));
         scroll += (scrollTarget - scroll) * (float)Math.Min(1, dtMs / 80);
 
-        var mouse = Input.GetMousePosition();
-        bool pressed = Input.IsMouseButtonPressed(MouseButton.Left), right = Input.IsMouseButtonPressed(MouseButton.Right);
-        if (pressed && (mouse.X > PanelR * u || CheckCollisionPointRec(mouse, BackRect))) { Close(); return; }
+        if (pressed && (mouse.X > PanelR * u || CheckCollisionPointRec(mouse, BackButton.Rect(h)))) { Close(); return; }
         if (!Input.IsMouseButtonDown(MouseButton.Left)) dragging = -1;
 
         // Icon strip: widens to show section names while hovered (stable: 40 -> 140 units, eased 0.8 a frame, each
@@ -264,22 +484,28 @@ sealed class Options : Screen
             Set(items[reset], DefaultOf(items[reset])!); // stable: clicking the yellow marker resets the setting
             return;
         }
-        if ((pressed || right) && mouse.X >= stripW * u && HoveredItem(mouse) is int row)
+        if (pressed && mouse.X >= stripW * u && HoveredItem(mouse) is int row)
         {
             var it = items[row];
             switch (it.Kind)
             {
                 case Kind.Toggle:
-                    Set(it, Config.GetBool(it.Key, it.Def != 0) ? "0" : "1");
-                    Game.Skin.Sound("check-" + (Config.GetBool(it.Key, false) ? "on" : "off"))?.Play(BeatmapSamples.EffectVolume);
+                    bool on = !On(it);
+                    Set(it, on ? "1" : "0");
+                    Game.Skin.Sound("check-" + (on ? "on" : "off"))?.Play(BeatmapSamples.EffectVolume);
                     break;
-                case Kind.Slider: if (pressed) dragging = row; break;
-                case Kind.Choice when it.Values is { Length: > 0 } vals:
-                    int k = Array.FindIndex(vals, v => v.Equals(Config.Get(it.Key, it.DefValue.Length > 0 ? it.DefValue : vals[0]), StringComparison.OrdinalIgnoreCase));
-                    Set(it, vals[((k < 0 ? 0 : k) + (right ? -1 : 1) + vals.Length) % vals.Length]);
-                    Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+                case Kind.Slider: dragging = row; break;
+                case Kind.Choice when it.Values is { Length: > 0 } vals && boxes.TryGetValue(row, out var box) && CheckCollisionPointRec(mouse, box):
+                    dropdown = row;
+                    dropFirst = Math.Max(0, Array.FindIndex(vals, v => v.Equals(ChoiceValue(it), StringComparison.OrdinalIgnoreCase)));
+                    dropFirst = Math.Clamp(dropFirst, 0, vals.Length - DropList().Count);
+                    Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume);
                     break;
                 case Kind.Key: binding = row; break;
+                case Kind.Button:
+                    it.Click?.Invoke();
+                    Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+                    break;
             }
         }
         if (dragging >= 0 && tracks.TryGetValue(dragging, out var tr))
@@ -295,7 +521,7 @@ sealed class Options : Screen
         if (mouse.X > PanelR * u || mouse.X < stripW * u) return null;
         float cy = mouse.Y / u + scroll;
         foreach (var (i, y, hgt) in layout)
-            if (cy >= y && cy < y + hgt && items[i].Kind is not (Kind.Section or Kind.Header)) return i;
+            if (cy >= y && cy < y + hgt && items[i].Kind is Kind.Toggle or Kind.Slider or Kind.Choice or Kind.Key or Kind.Button or Kind.Field) return i;
         return null;
     }
 
@@ -312,6 +538,8 @@ sealed class Options : Screen
         return null;
     }
 
+    static Color Lighter(Color c, int by) => new(Math.Min(255, c.R + by), Math.Min(255, c.G + by), Math.Min(255, c.B + by), c.A);
+
     public override void Draw()
     {
         back.Draw();
@@ -321,14 +549,15 @@ sealed class Options : Screen
         float ox = -PanelR * u * (1 - slide);
         var mouse = Input.GetMousePosition();
 
-        DrawRectangleRec(new Rectangle(ox + StripW * u, 0, (PanelR - StripW) * u, h), new Color(0, 0, 0, 175));
+        DrawRectangleRec(new Rectangle(ox + StripW * u, 0, (PanelR - StripW) * u, h), Panel); // measured: (9,9,9) at 75%
 
         // Content, clipped under the search line.
         BeginScissorMode((int)(ox + StripW * u), 0, (int)((PanelR - StripW) * u), h);
-        float size = 13 * u;
-        int? hovered = HoveredItem(mouse);
+        float size = TextSize * u;
+        int? hovered = dropdown >= 0 ? null : HoveredItem(mouse);
         float ruleTop = float.NaN, prevBottom = 0;
         tracks.Clear();
+        boxes.Clear();
         // A group's rule runs from its header's top to the bottom of its last row's band.
         void EndRule(float yEnd)
         {
@@ -341,8 +570,8 @@ sealed class Options : Screen
         foreach (var (i, cyContent, hgt) in layout)
         {
             var it = items[i];
-            float y = (cyContent - scroll) * u, rowH = hgt * u, cy = y + rowH / 2;
-            if (it.Kind is Kind.Section or Kind.Header) EndRule(prevBottom);
+            float y = (cyContent - scroll) * u, rowH = hgt * u, cy = y + rowH / 2, top = y + 5 * u;
+            if (IsGroup(it.Kind) || it.Kind == Kind.Version) EndRule(prevBottom);
             prevBottom = y + rowH;
             if (it.Kind == Kind.Header) ruleTop = y + 5 * u;
             if (y > h || y + rowH < 0) continue;
@@ -351,7 +580,7 @@ sealed class Options : Screen
                 case Kind.Section:
                 {
                     // stable: 40% unless it's the section in view (measured centre 12.3 below the element's top)
-                    float ts = 22 * u;
+                    float ts = 24.6f * u;
                     var c = sections.Length > 0 && sections[Math.Max(0, currentSection)] == i ? Title : ColorAlpha(Title, 0.4f);
                     Game.Text(it.Label, ox + 300 * u - Game.TextWidth(it.Label, ts), y + 17.3f * u - ts / 2, ts, c);
                     continue;
@@ -359,26 +588,38 @@ sealed class Options : Screen
                 case Kind.Header:
                     Game.TextBold(it.Label, ox + 62 * u, y + 12 * u - size / 2, size, Color.White);
                     continue;
+                case Kind.Version:
+                    Game.Text(it.Label, ox + 172 * u - Game.TextWidth(it.Label, size) / 2, cy - size / 2, size, Color.White);
+                    continue;
+                case Kind.Preview:
+                    DrawSkinPreview(ox, top);
+                    continue;
             }
             if (hovered == i) DrawRectangleRec(new Rectangle(ox + StripW * u, y, (PanelR - StripW) * u, rowH), Strip); // measured: opaque (8,8,8)
-            if (!IsDefault(it)) markers.Add((y, rowH)); // drawn after the rules, which they add onto
+            if (it.Kind is Kind.Toggle or Kind.Slider or Kind.Choice or Kind.Key && !IsDefault(it)) markers.Add((y, rowH)); // drawn after the rules, which they add onto
             switch (it.Kind)
             {
-                case Kind.Toggle:
+                case Kind.Toggle or Kind.Text or Kind.Warning:
                 {
-                    var c = new Vector2(ox + 67 * u, cy);
-                    if (Config.GetBool(it.Key, it.Def != 0)) DrawCircleV(c, 3.8f * u, Pink);
-                    else DrawRing(c, 3.0f * u, 3.8f * u, 0, 360, 24, Pink);
-                    Game.Text(it.Label, ox + 77.7f * u, cy - size / 2, size, Color.White);
+                    // wrapped lines 12 apart, centred on the row; the circle sits in the middle of them
+                    var lines = Lines(i);
+                    float first = cy - (lines.Length - 1) * LineH / 2 * u, x = ox + TextX(it) * u;
+                    if (it.Kind == Kind.Toggle)
+                    {
+                        var c = new Vector2(ox + 67 * u, cy);
+                        if (On(it)) DrawCircleV(c, 3.8f * u, Pink);
+                        else DrawRing(c, 3.0f * u, 3.8f * u, 0, 360, 24, Pink);
+                    }
+                    var colour = it.Kind == Kind.Warning ? Yellow : Color.White;
+                    for (int k = 0; k < lines.Length; k++) Game.Text(lines[k], x, first + k * LineH * u - size / 2, size, colour);
                     break;
                 }
                 case Kind.Slider:
                 {
                     // stable (measured): label only (value in a tooltip), bar 1 unit thick from 5 units past it to 308,
                     // full pink before the knob and half after, stopping at the 10-unit ring with its dark middle.
-                    string label = it.Label + ":";
-                    Game.Text(label, ox + 62 * u, cy - size / 2, size, Color.White);
-                    float x0 = ox + 62 * u + Game.TextWidth(label, size) + 5 * u, x1 = ox + 308 * u;
+                    Game.Text(it.Label, ox + 62 * u, cy - size / 2, size, Color.White);
+                    float x0 = ox + 62 * u + Game.TextWidth(it.Label, size) + 5 * u, x1 = ox + 308 * u;
                     float f = (float)Math.Clamp((Value(it) - it.Min) / (it.Max - it.Min), 0, 1);
                     var knob = new Vector2(x0 + (x1 - x0) * f, cy);
                     DrawRectangleRec(new Rectangle(x0, cy - 0.5f * u, Math.Max(0, knob.X - 5 * u - x0), u), Pink);
@@ -391,29 +632,52 @@ sealed class Options : Screen
                 }
                 case Kind.Choice:
                 {
-                    string label = it.Label + ":";
-                    Game.Text(label, ox + 62 * u, cy - size / 2, size, Color.White);
-                    float bx = ox + 62 * u + Game.TextWidth(label, size) + 6 * u, bw = ox + 305.3f * u - bx; // measured: box 15 tall to 305.3, chevron at 296
-                    DrawRectangleRec(new Rectangle(bx, cy - 7.5f * u, bw, 15 * u), new Color(0, 0, 0, 128));
+                    // measured: box 15 tall to 305.3, chevron at 296; pink (186,17,119) while hovered or open
+                    Game.Text(it.Label, ox + 62 * u, cy - size / 2, size, Color.White);
+                    float bx = ox + 62 * u + Game.TextWidth(it.Label, size) + 6 * u, bw = ox + 305.3f * u - bx;
+                    var box = new Rectangle(bx, cy - 7.5f * u, bw, 15 * u);
+                    boxes[i] = box;
+                    bool lit = dropdown == i || hovered == i && CheckCollisionPointRec(mouse, box);
+                    DrawRectangleRec(box, lit ? BoxHover : new Color(0, 0, 0, 128));
                     string text = ChoiceText(it);
-                    while (text.Length > 3 && Game.TextWidth(text, size) > bw - 18 * u) text = text[..^2] + "...";
+                    while (text.Length > 3 && Game.TextWidth(text, size) > bw - 18 * u) text = text[..^4] + "...";
                     Game.Text(text, bx + 2 * u, cy - size / 2, size, Color.White);
                     DrawIcon(0xf078, ox + 296 * u, cy, 10.5f * u, Color.White);
                     break;
                 }
                 case Kind.Key:
                 {
-                    string label = it.Label + ":";
-                    Game.Text(label, ox + 62 * u, cy - size / 2, size, Color.White);
-                    float bx = ox + 62 * u + Game.TextWidth(label, size) + 6 * u, bw = ox + 307 * u - bx;
-                    DrawRectangleRec(new Rectangle(bx, cy - 8.5f * u, bw, 17 * u), new Color(14, 132, 165, 255));
+                    Game.Text(it.Label, ox + 62 * u, cy - size / 2, size, Color.White);
+                    float bx = ox + 62 * u + Game.TextWidth(it.Label, size) + 6 * u, bw = ox + 302.2f * u - bx;
+                    DrawRectangleRec(new Rectangle(bx, cy - 8.5f * u, bw, 17 * u), hovered == i ? Lighter(Blue, 20) : Blue);
                     string text = binding == i ? "press a key..." : Config.Key(it.Key, (KeyboardKey)(int)it.Def).ToString();
                     Game.Text(text, bx + bw / 2 - Game.TextWidth(text, size) / 2, cy - size / 2, size, Color.White);
                     break;
                 }
+                case Kind.Button:
+                {
+                    // measured: 62.2 to 302.2, 17 tall, the top half shading up from 85%; 20 lighter while hovered
+                    var c = hovered == i ? Lighter(it.Colour, 20) : it.Colour;
+                    var dark = new Color((int)(c.R * 0.85f), (int)(c.G * 0.85f), (int)(c.B * 0.85f), 255);
+                    float bx = ox + 62.2f * u, by = top + 2.4f * u, bw = 240 * u, bh = 17 * u;
+                    int y0 = (int)by, y1 = (int)(by + bh), ym = (y0 + y1) / 2;
+                    DrawRectangleGradientV((int)bx, y0, (int)bw, ym - y0, dark, c);
+                    DrawRectangle((int)bx, ym, (int)bw, y1 - ym, c);
+                    Game.Text(it.Label, bx + bw / 2 - Game.TextWidth(it.Label, size) / 2, by + bh / 2 - size / 2 - u, size, Color.White);
+                    break;
+                }
+                case Kind.Field:
+                {
+                    // label, then an empty box, white at 5% with a grey 1.33-unit edge (60 to 298.7, 19.1 to 32.4 below the top)
+                    Game.Text(it.Label, ox + 62 * u, top + RowH / 2 * u - size / 2, size, Color.White);
+                    var field = new Rectangle(ox + 60 * u, top + 19.1f * u, 238.7f * u, 13.3f * u);
+                    DrawRectangleRec(field, new Color(255, 255, 255, 13));
+                    DrawRectangleLinesEx(field, 1.333f * u, FieldEdge);
+                    break;
+                }
             }
         }
-        EndRule(layout.Count > 0 ? (layout[^1].Y + layout[^1].H - scroll) * u : 0);
+        EndRule(layout.Count > 0 && items[layout[^1].Item].Kind != Kind.Version ? (layout[^1].Y + layout[^1].H - scroll) * u : prevBottom);
         // stable's "not default" marker: a 6-texel (255,186,0) ramp, alpha 255 -> 5, 2 units a texel, added on.
         BeginBlendMode(BlendMode.Additive);
         foreach (var (my, mh) in markers)
@@ -439,6 +703,8 @@ sealed class Options : Screen
         DrawIcon(0xf002, ox + 121.6f * u, sy, 15 * u, Color.White);
         Game.Text(search.Length > 0 ? search : "Type to search!", ox + 134 * u, sy - 10 * u, 20 * u, search.Length > 0 ? Color.White : new Color(255, 255, 255, 200));
 
+        if (dropdown >= 0) DrawDropdown(mouse, size);
+
         // Icon strip: the section in view marked pink on the strip's edge, icons grey (153) unless active or hovered,
         // names at 45 units (size 14) revealed as the strip widens; sections the search hides fade to 20%.
         float sw = stripW * u;
@@ -460,14 +726,40 @@ sealed class Options : Screen
         }
         EndScissorMode();
 
-        // back tab.
-        var b = BackRect;
-        b.X += ox;
-        DrawRectangleRec(b, BackPink);
-        DrawIcon(0xf137, b.X + 10 * u, b.Y + b.Height / 2, 12 * u, Color.White);
-        Game.Text("back", b.X + 22 * u, b.Y + b.Height / 2 - 8 * u, 16 * u, Color.White);
+        backButton.Draw(h, mouse);
         if (tooltip != null) DrawTooltip(tooltip, mouse);
         SongSelect.DrawCursor();
+    }
+
+    void DrawDropdown(Vector2 mouse, float size)
+    {
+        var it = items[dropdown];
+        var (list, count) = DropList();
+        DrawRectangleRec(list, new Color(0, 0, 0, 230));
+        string current = ChoiceValue(it);
+        for (int k = 0; k < count && dropFirst + k < it.Values!.Length; k++)
+        {
+            int idx = dropFirst + k;
+            var r = new Rectangle(list.X, list.Y + k * OptionH, list.Width, OptionH);
+            if (CheckCollisionPointRec(mouse, r)) DrawRectangleRec(r, BoxHover);
+            var c = it.Values[idx].Equals(current, StringComparison.OrdinalIgnoreCase) ? Pink : Color.White;
+            Game.Text(NameOf(it, idx), r.X + 2 * u, r.Y + r.Height / 2 - size / 2, size, c);
+        }
+    }
+
+    // The skin section's preview (measured at 1080p): a numbered hit circle and the 50/100/300 judgements.
+    void DrawSkinPreview(float ox, float top)
+    {
+        var skin = Game.Skin;
+        float cy = top + 41.2f * u;
+        var centre = new Vector2(ox + 107.6f * u, cy);
+        float cs = 49 * u / 128, js = 63.8f * u / 128; // 128 is a circle's SD size; judgements at their resting size
+        if (skin.Tex("hitcircle") is { } body) body.Draw(centre, cs, new Color(4, 76, 153, 255));
+        if (skin.Glyph(skin.HitCirclePrefix, '1') is { } one) one.Draw(centre, cs * 0.8f, Color.White);
+        skin.Tex("hitcircleoverlay")?.Draw(centre, cs, Color.White);
+        (string Name, float X)[] judgements = [("hit50", 156.7f), ("hit100", 205.6f), ("hit300", 254.9f)];
+        foreach (var (name, x) in judgements)
+            if ((skin.Tex(name) ?? skin.Frame(name, 0)) is { } j) j.Draw(new Vector2(ox + x * u, cy), js, Color.White);
     }
 
     // stable's tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint white edge.
