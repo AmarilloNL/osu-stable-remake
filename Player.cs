@@ -1302,6 +1302,7 @@ sealed partial class Player : Screen
         bool showStoryboard = storyboard != null && Toggles.Storyboard;
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
         DrawFollowPoints();
+        DrawPopups(); // stable: judgements sit under the objects (an exploding circle or a spinner covers them)
 
         // Earlier objects on top: draw later ones first.
         for (int k = visible.Count - 1; k >= 0; k--)
@@ -1324,7 +1325,6 @@ sealed partial class Player : Screen
         }
 
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: true);
-        DrawPopups();
         DrawBreakOverlays(w, h);
         if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
         DrawHud(w, h);

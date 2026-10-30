@@ -516,6 +516,7 @@ static class Game
         "Custom" => Config.GetInt("CustomFrameLimit", 0),
         "Optimal" or "Limit120" => Math.Min(960, refresh * 8),
         "PowerSaving" => refresh * 2,
+        "Unlimited" when Screen is not Player => refresh * 2, // stable: "Unlimited (gameplay)" only lifts the cap in play
         _ => 0, // Unlimited / VSync: no software limit
     };
 
@@ -544,7 +545,7 @@ sealed class FrameStats
     // 250ms windows and eased the same way toward min(fps, limit); fps box green at the limit, yellow within 5%
     // (and 10fps), else orange, and it fades out 4s after settling on the limit (the ms box then dims to 80%); ms box
     // green under 8ms, yellow under 16, else orange; a frame over 30ms lights one more of ten drop dots, which go out
-    // one per 800ms. Unlimited (stable would cap the shown fps at the refresh rate and hide the box) shows real fps.
+    // one per 800ms. With no limit (Unlimited in play) only the frame time box shows, like stable.
     static readonly Color Green = new(172, 220, 25, 255), Yellow = new(255, 204, 34, 255), Orange = new(255, 149, 24, 255), Red = new(255, 36, 0, 255);
     bool visible = Config.GetBool("FpsCounter", false);
     readonly CachedText<double> msText = new(v => v >= 10 ? $"{v:0}" : v >= 1 ? $"{v:0.0}" : $"{v:0.00}"), limitText = new(v => $"/{v:0}");
@@ -590,7 +591,7 @@ sealed class FrameStats
 
         string ms = msText.Of(frameMs >= 10 ? Math.Round(frameMs) : frameMs >= 1 ? Math.Round(frameMs, 1) : Math.Round(frameMs, 2));
         var msColour = frameMs < 8 ? Green : frameMs < 16 ? Yellow : Orange;
-        float msAlpha = 1 - 0.2f * (float)Math.Clamp(settled / 10000, 0, 1);
+        float msAlpha = limited ? 1 - 0.2f * (float)Math.Clamp(settled / 10000, 0, 1) : 0.8f; // alone (unlimited play): 80%, measured
         var msCentre = new Vector2(W - 23 * u, H - 10 * u);
         Ui("fps-box")?.Draw(msCentre, sd, ColorAlpha(msColour, msAlpha));
         float msW = RunWidth(Big, ms, "fps-ms", sd);
@@ -601,7 +602,7 @@ sealed class FrameStats
             Ui("fps-dropped")?.Draw(new Vector2(W - (49 + i * 7) * u, H - 6 * u), sd, i == 0 ? Yellow : i < 3 ? Orange : Red);
 
         float fpsAlpha = 1 - (float)Math.Clamp((settled - 4000) / 400, 0, 1);
-        if (fpsAlpha <= 0) return;
+        if (fpsAlpha <= 0 || !limited) return;
         var fpsCentre = new Vector2(W - 23 * u, H - 25 * u);
         var fpsColour = atLimit || !limited ? Green : fpsShown > limit - 10 && fpsShown > limit * 0.95 ? Yellow : Orange;
         Ui("fps-box")?.Draw(fpsCentre, sd, ColorAlpha(fpsColour, fpsAlpha));

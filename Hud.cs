@@ -21,7 +21,7 @@ sealed partial class Player
     // Hit error meter.
     readonly List<(float Offset, Color Colour, double At)> meterTicks = [];
     float meterAvg, meterArrowFrom, meterArrowTo;
-    double meterArrowAt = double.MinValue, meterLastHit = double.MinValue;
+    double meterArrowAt = double.MinValue, meterLastHit = double.MinValue, meterLastHitSong = double.MinValue;
     static readonly Color Meter300 = new(50, 188, 231, 255), Meter100 = new(87, 227, 19, 255), Meter50 = new(218, 174, 70, 255);
 
     // Key overlay: K1, K2, M1, M2 (our input bits 1, 2, 4, 8).
@@ -49,6 +49,7 @@ sealed partial class Player
         meterArrowTo = meterAvg;
         meterArrowAt = Game.NowMs;
         meterLastHit = Game.NowMs;
+        meterLastHitSong = time;
         meterTicks.Add((offset, result == 300 ? Meter300 : result == 100 ? Meter100 : Meter50, Game.NowMs));
     }
 
@@ -168,10 +169,16 @@ sealed partial class Player
         }
     }
 
+    double[]? spinnerStarts;
+
     void DrawMeter(int w, float u, float sd, double now)
     {
         if (Config.Get("ScoreMeter", "Error") != "Error") return;
         float alpha = now - meterLastHit < 4000 ? 1 : (float)Math.Max(0, 1 - (now - meterLastHit - 4000) / 500);
+        // stable also fades it out over 450ms when a spinner starts, until the next hit (measured)
+        spinnerStarts ??= objs.Where(o => o.Type == ObjType.Spinner).Select(o => o.Time).ToArray();
+        foreach (double s in spinnerStarts)
+            if (s <= time && s > meterLastHitSong) { alpha = Math.Min(alpha, 1 - (float)Math.Clamp((time - s) / 450, 0, 1)); break; }
         int kept = 0; // RemoveAll without a per-frame closure
         for (int i = 0; i < meterTicks.Count; i++) if (now - meterTicks[i].At <= 10000) meterTicks[kept++] = meterTicks[i];
         meterTicks.RemoveRange(kept, meterTicks.Count - kept);
@@ -349,7 +356,7 @@ sealed partial class Player
                 float k = 0.62f * sd;
                 DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height),
                     new Rectangle(-470 * k, anchor - 20 * k, bg.Width * k, bg.Height * k), Vector2.Zero, 0,
-                    A(info != null ? new Color(31, 115, 153, 150) : auto || playback != null ? new Color(0, 0, 0, 150) : new Color(250, 250, 250, 100))); // stable: stored scores blue, the live player light (dark when watching)
+                    A(info != null ? new Color(31, 115, 153, 150) : playback != null ? new Color(0, 0, 0, 150) : new Color(250, 250, 250, auto ? 40 : 100))); // stable: stored scores blue, the live player light (Auto: measured 40), dark when watching a replay
             }
             if (r > 0) // every panel shows its rank (stable hides it only on its online personal-best extra panel)
                 EntryText(r.ToString(), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
