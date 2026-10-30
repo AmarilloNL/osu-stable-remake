@@ -57,7 +57,8 @@ sealed class Storyboard
     public bool IsEmpty => elements.Count == 0 && samples.Count == 0;
     // The earliest event (sprite command or sample), capped at 0: stable starts the map early enough to show it.
     public double EarliestEvent => Math.Min(0, Math.Min(elements.Count > 0 ? elements.Min(e => e.Start) : 0, samples.Count > 0 ? samples.Min(s => s.Time) : 0));
-    public bool UsesFile(string file) => elements.Any(e => e.Path.Equals(file, StringComparison.OrdinalIgnoreCase));
+    readonly HashSet<string> referenced = new(StringComparer.OrdinalIgnoreCase);
+    public bool UsesFile(string file) => referenced.Contains(file);
 
     Storyboard(string folder, bool widescreen)
     {
@@ -215,6 +216,7 @@ sealed class Storyboard
             e.Params.Clear();
             e.Params.AddRange(ps);
         }
+        foreach (var e in elements) referenced.Add(e.Path); // before dropping sprites without commands: stable still hides a background they name
         elements.RemoveAll(e => e.Start > e.End && e.Triggers == null);
         triggered = elements.Where(e => e.Triggers != null).ToList();
         var byLayer = elements.OrderBy(e => e.Layer).ToList(); // draw order: layer, then file order

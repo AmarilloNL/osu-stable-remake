@@ -31,7 +31,7 @@ sealed partial class Player
     readonly CachedText<double> accText = new(v => $"{v:00.00}%"); // stable: two integer digits at least ("00.00%")
     readonly CachedText<int> comboText2 = new(v => $"{v}x");
     readonly CachedText<int>[] keyText = [.. Enumerable.Range(0, 4).Select(_ => new CachedText<int>(v => v.ToString()))];
-    readonly NumberText entryNumber = new(v => v.ToString("N0")), entryCombo = new(v => v > 0 ? $"{v:N0}x" : "0");
+    readonly NumberText entryNumber = new(v => v.ToString("N0")), entryCombo = new(v => $"{v:N0}x");
     readonly List<(Sprite S, float X)> entryGlyphs = [];
     readonly double[] keyChangedAt = [double.MinValue, double.MinValue, double.MinValue, double.MinValue];
     readonly double[] firstPressAt = new double[4];
@@ -71,6 +71,9 @@ sealed partial class Player
         DrawCombo(u, sd, now);
         DrawMeter(w, u, sd, now);
         DrawMods(w, u, sd);
+        // stable's "UNRANKED" banner (play-unranked) when the mods keep the play off the rankings: scale 1, centred at y 45.1 (measured).
+        if (mods.HasFlag(Mods.Autoplay) || mods.HasFlag(Mods.Relax) || mods.HasFlag(Mods.Autopilot))
+            skin.Tex("play-unranked")?.Draw(new Vector2(w / 2f, 45.1f * u), sd, Color.White);
         DrawScoreboard(u);
 
         DrawReplayOverlay(w, u, now);
@@ -352,9 +355,10 @@ sealed partial class Player
                 EntryText(r.ToString(), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
             Game.TextLight(PanelName(info?.Player is { Length: > 0 } pl ? pl : info == null ? me : "stable", u), 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
             // The live panel counts along: current score and current combo.
-            long panelScore = info?.Score ?? score; // stable writes nothing for a zero score, and a zero combo without its x
+            long panelScore = info?.Score ?? score; // stable shows nothing for a zero score or combo (measured)
             if (panelScore > 0) EntryText(entryNumber.Of(panelScore), 2 * u, anchor + 18 * u, 1, true, 2.5f, 0, A(Color.White));
-            EntryText(entryCombo.Of(info?.MaxCombo ?? combo), 82 * u, anchor + 18 * u, 1, true, 2.5f, 1, A(new Color(153, 251, 255, 255)));
+            int panelCombo = info?.MaxCombo ?? combo;
+            if (panelCombo > 0) EntryText(entryCombo.Of(panelCombo), 82 * u, anchor + 18 * u, 1, true, 2.5f, 1, A(new Color(153, 251, 255, 255)));
         }
 
         // Burst from the panel's anchor + 15 units: -2 stretches 6x wide over 200ms and fades in 400ms; -1 grows
