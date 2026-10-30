@@ -1,6 +1,6 @@
 using System.Diagnostics.Tracing;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // Diagnostic (ALLOC_PROFILE=1 on a test run): samples .NET allocation ticks (~every 100KB) by type during play,
 // printed at exit - for keeping per-frame allocations (GC hitches) out of gameplay.

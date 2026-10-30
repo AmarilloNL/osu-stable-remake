@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // The bottom-left back button: the skin's menu-back, else stable's default. That one is two back-button-layer sprites
 // (bottom-right origins 22 and 60 units in, the left one over the right), the chevron icon at 9.17 units and "back"

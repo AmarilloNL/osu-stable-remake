@@ -3,7 +3,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // osu! storyboards: [Events] of the .osu plus the folder's .osb, in stable's 640x480 space (854x480 when the map
 // is flagged widescreen). Sprites/animations with F/M/MX/MY/S/V/R/C/P commands, easings, loops, $variables,

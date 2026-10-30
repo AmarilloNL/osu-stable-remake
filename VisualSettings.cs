@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's "Visual Settings" bar, in 640x480 units: while paused or
 // failed, a 45-unit strip sits at the bottom (blue 3-unit line, 180-alpha black, "Visual" / "Settings"); hovering

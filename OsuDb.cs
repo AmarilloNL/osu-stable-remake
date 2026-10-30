@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 sealed class DbBeatmap
 {

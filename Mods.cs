@@ -1,6 +1,6 @@
 using Raylib_cs;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // Same bit values as stable.
 [Flags]

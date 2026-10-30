@@ -1,7 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // Keys: bit 0/1 = the two osu! keys, bit 2/3 = left/right mouse button. Time is map time in ms.
 readonly record struct ReplayFrame(double Time, float X, float Y, byte Keys);

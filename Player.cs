@@ -3,7 +3,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 sealed class ObjState
 {

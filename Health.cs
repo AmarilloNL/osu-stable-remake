@@ -1,4 +1,4 @@
-namespace StableRemake;
+namespace OsuStableRemake;
 
 enum HpEvent { Hit300, Hit100, Hit50, Miss, SliderTick, SliderPoint, SliderBreak, SpinnerSpin, SpinnerBonus }
 

@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's volume overlay: three meters anchored
 // to the bottom-right corner (positions in 640x480 units from that corner), master selected by default. The wheel

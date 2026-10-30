@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // Minimal BASS 2.4 bindings (the same audio library stable uses), x64 build in lib/.
 static class Bass

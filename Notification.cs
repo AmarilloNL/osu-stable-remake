@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's centre-screen notification band (text and bar measured from a capture), drawn over
 // every screen: 18.8-unit Aller Light across the screen centre on a bar 1.5 line heights per line that opens with

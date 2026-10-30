@@ -1,4 +1,4 @@
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // Minimal LZMA decoder for the "LZMA alone" format stable uses inside .osr replays
 // (5-byte properties, 8-byte uncompressed size, range-coded stream). Written from the public-domain

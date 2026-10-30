@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 abstract class Screen
 {
@@ -156,7 +156,7 @@ static class Game
         if (testRun) { SetConfigFlags(ConfigFlags.UnfocusedWindow); Input.ScriptOnly = true; } // test runs don't take focus or real input
         if (testRun) Config.SetTemp("VolumeUniversal", "2"); // quiet: the user may be at the PC
         var (resW, resH) = Resolution();
-        InitWindow(resW, resH, "Stable Remake");
+        InitWindow(resW, resH, "osu!stable remake");
         SetExitKey(KeyboardKey.Null);
         int monitor = GetCurrentMonitor();
         ApplyDisplay();

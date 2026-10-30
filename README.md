@@ -1,6 +1,6 @@
 <div align="center">
 
-# Stable Remake
+# osu!stable remake
 
 **An offline, from-scratch rewrite of osu!stable — same feel, lower frame times.**
 
@@ -15,7 +15,7 @@
 
 ---
 
-Stable Remake plays your existing **osu!stable** library — songs, skins, replays, scores and settings —
+osu!stable remake plays your existing **osu!stable** library — songs, skins, replays, scores and settings —
 in a new client written from the ground up in C#. The goal is to judge, look and feel like stable,
 while running with sub-millisecond frame times and handling frames better.
 
@@ -124,14 +124,14 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Build and run**
 
 ```powershell
-git clone https://github.com/AmarilloNL/stable-remake.git
-cd stable-remake
+git clone https://github.com/AmarilloNL/osu-stable-remake.git
+cd osu-stable-remake
 dotnet build -c Release
-.\bin\Release\net10.0\StableRemake.exe
+& ".\bin\Release\net10.0\osu!stable remake.exe"
 ```
 
 The game looks for osu!stable in its default location (`%LOCALAPPDATA%\osu!`). If yours is somewhere else,
-create `remake.cfg` next to `StableRemake.exe`:
+create `remake.cfg` next to `osu!stable remake.exe`:
 
 ```ini
 OsuDir = D:\Games\osu!
@@ -140,7 +140,7 @@ OsuDir = D:\Games\osu!
 ## ⚙️ Configuration
 
 Your osu! settings (`osu!.<username>.cfg`) are read as-is: keys, skin, dim, volumes, offset and so on.
-Anything you change inside Stable Remake is written to `remake.cfg` next to the executable instead, and
+Anything you change inside osu!stable remake is written to `remake.cfg` next to the executable instead, and
 overrides the osu! value. Your osu! files are never modified.
 
 ## 🧪 Developer tools

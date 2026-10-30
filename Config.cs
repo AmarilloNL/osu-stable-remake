@@ -1,7 +1,7 @@
 using System.Globalization;
 using Raylib_cs;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // Reads stable's own osu!.cfg / osu!.<user>.cfg, plus remake.cfg (ours, next to the exe) on top.
 static class Config

@@ -3,7 +3,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // A texture plus its size in "SD" pixels (@2x files count half).
 readonly record struct Sprite(Texture2D Tex, float Scale)

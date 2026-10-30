@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 enum ObjType { Circle, Slider, Spinner }
 

@@ -2,7 +2,7 @@ using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Resources;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's default skin, UI images, fonts and sounds live as resources inside osu!ui.dll (and osu!gameplay.dll). They're read
 // from the user's own install at runtime (never copied) and used for anything the user's skin lacks.

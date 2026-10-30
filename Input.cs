@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using Raylib_cs;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // All keyboard/mouse reads go through here so test runs can script input inside the game (no OS-level injection):
 // --input "3:wheel 1, 3.5:key Up, 4:click 2400 1300, 5:down 100 100, 5.2:move 100 50, 5.4:up, 6:text abc, 7:hold Z 500"

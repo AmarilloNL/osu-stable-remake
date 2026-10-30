@@ -1,4 +1,4 @@
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's warning for maps that award no pp: the yellow notification band for 5s when play starts.
 // TODO: the Qualified wording is a guess (stable's exact text is unknown); only the Loved text was captured.

@@ -3,7 +3,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's options panel over the screen it was opened from (main menu or song select), laid out from a stable
 // capture in 640x480 units: a black icon strip (sections), the translucent panel, search on top, big section

@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's dialog (exit prompt, mod select ...): the screen dimmed with black at 240/255, a size-24 title 2 units in,
 // wrapped at the screen's width, content from 50 units under it, then 460x40-unit buttons 50 units apart, centred,

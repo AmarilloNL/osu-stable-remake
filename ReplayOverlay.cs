@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's replay overlay: the "REPLAY MODE" banner ticker and the buttons down the right
 // edge, centred 40 units in from it at y 85 + 20 per button, fading in over 500ms and tinting (255,247,197) on

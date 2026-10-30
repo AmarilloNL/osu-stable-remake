@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's gameplay HUD, laid out in its 640x480 units (u px each; skin sprites are sd px per
 // texel, as everywhere): score/accuracy/progress pie top right, combo counter bottom left, hit error meter

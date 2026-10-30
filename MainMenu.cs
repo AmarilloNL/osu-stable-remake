@@ -2,7 +2,7 @@ using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
-namespace StableRemake;
+namespace OsuStableRemake;
 
 // stable's main menu: the cookie beats to the song select's preview music over its background. Clicking it
 // slides it left and the buttons out from behind it; 6s without mouse movement folds it back. Layout is
