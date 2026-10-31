@@ -1204,7 +1204,7 @@ sealed partial class Player : Screen
             while (s.SimTime + 1 <= end)
             {
                 s.SimTime += 1;
-                if (!StableReplay && s.SimTime >= s.NextTick) { s.NextTick += TickMs; SpinnerInput(o, s, s.SimTime); }
+                if (!StableReplay && s.SimTime >= s.NextTick) { s.NextTick += TickMs * rate; SpinnerInput(o, s, s.SimTime); } // 60Hz of real time
                 if (s.SimTime > o.Time && s.SimTime < o.EndTime) StepSpinner(o, s, maxAccel);
             }
         }
