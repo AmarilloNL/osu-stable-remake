@@ -77,6 +77,7 @@ sealed partial class Player : Screen
     double Offset => Config.GetDouble("RemakeOffset", 0) + localOffset;
     int localOffset;
     double retryHold;
+    bool retryArmed;
     double localOffsetChangedAt = double.MinValue;
 
     readonly Mods mods;
@@ -612,7 +613,8 @@ sealed partial class Player : Screen
         // stable's quick retry: holding the Quick Retry key (or Ctrl+R) fills 10 a 60Hz tick and retries at 100;
         // letting go drains 3 a tick. The screen fades to black with it.
         bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyDown(KeyboardKey.R);
-        retryHold = retryHeld ? Math.Min(100, retryHold + 10 * dtMs / (1000 / 60.0)) : Math.Max(0, retryHold - 3 * dtMs / (1000 / 60.0));
+        if (!retryHeld) retryArmed = true; // a retry needs the key let go first (it's usually still held when the new play starts)
+        retryHold = retryHeld && retryArmed ? Math.Min(100, retryHold + 10 * dtMs / (1000 / 60.0)) : Math.Max(0, retryHold - 3 * dtMs / (1000 / 60.0));
         if (retryHold >= 100) { Retry(); return; }
 
         if (playback == null && !auto && (Input.IsKeyPressed(key1) || Input.IsKeyPressed(key2))) SongSelect.Ripple(Input.GetMousePosition()); // keys click too
