@@ -638,6 +638,11 @@ sealed class SongSelect : Screen
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods) headerFor;
     string[] header = [];
+    // stable colours the length line by the speed mod and the stats line by the difficulty change (salmon harder, light
+    // blue easier), and marks AR, OD and HP with a small arrow when a speed mod changes them in play
+    static readonly Color Harder = new(246, 154, 161, 255), Easier = new(173, 216, 230, 255);
+    Color lengthColour = Color.White, statsColour = Color.White;
+    int statArrow;
     readonly CachedText<int> matchesText = new(v => v == 1 ? "1 match found!" : $"{v} matches found!");
     int matchCount; // difficulties left after the search filter
     // Per-row text for the leaderboard and grade icons, built once per replay / grade.
@@ -1025,6 +1030,10 @@ sealed class SongSelect : Screen
                 float k = mods.HasFlag(Mods.HardRock) ? 1.4f : mods.HasFlag(Mods.Easy) ? 0.5f : 1;
                 float kcs = mods.HasFlag(Mods.HardRock) ? 1.3f : k;
                 float stars = b.StarsFor(mods);
+                statArrow = rate > 1 ? 1 : rate < 1 ? -1 : 0;
+                lengthColour = rate > 1 ? Harder : rate < 1 ? Easier : Color.White;
+                bool up = rate > 1 || mods.HasFlag(Mods.HardRock), down = rate < 1 || mods.HasFlag(Mods.Easy);
+                statsColour = up && !down ? Harder : down && !up ? Easier : Color.White; // mixed (EZ+DT): not checked against stable
                 header = [$"{(b.Source.Length > 0 ? $"{b.Source} ({b.Artist})" : b.Artist)} - {b.Title} [{b.Version}]", // stable: "Source (Artist)" when there is one
                     $"Mapped by {b.Creator}",
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
@@ -1033,10 +1042,23 @@ sealed class SongSelect : Screen
             }
             Game.Text(header[0], 23.4f * u, -3 * u, 18.4f * u, Color.White); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
             Game.Text(header[1], 24.6f * u, 12 * u, 12.45f * u, Color.White);
-            Game.TextBold(header[2], 2.5f * u, 24 * u, 12.5f * u, Color.White);
+            Game.TextBold(header[2], 2.5f * u, 24 * u, 12.5f * u, lengthColour);
             Game.Text(header[3], 2.5f * u, 36.5f * u, 12.4f * u, Color.White);
-            Game.Text(header[4], 2 * u, 48 * u, 8.2f * u, Color.White);
-            Options.DrawIcon(0xf005, 2 * u + Game.TextWidth(header[4], 8.2f * u) + 4.5f * u, 52.5f * u, 8 * u, Color.White); // Aller has no star: stable's comes from a fallback font
+            // the stats word by word: the arrow (3x2.2 units, top at the digits' top, 0.5 after the value) follows AR, OD, HP
+            float statX = 2 * u, size = 8.2f * u, space = Game.TextWidth(" ", size);
+            var parts = header[4].Split(' ', 5);
+            for (int p = 0; p < parts.Length; p++)
+            {
+                if (p > 0) statX += space;
+                Game.Text(parts[p], statX, 48 * u, size, statsColour);
+                statX += Game.TextWidth(parts[p], size);
+                if (statArrow == 0 || p is 0 or 4) continue;
+                float ax = statX + 0.5f * u, at = 50.2f * u, ab = at + 2.2f * u;
+                if (statArrow > 0) DrawTriangle(new(ax + 1.5f * u, at), new(ax, ab), new(ax + 3 * u, ab), statsColour);
+                else DrawTriangle(new(ax, at), new(ax + 1.5f * u, ab), new(ax + 3 * u, at), statsColour);
+                statX += 3.5f * u;
+            }
+            Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
         }
 
         // Group / Sort: label, then a boxed value. Only sorting is functional; grouping shows stable's default.
