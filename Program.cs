@@ -249,6 +249,13 @@ static class Game
                 Rlgl.DrawRenderBatchActive(); // screenshots read the framebuffer, so flush pending draws first
                 TakeScreenshot($"shot-{shotIndex++}.png");
             }
+            // F7 (Toggle Framerate Limit): stable's cycle VSync / Power saving -> Optimal -> Unlimited -> Power saving
+            if (Input.IsKeyPressed(Config.Key("keyToggleFrameLimiter", KeyboardKey.F7)))
+            {
+                string next = Config.Get("FrameSync", "Unlimited") switch { "VSync" or "PowerSaving" => "Optimal", "Optimal" or "Limit120" => "Unlimited", _ => "PowerSaving" };
+                Config.SetOwn("FrameSync", next);
+                ClearWindowState(ConfigFlags.VSyncHint);
+            }
             // F12 (Save Screenshot): the frame as Screenshots/screenshotN.png next to the remake (never in stable's folder)
             if (Input.IsKeyPressed(Config.Key("keyScreenshot", KeyboardKey.F12)))
             {
