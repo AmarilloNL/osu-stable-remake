@@ -140,7 +140,7 @@ sealed class SongSelect : Screen
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
     }
 
-    static List<DbBeatmap> ScanFolders()
+    internal static List<DbBeatmap> ScanFolders()
     {
         var list = new List<DbBeatmap>();
         var songs = Path.Combine(Config.OsuDir, "Songs");
@@ -154,7 +154,7 @@ sealed class SongSelect : Screen
                     list.Add(new DbBeatmap
                     {
                         Artist = m.Artist, Title = m.Title, Creator = m.Creator, Version = m.Version, AudioFile = m.AudioFilename,
-                        OsuFile = Path.GetFileName(file), Folder = Path.GetFileName(dir), Mode = (byte)m.Mode,
+                        OsuFile = Path.GetFileName(file), Folder = Path.GetFileName(dir), Mode = (byte)m.Mode, Md5 = Replays.Md5Of(file),
                         AR = (float)m.AR, CS = (float)m.CS, OD = (float)m.OD, HP = (float)m.HP, PreviewMs = (int)m.PreviewTime,
                     });
                 }

@@ -452,7 +452,8 @@ static class Game
         Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
         Player.VirtualClock = true;
 
-        var maps = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db"))
+        string db = Path.Combine(Config.OsuDir, "osu!.db");
+        var maps = (File.Exists(db) ? OsuDb.Load(db) : SongSelect.ScanFolders())
             .GroupBy(b => b.Md5).ToDictionary(g => g.Key, g => g.First());
         var only = Environment.GetEnvironmentVariable("VERIFY_MD5");
         var stable = Replays.Index().Values.SelectMany(l => l).Where(r => r.FromStable && (only == null || r.BeatmapMd5 == only)).ToList();
