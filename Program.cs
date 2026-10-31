@@ -256,16 +256,17 @@ static class Game
                 Config.SetOwn("FrameSync", next);
                 ClearWindowState(ConfigFlags.VSyncHint);
             }
-            // F12 (Save Screenshot): the frame as Screenshots/screenshotN.png next to the remake (never in stable's folder)
+            // F12 (Save Screenshot): the frame as Screenshots/screenshotN.jpg (or .png, per Screenshot format) next to the remake (never in stable's folder)
             if (Input.IsKeyPressed(Config.Key("keyScreenshot", KeyboardKey.F12)))
             {
                 Rlgl.DrawRenderBatchActive();
                 var dir = Path.Combine(AppContext.BaseDirectory, "Screenshots");
                 Directory.CreateDirectory(dir);
                 int n = 1;
-                while (File.Exists(Path.Combine(dir, $"screenshot{n:000}.png"))) n++;
+                string ext = Config.Get("ScreenshotFormat", "Jpg") == "Png" ? "png" : "jpg";
+                while (File.Exists(Path.Combine(dir, $"screenshot{n:000}.{ext}"))) n++;
                 var img = LoadImageFromScreen();
-                string file = Path.Combine(dir, $"screenshot{n:000}.png");
+                string file = Path.Combine(dir, $"screenshot{n:000}.{ext}");
                 ExportImage(img, file);
                 UnloadImage(img);
                 Notification.Show($"Saved screenshot to {file}", 3000);
