@@ -55,7 +55,7 @@ sealed class MainMenu : Screen
 
     public override void Entered() => NextTip();
 
-    // stable's menu tips (MenuTip_1..30; English text from the osu! wiki): each visit to the menu shows the next
+    // stable's menu tips (MenuTip_1..30; English text from the osu! wiki, worded as the game shows it): each visit to the menu shows the next
     // one, centred 52 units above the bottom in 16-unit Aller Light, fading in 2.558s after arriving (stable's intro
     // length) over 1s and out 12s later. The counter continues from stable's MenuTip but is saved to remake.cfg.
     static readonly string[] Tips =
@@ -75,10 +75,10 @@ sealed class MainMenu : Screen
         "You can export any replay whether it be online or offline by hitting F2 at the ranking screen.",
         "If you find that the 'beats' sound too early or late in every beatmap you play, try adjusting the Universal Offset in Options.",
         "The fastest way to find a beatmap is to simply type part of its title/artist/creator directly into the song select screen.",
-        "Chat can be set to automatically close during gameplay. See the toggle buttons located at the bottom right of the screen when chat is open.",
-        "Adjust the volume in-game using the mouse wheel. This can be disabled in options if you wish.",
-        "Pause/unpause the game quickly by hitting the middle mouse button. This can be disabled in options if you wish.",
-        "You can gain quick access to web links by clicking the chat bubble icon in song select, just above the score listings.",
+        "Chat can be set to automatically close during gameplay. See the toggle-buttons located at the bottom-right of the screen when chat is open.",
+        "Adjust the volume in-game using the mouse-wheel. This can be disabled in options if you wish.",
+        "Pause/unpause the game quickly by hitting the middle mouse-button. This can be disabled in options if you wish.",
+        "You can gain quick access to web links by clicking the chat-bubble icon in song select, just above the score listings.",
         "Customise your osu! experience with new skins! Download them from the Skinning forum.",
         "Hit F8 at any time to activate the in-game chat window. You can check out the commands available in chat by typing !help or /help",
         "Make sure to take breaks every so often. Your hands have to serve you in life for more than just osu! spinners.",
@@ -88,8 +88,8 @@ sealed class MainMenu : Screen
         "Hit F5 at the song select screen to refresh and load any new songs from disk.",
         "Hit Shift + F12 anywhere in-game to take a screenshot and automatically upload it to the internet.",
         "You can customise the keys you use to play osu! under Options > Input.",
-        "You can search for specific conditions at song select, like ar>8 od=9. Supported keywords are: ar, od, hp, cs, bpm, length and drain (time in seconds).",
-        "Quickly retry a beatmap by holding Ctrl + R for a short time! You can also use a custom key (see Quick Retry in Keyboard Bindings).",
+        "You can search for specific conditions at song select, like \"ar>8 od=9\". Supported keywords are: ar, od, hp, cs, bpm, length and drain (time in seconds).",
+        "Quickly retry a beatmap by holding Ctrl+R for a short time! You can also use a custom key (see Quick Retry in Keyboard Bindings).",
     ];
     string? tip;
     double tipFrom;
