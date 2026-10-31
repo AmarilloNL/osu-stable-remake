@@ -1214,7 +1214,7 @@ sealed partial class Player : Screen
             var o = objs[i];
             var s = st[i];
             if (o.Type != ObjType.Spinner || s.Done) continue;
-            if (double.IsNaN(s.SimTime)) { s.SimTime = Math.Floor(o.Time); s.NextTick = o.Time; }
+            if (double.IsNaN(s.SimTime)) { s.SimTime = Math.Floor(o.Time); s.NextTick = o.Time; s.SmoothElapsed = TickMs; } // stable starts its average at a 60Hz frame
             double maxAccel = 8e-5 + Math.Max(0, (5000 - (o.EndTime - o.Time)) / 1000 / 2000);
             double end = Math.Min(t, o.EndTime);
             while (s.SimTime + 1 <= end)
