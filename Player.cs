@@ -1350,7 +1350,8 @@ sealed partial class Player : Screen
         int w = GetScreenWidth(), h = GetScreenHeight();
         if (bg.Id == 0 && !bgTried) LoadBackground(); // even at 100% dim: it fades in from the previous screen
         // stable: once the video has started it replaces the background image, fitted inside the screen
-        if (video != null && time >= map.VideoOffset && !video.Failed && video.Frame(time - map.VideoOffset) is { } vt)
+        // the decoder keeps following while the toggle is off, so turning it back on shows the right frame at once
+        if (video != null && time >= map.VideoOffset && !video.Failed && video.Frame(time - map.VideoOffset) is { } vt && Toggles.Video)
         {
             float s = Math.Min(w / (float)vt.Width, h / (float)vt.Height);
             DrawTexturePro(vt, new Rectangle(0, 0, vt.Width, vt.Height),

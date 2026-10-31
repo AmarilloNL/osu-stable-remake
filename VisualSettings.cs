@@ -11,18 +11,18 @@ namespace OsuStableRemake;
 // TODO: stable stores the per-map toggles/dim in osu!.db; ours are session-only (no writes to stable's files).
 sealed partial class Player
 {
-    static readonly Dictionary<string, (bool Storyboard, bool Skin, bool Hitsounds)> mapToggles = [];
+    static readonly Dictionary<string, (bool Storyboard, bool Video, bool Skin, bool Hitsounds)> mapToggles = [];
     float visualHeight; // units currently shown: 0 hidden, 45 collapsed, ExpandedHeight open
     const float ExpandedHeight = 140;
     int visualDragging = -1;
 
-    (bool Storyboard, bool Skin, bool Hitsounds) Toggles
+    (bool Storyboard, bool Video, bool Skin, bool Hitsounds) Toggles
     {
         get
         {
             mapMd5 ??= Replays.Md5Of(map.File);
             return mapToggles.TryGetValue(mapMd5, out var t) ? t
-                : (true, !Config.GetBool("IgnoreBeatmapSkins", false), !Config.GetBool("IgnoreBeatmapSamples", false));
+                : (true, true, !Config.GetBool("IgnoreBeatmapSkins", false), !Config.GetBool("IgnoreBeatmapSamples", false));
         }
         set
         {
@@ -62,6 +62,7 @@ sealed partial class Player
             if (CheckCollisionPointRec(mouse, new Rectangle(slider.X - 5 * u, slider.Y, slider.Width + 10 * u, slider.Height))) visualDragging = 0; // + the knob at either end
             var t = Toggles;
             if (CheckCollisionPointRec(mouse, ToggleRect(top, 0, u))) Toggles = t with { Storyboard = !t.Storyboard };
+            else if (CheckCollisionPointRec(mouse, ToggleRect(top, 1, u)) && map.VideoFile.Length > 0) Toggles = t with { Video = !t.Video };
             else if (CheckCollisionPointRec(mouse, ToggleRect(top, 2, u))) Toggles = t with { Skin = !t.Skin };
             else if (CheckCollisionPointRec(mouse, ToggleRect(top, 3, u))) Toggles = t with { Hitsounds = !t.Hitsounds };
             else if (visualDragging < 0) return mouse.Y > top;
@@ -103,7 +104,7 @@ sealed partial class Player
         Game.Text($"{dim}%", x1 + 6 * u, cy - 5 * u, 10 * u, Color.White);
 
         var t = Toggles;
-        (string Label, bool On, bool Enabled)[] rows = [("Storyboard", t.Storyboard, true), ("Video", false, false), ("Skin", t.Skin, true), ("Hitsounds", t.Hitsounds, true)];
+        (string Label, bool On, bool Enabled)[] rows = [("Storyboard", t.Storyboard, true), ("Video", t.Video && map.VideoFile.Length > 0, map.VideoFile.Length > 0), ("Skin", t.Skin, true), ("Hitsounds", t.Hitsounds, true)];
         var pink = new Color(235, 117, 140, 255);
         for (int i = 0; i < rows.Length; i++)
         {
