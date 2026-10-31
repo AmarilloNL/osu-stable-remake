@@ -1391,8 +1391,62 @@ sealed partial class Player : Screen
             }
         }
         DrawVisualSettings(w, h);
+        UpdateBreakStars(auto && playback == null ? autoKeys : inputKeys);
+        DrawBreakStars();
         if (auto || autopilot || playback != null) SongSelect.DrawCursorAt(ToScreen(cursor));
         else SongSelect.DrawCursor();
+    }
+
+    // stable's break stars: every third 60Hz tick of a break a star2 (StarBreakAdditive, added on) leaves the cursor
+    // with 4x the cursor's movement over the last tick (held keys kick it sideways), falls (+8 units/s each tick),
+    // and over a random 300-1000ms fades out, scales 1 -> 0..2 and turns between two random angles. Units are 640x480.
+    sealed class Star { public Vector2 Pos, Vel; public double Born, Life; public float Scale, Rot0, Rot1; }
+    readonly List<Star> stars = [];
+    double starTickAt = double.NaN;
+    int starTicks;
+    Vector2 starCursorWas;
+
+    void UpdateBreakStars(byte keys)
+    {
+        double now = Game.NowMs;
+        if (double.IsNaN(starTickAt)) starTickAt = now;
+        float u = GetScreenHeight() / 480f;
+        var at = ToScreen(cursor) / u;
+        for (; now - starTickAt >= 1000 / 60.0; starTickAt += 1000 / 60.0)
+        {
+            var moved = at - starCursorWas;
+            starCursorWas = at;
+            foreach (var s in stars)
+            {
+                s.Vel.Y += 8;
+                s.Pos += s.Vel * (1 / 60f);
+            }
+            if (!InBreak(time) || paused || failed || starTicks++ <= 1) continue;
+            starTicks = 0;
+            var vel = moved * 4;
+            var rnd = Random.Shared;
+            bool left = (keys & 5) != 0, right = (keys & 10) != 0;
+            if (left && right) vel += new Vector2(rnd.Next(-460, 460), rnd.Next(-160, 160));
+            else if (left) vel += new Vector2(rnd.Next(-460, 0), rnd.Next(-40, 40));
+            else if (right) vel += new Vector2(rnd.Next(0, 460), rnd.Next(-40, 40));
+            stars.Add(new Star { Pos = at, Vel = vel, Born = now, Life = rnd.Next(300, 1000), Scale = rnd.NextSingle() * 2,
+                Rot0 = rnd.NextSingle() * 4 - 2, Rot1 = rnd.NextSingle() * 4 - 2 });
+        }
+        stars.RemoveAll(s => now - s.Born >= s.Life);
+    }
+
+    void DrawBreakStars()
+    {
+        if (stars.Count == 0 || skin.Tex("star2") is not { } tex) return;
+        float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
+        double now = Game.NowMs;
+        BeginBlendMode(BlendMode.Additive);
+        foreach (var s in stars)
+        {
+            float f = (float)Math.Clamp((now - s.Born) / s.Life, 0, 1);
+            tex.Draw(s.Pos * u, sd * (1 + (s.Scale - 1) * f), ColorAlpha(skin.StarBreakAdditive, 1 - f), (s.Rot0 + (s.Rot1 - s.Rot0) * f) * 180 / MathF.PI);
+        }
+        EndBlendMode();
     }
 
     float CircleScale => map.Radius / 64f * scale;
