@@ -856,30 +856,69 @@ sealed partial class Player : Screen
 
     // botPath: the test bot's original smoothstep path, kept so replays generated earlier (and stable's recorded
     // results for them) stay reproducible.
-    Vector2 AutoCursor(bool botPath = false)
+    Vector2 AutoCursor(bool botPath = false) => AutoCursorAt(time, botPath);
+
+    static readonly Vector2 SpinCentre = new(256, 192);
+
+    Vector2 AutoCursorAt(double t, bool botPath = false)
     {
-        var centre = new Vector2(256, 192);
+        var centre = SpinCentre;
         Vector2 prevPos = centre;
         double prevEnd = objs[0].Time - map.Preempt;
         for (int i = Math.Max(0, firstActive - 1); i < objs.Count; i++)
         {
             var o = objs[i];
-            if (o.EndTime < time) { prevPos = o.Type == ObjType.Spinner ? centre : o.EndPos + map.StackOffset(o); prevEnd = o.EndTime; continue; }
-            if (time >= o.Time)
+            bool spin = o.Type == ObjType.Spinner;
+            if (o.EndTime < t) { prevPos = !spin ? o.EndPos + map.StackOffset(o) : botPath ? centre : AutoSpin(i, o.EndTime); prevEnd = o.EndTime; continue; }
+            if (t >= o.Time)
                 return o.Type switch
                 {
-                    ObjType.Slider => BallOf(o, time),
-                    ObjType.Spinner => centre + 50 * new Vector2(MathF.Cos((float)time * 0.05f), MathF.Sin((float)time * 0.05f)),
+                    ObjType.Slider => BallOf(o, t),
+                    ObjType.Spinner when botPath => centre + 50 * new Vector2(MathF.Cos((float)t * 0.05f), MathF.Sin((float)t * 0.05f)),
+                    ObjType.Spinner => AutoSpin(i, t),
                     _ => PosOf(o),
                 };
-            var target = o.Type == ObjType.Spinner ? centre : PosOf(o);
+            var target = !spin ? PosOf(o) : botPath ? centre : SpinEntry(SpinFrom(i));
             // stable's Auto: waits for the object to appear, then eases out (quad) to it (measured: 72% of the way at 46%)
             double start = botPath ? prevEnd : Math.Max(prevEnd, o.Time - map.Preempt);
-            float f = (float)Math.Clamp((time - start) / Math.Max(1, o.Time - start), 0, 1);
+            float f = (float)Math.Clamp((t - start) / Math.Max(1, o.Time - start), 0, 1);
             f = botPath ? f * f * (3 - 2 * f) : 1 - (1 - f) * (1 - f);
             return Vector2.Lerp(prevPos, target, f);
         }
         return prevPos;
+    }
+
+    // Where Auto comes from into spinner i: the previous object's end (a spinner before it: its last point).
+    Vector2 SpinFrom(int i) => i == 0 ? SpinCentre : objs[i - 1].Type != ObjType.Spinner ? objs[i - 1].EndPos + map.StackOffset(objs[i - 1]) : AutoSpin(i - 1, objs[i - 1].EndTime);
+
+    // stable's Auto enters a spinner at the tangent point of its 50-unit circle seen from where it was (inside it: the
+    // circle point toward it), rotating the offset like stable does (its Y uses the already-rotated X).
+    static Vector2 SpinEntry(Vector2 from)
+    {
+        var v = SpinCentre - from;
+        float len = v.Length();
+        if (len <= 50) return len > 0 ? SpinCentre - v * (50 / len) : SpinCentre + new Vector2(0, -50);
+        float tangent = MathF.Sqrt(len * len - 2500), a = MathF.Asin(50 / len);
+        float x = v.X * MathF.Cos(a) - v.Y * MathF.Sin(a);
+        float y = x * MathF.Sin(a) + v.Y * MathF.Cos(a);
+        return from + Vector2.Normalize(new Vector2(x, y)) * tangent;
+    }
+
+    // stable's Auto spin: replay frames every 16.67ms of real time stored at whole ms, angle -elapsed real ms / 20
+    // from the entry point, straight lines between frames (so a third of the steps go faster than the spin cap).
+    Vector2 AutoSpin(int i, double t)
+    {
+        var o = objs[i];
+        var entry = SpinEntry(SpinFrom(i)) - SpinCentre;
+        float a0 = MathF.Atan2(entry.Y, entry.X), step = (float)(1000 / 60.0 * rate);
+        double len = o.EndTime - o.Time, el = Math.Clamp(t - o.Time, 0, len);
+        Vector2 At(double e) => SpinCentre + 50 * new Vector2(MathF.Cos(a0 - (float)(e / rate / 20)), MathF.Sin(a0 - (float)(e / rate / 20)));
+        double FrameTime(int k) => k == 0 ? o.Time : k * step >= len ? o.EndTime : (int)(o.Time + k * step);
+        int k = (int)(el / step);
+        if (k > 0 && t < FrameTime(k)) k--;
+        double e0 = k * (double)step, e1 = Math.Min(len, (k + 1) * (double)step), t0 = FrameTime(k), t1 = FrameTime(k + 1);
+        float f = t1 > t0 ? (float)Math.Clamp((t - t0) / (t1 - t0), 0, 1) : 1;
+        return Vector2.Lerp(At(Math.Min(e0, len)), At(e1), f);
     }
 
     void ChangeOffset(int delta)
@@ -1161,7 +1200,7 @@ sealed partial class Player : Screen
         double elapsed = double.IsNaN(s.LastInputTime) ? TickMs : t - s.LastInputTime;
         s.LastInputTime = t;
         if (elapsed < 0) return;
-        var v = cursor - new Vector2(256, 192);
+        var v = (auto ? AutoCursorAt(t) : cursor) - SpinCentre; // Auto: its spin path at the tick's own time
         double ang = Math.Atan2(v.Y, v.X);
         if (!s.HasAngle) { s.LastAngle = ang; s.HasAngle = true; }
         double d = ang - s.LastAngle;
@@ -1186,9 +1225,6 @@ sealed partial class Player : Screen
         if (mods.HasFlag(Mods.SpunOut) || autopilot) s.Velocity = 0.03;
         else
         {
-            // stable's Auto cursor spins at the speed cap and the spinner accelerates to it, from stable's first input tick
-            // inside the spinner: its 60Hz input clock has a random phase there (0-16.7ms), so half a tick on average.
-            if (auto) s.Target = s.SimTime >= o.Time + TickMs / 2 ? 0.05 : 0;
             double a = maxAccel / rate; // acceleration is per real ms; one step is 1ms of map time
             s.Velocity += s.Target > s.Velocity ? Math.Min(s.Target - s.Velocity, a) : Math.Max(s.Target - s.Velocity, -a);
         }
