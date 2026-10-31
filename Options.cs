@@ -521,7 +521,7 @@ sealed class Options : Screen
         if (mouse.X > PanelR * u || mouse.X < stripW * u) return null;
         float cy = mouse.Y / u + scroll;
         foreach (var (i, y, hgt) in layout)
-            if (cy >= y && cy < y + hgt && items[i].Kind is Kind.Toggle or Kind.Slider or Kind.Choice or Kind.Key or Kind.Button or Kind.Field) return i;
+            if (cy >= y && cy < y + hgt && items[i].Kind is Kind.Toggle or Kind.Slider or Kind.Choice or Kind.Key or Kind.Button or Kind.Field or Kind.Text or Kind.Warning) return i; // stable highlights warning rows too
         return null;
     }
 
@@ -596,6 +596,7 @@ sealed class Options : Screen
                     continue;
             }
             if (hovered == i) DrawRectangleRec(new Rectangle(ox + StripW * u, y, (PanelR - StripW) * u, rowH), Strip); // measured: opaque (8,8,8)
+            if (hovered == i && Tips.TryGetValue(it.Key, out var tip)) tooltip = tip;
             if (it.Kind is Kind.Toggle or Kind.Slider or Kind.Choice or Kind.Key && !IsDefault(it)) markers.Add((y, rowH)); // drawn after the rules, which they add onto
             switch (it.Kind)
             {
@@ -762,15 +763,91 @@ sealed class Options : Screen
             if ((skin.Tex(name) ?? skin.Frame(name, 0)) is { } j) j.Draw(new Vector2(ox + x * u, cy), js, Color.White);
     }
 
-    // stable's tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint white edge.
+    // stable's tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint white edge;
+    // each further line adds 8.9 units.
     internal static void DrawTooltip(string text, Vector2 mouse)
     {
-        float u = GetScreenHeight() / 480f, ts = 7 * u, bw = Game.TextWidth(text, ts) + 4 * u;
-        var box = new Rectangle(mouse.X + 4 * u, mouse.Y + 3.3f * u, bw, 8 * u);
+        float u = GetScreenHeight() / 480f, ts = 7 * u, lineH = 8.9f * u;
+        var lines = text.Split('\n');
+        float bw = lines.Max(l => Game.TextWidth(l, ts)) + 4 * u;
+        var box = new Rectangle(mouse.X + 4 * u, mouse.Y + 3.3f * u, bw, 8 * u + (lines.Length - 1) * lineH);
         DrawRectangleRec(box, new Color(0, 0, 0, 128));
         DrawRectangleLinesEx(box, 1, new Color(255, 255, 255, 40));
-        Game.Text(text, box.X + 2 * u, box.Y + box.Height / 2 - ts / 2, ts, Color.White);
+        for (int i = 0; i < lines.Length; i++) Game.Text(lines[i], box.X + 2 * u, box.Y + 4 * u + i * lineH - ts / 2, ts, Color.White);
     }
+
+    // stable's descriptions, by setting
+    static readonly Dictionary<string, string> Tips = new()
+    {
+        ["ShowUnicode"] = "Where available, song titles will be shown in their native language (and character-set).",
+        ["AlternativeChatFont"] = "For people who prefer a less stylised font, this sets in-game chat to use Tahoma.",
+        ["FpsCounter"] = "Show a subtle FPS counter in the bottom right corner of the screen.",
+        ["CompatibilityContext"] = "If you're having trouble running osu!",
+        ["ForceFrameFlush"] = "Users which experience regular dropped/stutter frames should try turning this on. May reduce frame rate slightly.",
+        ["DetectPerformanceIssues"] = "osu! will actively look for and alert you of issues with your PC which could be hurting your game performance.",
+        ["Fullscreen"] = "Switches to dedicated fullscreen mode. Decreases cursor latency in Windows 7+.",
+        ["HighResolution"] = "Always use the full native resolution but display osu! in a smaller centered portion of the screen.\nUseful to get the low latency of full screen with a smaller game resolution.",
+        ["SnakingSliders"] = "Sliders gradually snake out from their starting point.\nThis should run fine unless you have a low-end PC.",
+        ["Video"] = "Enables background video playback.\nIf you get a large amount of lag on beatmaps with video, try disabling this feature.",
+        ["ShowStoryboard"] = "Show storyboards in the background of beatmaps. These usually contain story elements, lyrics or special effects.",
+        ["ComboBurst"] = "A character image bursts from the side of the screen at combo milestones.",
+        ["HitLighting"] = "Adds a subtle glow behind hit explosions which lights the playfield.",
+        ["Shaders"] = "Enables shader special effects in gameplay (epic flashes, blurring, tinting and more!).\nHighly recommended, but requires Pixel Shader 2.0 support and a relatively powerful graphics card.\nIf your card is unsupported, this will be automatically disabled.",
+        ["BloomSoftening"] = "Adds a softening touch to visuals game-wide. Some people like this, others hate it ;)",
+        ["MenuSnow"] = "Little representations of your current game mode will fall from the sky.",
+        ["MenuParallax"] = "Add a parallax effect based on the current cursor position.",
+        ["ShowMenuTips"] = "The main menu will display tips on how to get the most out of osu!.",
+        ["MenuVoice"] = "osu! will greet you when you start and quit.",
+        ["MenuMusic"] = "osu! will play themed music throughout the game, instead of using random beatmaps.",
+        ["SongSelectThumbnails"] = "Display a preview of each beatmap's background. Requires skin support (version 2.2+).",
+        ["IHateHavingFun"] = "Makes the background basically impossible to see during breaks.\nNot recommended.",
+        ["ScoreboardVisible"] = "Affects both solo and multiplayer.",
+        ["KeyOverlay"] = "Show the key status overlay even when playing locally.\nHandy for recording or streaming your play.",
+        ["HiddenShowFirstApproach"] = "Sometimes it can be hard to judge when to click the first hitobject when playing with Hidden on.\nThis allows you to see the first hitobject's approach circle.",
+        ["ManiaSpeedBPMScale"] = "The scroll speed will depend on the current beatmap's base BPM.\nWith this enabled, faster beatmaps will scroll faster.",
+        ["UsePerBeatmapManiaSpeed"] = "Per-beatmap scroll speeds will be stored and used.",
+        ["AudioCompatibility"] = "Use legacy audio engine (higher latency but more compatible)",
+        ["IgnoreBeatmapSamples"] = "Custom hitsounds bundled with beatmaps will be ignored.",
+        ["IgnoreBeatmapSkins"] = "Defaults game settings to never use skin element overrides provided by beatmaps.",
+        ["SkinSamples"] = "If this is not selected, the default osu! soundset will be used for hit samples.",
+        ["UseTaikoSkin"] = "If this is selected and the Taiko skin is present,\nit will always be used when playing Taiko mode.",
+        ["UseSkinCursor"] = "The selected skin's cursor will override any beatmap-specific cursor modifications.",
+        ["AutomaticCursorSizing"] = "Cursor size will adjust based on the CS of the current beatmap.",
+        ["ComboColourSliderBall"] = "This only takes effect if you are using a skin which supports it.",
+        ["RawInput"] = "Raw input will bypass Windows acceleration and provide the most accurate mouse movement.",
+        ["AbsoluteToOsuWindow"] = "Input devices with absolute positioning such as tablets usually affect the entire screen area.\nThis allows your tablet screen area to be entirely dedicated to the osu! window.",
+        ["MouseDisableWheel"] = "During play, you can use the mouse wheel to adjust the volume and pause the game.\nThis will disable that functionality.",
+        ["MouseDisableButtons"] = "This option will disable all mouse buttons.\nSpecifically for people who use their keyboard to click.",
+        ["CursorRipple"] = "The cursor will ripple outwards on clicking.",
+        ["Tablet"] = "Enable this if you are running a Tablet PC or using a graphics tablet and your clicks aren't handled correctly.",
+        ["Wiimote"] = "Enable support for the Wii Taiko drum controller and Wiimote.\nMake sure you have paired your Wiimote via bluetooth before enabling.",
+        ["EditorVideo"] = "Show background video in the editor.",
+        ["EditorDefaultSkin"] = "Override any custom skin while editing. The default skin is recommended when editing to check overlaps etc.",
+        ["EditorSnakingSliders"] = "Sliders gradually snake out from their starting point in the editor.",
+        ["EditorHitAnimations"] = "Hitobjects appear hit instead of fading out.",
+        ["EditorFollowPoints"] = "Display follow points in the editor.",
+        ["EditorStacking"] = "Display hitobjects stacked in the editor.",
+        ["Ticker"] = "Popup new chat messages in a one-line display at the bottom of the screen\nwhen the chat console is not visible.",
+        ["AutoChatHide"] = "When enabled, chat will automatically hide itself during gameplay.\nIt will be visible during breaks and intro/outro time.",
+        ["ChatHighlightName"] = "A message will flash at the bottom of your screen (even during gameplay)\nwhen someone mentions your name in chat.",
+        ["ChatMessageNotification"] = "A notification will be shown when new chat messages arrive.",
+        ["ChatAudibleHighlight"] = "A sound will play when someone mentions your name in chat.",
+        ["DisplayCityLocation"] = "By default, other users will only be able to see your country. Enabling this adds your city to the\npublicly visible location. This is usually quite accurate.",
+        ["ShowSpectators"] = "A list of spectators is visible top-left during play.\nIf you hide this, you will no longer know if you are being spectated.",
+        ["AutoSendNowPlaying"] = "Send the currently playing beatmap to the #spectator channel when you have spectators.",
+        ["PopupDuringGameplay"] = "Choose whether to allow coloured notifications to appear at the bottom of the screen during gameplay.\nIf not ticked, notifications will only be displayed during break time.",
+        ["NotifyFriends"] = "Notifications will be shown when friends go online/offline.",
+        ["AllowPublicInvites"] = "Uncheck this to limit incoming invites to friends only.",
+        ["DiscordRichPresence"] = "Whether to provide rich presence to discord",
+        ["YahooIntegration"] = "Your Yahoo! Messenger will show the song you are currently playing or listening to.",
+        ["MsnIntegration"] = "Your Windows Live Messenger will show the song you are currently playing or listening to.",
+        ["AutomaticDownload"] = "When spectating or multiplaying, beatmaps will be downloaded for you.",
+        ["AutomaticDownloadNoVideo"] = "Choose whether automatic osu!direct downloads come with videos.",
+        ["ChatFilter"] = "Attempts to remove words that may be offensive to specific cultures and younger age groups.",
+        ["ChatRemoveForeign"] = "Removes any characters outside the standard ASCII (English) range.\nUseful if you experience lag from these.",
+        ["LogPrivateMessages"] = "Enabling this option will automatically log all private messages sent and received to the Chat folder in \"(user).txt\" format.",
+        ["BlockNonFriendPM"] = "You will not receive any private messages from users who are not on your friends list if this option is enabled.",
+    };
 
     static readonly Dictionary<int, string> iconText = []; // drawn every frame (menu music controls): one string each
     internal static void DrawIcon(int codepoint, float cx, float cy, float size, Color colour)
