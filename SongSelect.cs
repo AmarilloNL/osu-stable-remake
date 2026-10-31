@@ -906,7 +906,7 @@ sealed class SongSelect : Screen
     static void DrawStars(float stars, float x, float y, float u, Color tint, double age = double.MaxValue)
     {
         if (stars <= 0 || stars > 100) return;
-        // stable: spaced by 0.6 of the sprite's width; the faint row at 0.6 x 0.35, additive, alpha 30;
+        // stable: spaced by 0.6 of the sprite's width; the faint row at 0.6 x 0.35, white, additive, alpha 30;
         // filled stars at 0.6 x 0.6 x max(0.5, fill + 0.04 per index), so later stars are a touch bigger.
         // When a set opens they pop in from nothing: BackOut over 500ms, the first after 50ms, then 80ms apart.
         var star = Game.Skin.Tex("star");
@@ -919,7 +919,7 @@ sealed class SongSelect : Screen
             if (star is { } sp)
             {
                 BeginBlendMode(BlendMode.Additive);
-                sp.Draw(c, 0.21f * sd, ColorAlpha(tint, 30 / 255f));
+                sp.Draw(c, 0.21f * sd, new Color(255, 255, 255, 30)); // white on every panel (measured)
                 EndBlendMode();
                 if (filled > 0) sp.Draw(c, filled * sd, tint);
             }
