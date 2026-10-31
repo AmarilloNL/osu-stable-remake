@@ -244,6 +244,11 @@ sealed class Skin
         return sounds[name] = pool;
     }
 
+    // stable's own sample, ignoring the user's skin (the "Use skin's sound samples" option off).
+    readonly Dictionary<string, SoundPool?> defaultSounds = new(StringComparer.OrdinalIgnoreCase);
+    public SoundPool? DefaultSound(string name) =>
+        defaultSounds.TryGetValue(name, out var s) ? s : defaultSounds[name] = DefaultSkin.Get(name) is { } b && b[0] != 0x89 ? SoundPool.Load(b) : null;
+
     // Everything gameplay draws (besides the map's own files), for PrefetchGameplay; frames past a skin's last are
     // just misses. Glyphs are added per font prefix.
     static readonly string[] GameplaySprites =
@@ -306,10 +311,10 @@ sealed class Skin
         foreach (var t in textures.Values.Concat(defaultTextures.Values)) if (t is { } sp) UnloadTexture(sp.Tex);
         foreach (var job in decoding.Values) if (job.Wait(5000) && job.Result.Img.Width > 0) UnloadImage(job.Result.Img);
         decoding.Clear();
-        foreach (var s in sounds.Values) s?.Unload();
+        foreach (var s in sounds.Values.Concat(defaultSounds.Values)) s?.Unload();
         textures.Clear(); defaultTextures.Clear();
         glyphs.Clear(); frames.Clear();
-        sounds.Clear();
+        sounds.Clear(); defaultSounds.Clear();
     }
 }
 
@@ -346,7 +351,7 @@ sealed class BeatmapSamples
             // Everything in the folder was preloaded, so a cache miss means "not in the map": use the skin.
             if (cache.TryGetValue(index > 1 ? sample + index : sample, out var pool) && pool != null) { pool.Play(vol); return; }
         }
-        Game.Skin.Sound(sample)?.Play(vol);
+        (Config.GetBool("SkinSamples", true) ? Game.Skin.Sound(sample) : Game.Skin.DefaultSound(sample))?.Play(vol);
     }
 
     public void Unload()
