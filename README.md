@@ -88,7 +88,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Song select reading `osu!.db`, collections, search and grouping
 - [x] Own replays (exact playback) and stable `.osr` import
 - [x] Main menu, options, ranking screen, pause/fail menus
-- [ ] Background videos
+- [x] Background videos (decoded by Windows Media Foundation, no extra libraries; the Video option turns them off)
 - [ ] Other modes: osu!taiko, osu!catch, osu!mania
 - [ ] Linux / macOS (currently uses Windows fonts and Windows BASS builds)
 

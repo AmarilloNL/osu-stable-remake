@@ -113,6 +113,8 @@ sealed class Beatmap
     public string Folder = "", File = "";
     public int FormatVersion = 14, Mode;
     public string AudioFilename = "", Background = "", Title = "", Artist = "", Version = "", Creator = "", Source = "";
+    public string VideoFile = ""; // the background video and the map time it starts at
+    public double VideoOffset;
     public double AudioLeadIn, PreviewTime, StackLeniency = 0.7;
     public int Countdown = 1, CountdownOffset; // 0 none, 1 normal, 2 half speed, 3 double speed
     public double HP = 5, CS = 5, OD = 5, AR = -1, SliderMultiplier = 1.4, SliderTickRate = 1;
@@ -236,6 +238,7 @@ sealed class Beatmap
             case "Events":
                 var e = line.Split(',');
                 if (e.Length >= 3 && e[0] == "0" && Background == "") Background = e[2].Trim('"');
+                if (e.Length >= 3 && e[0] is "1" or "Video" && VideoFile == "") { VideoFile = e[2].Trim('"'); VideoOffset = D(e[1]); }
                 if (e.Length >= 3 && e[0] is "2" or "Break") Breaks.Add((D(e[1]), D(e[2])));
                 break;
             case "Colours":

@@ -214,6 +214,7 @@ sealed partial class Player : Screen
         music?.Dispose();
         SoundPool.Stop(pauseLoop);
         if (bg.Id != 0) UnloadTexture(bg);
+        video?.Dispose();
         storyboard?.Unload();
         UnloadRenderTexture(sliderRt);
         if (sliderGradient.Id != 0) UnloadTexture(sliderGradient);
@@ -1314,9 +1315,14 @@ sealed partial class Player : Screen
     // Loaded on first need: at start, or when the dim is lowered from 100% mid-play (Visual Settings).
     bool bgTried;
 
+    // The map's background video (stable's Video option, on by default; not while watching the result screen etc.).
+    Video? video;
+
     void LoadBackground()
     {
         bgTried = true;
+        var videoPath = Path.Combine(map.Folder, map.VideoFile);
+        if (map.VideoFile.Length > 0 && !VirtualClock && Config.GetBool("Video", true) && File.Exists(videoPath)) video = new Video(videoPath);
         var bgPath = Path.Combine(map.Folder, map.Background);
         // A storyboard that draws the background itself replaces it, like stable.
         if (map.Background.Length == 0 || !File.Exists(bgPath) || storyboard?.UsesFile(map.Background) == true) return;
@@ -1328,7 +1334,15 @@ sealed partial class Player : Screen
     {
         int w = GetScreenWidth(), h = GetScreenHeight();
         if (bg.Id == 0 && !bgTried) LoadBackground(); // even at 100% dim: it fades in from the previous screen
-        if (bg.Id != 0)
+        // stable: once the video has started it replaces the background image, fitted inside the screen
+        if (video != null && time >= map.VideoOffset && !video.Failed && video.Frame(time - map.VideoOffset) is { } vt)
+        {
+            float s = Math.Min(w / (float)vt.Width, h / (float)vt.Height);
+            DrawTexturePro(vt, new Rectangle(0, 0, vt.Width, vt.Height),
+                new Rectangle((w - vt.Width * s) / 2, (h - vt.Height * s) / 2, vt.Width * s, vt.Height * s),
+                Vector2.Zero, 0, ColorAlpha(Color.White, 1 - bgDim / 100f));
+        }
+        else if (bg.Id != 0)
         {
             float s = Math.Max(w / (float)bg.Width, h / (float)bg.Height);
             float dim = 1 - bgDim / 100f;
