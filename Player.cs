@@ -84,7 +84,7 @@ sealed partial class Player : Screen
     int comboWorst = 300;
     double lastTime = double.NaN;
     int autoNext;
-    double autoReleaseAt;
+    double autoReleaseAt = double.NegativeInfinity; // map time starts negative: nothing held through the lead-in
     int autoAlt, autoButton = 4; byte autoKeys; byte autoPressed; // the key overlay's view of Auto: stable's M1/M2 choice (judging uses held)
 
     // Replays: recording during live play, or playback when watching.
