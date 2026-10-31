@@ -78,7 +78,7 @@ sealed class Options : Screen
             T("Prefer metadata in original language", "ShowUnicode"),
             T("Use alternative font for chat display", "AlternativeChatFont"),
             H("UPDATES"),
-            new(Kind.Choice, "Release stream:", "_ReleaseStream", Values: ["Stable", "Beta", "CuttingEdge"], Names: ["Stable", "Beta", "Cutting Edge"], DefValue: "Stable"),
+            new(Kind.Choice, "Release stream:", "_ReleaseStream", Values: ["Stable", "Beta", "CuttingEdge"], Names: ["Stable", "Beta", "Cutting Edge (Experimental)"], DefValue: "Stable"),
             B("Try out the new osu!(lazer) client!", Green),
             B("Open osu! folder", Blue, () => Explore(Config.OsuDir)),
 
