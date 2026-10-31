@@ -31,15 +31,17 @@ static class ModInfo
 
     public static double ScoreMultiplier(this Mods m)
     {
+        // stable's order (it matters for the last bit of the double); Relax and Autopilot score nothing
         double x = 1;
-        if (m.HasFlag(Mods.Easy)) x *= 0.5;
         if (m.HasFlag(Mods.NoFail)) x *= 0.5;
+        if (m.HasFlag(Mods.Easy)) x *= 0.5;
         if (m.HasFlag(Mods.HalfTime)) x *= 0.3;
+        if (m.HasFlag(Mods.Hidden)) x *= 1.06;
         if (m.HasFlag(Mods.HardRock)) x *= 1.06;
         if (m.HasFlag(Mods.DoubleTime)) x *= 1.12;
-        if (m.HasFlag(Mods.Hidden)) x *= 1.06;
         if (m.HasFlag(Mods.Flashlight)) x *= 1.12;
         if (m.HasFlag(Mods.SpunOut)) x *= 0.9;
+        if (m.HasFlag(Mods.Relax) || m.HasFlag(Mods.Autopilot)) x *= 0.0;
         return x;
     }
 

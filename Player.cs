@@ -1291,7 +1291,8 @@ sealed partial class Player : Screen
         Final(i, result, new Vector2(256, 192));
     }
 
-    void ScoreHit(int value) => score += value + (long)(value * Math.Max(0, combo - 1) * diffMul * modMul / 25);
+    // stable: value + (int)(max(0, combo - 1) * ((value / 25) * (difficulty multiplier * mod multiplier))), integer value / 25
+    void ScoreHit(int value) => score += value + (int)(Math.Max(0, combo - 1) * ((double)(value / 25) * (diffMul * modMul)));
 
     void BreakCombo()
     {
