@@ -149,12 +149,39 @@ sealed class Skin
         return new Color(byte.Parse(p[0].Trim()), byte.Parse(p[1].Trim()), byte.Parse(p[2].Trim()), (byte)255);
     }
 
-    public Sprite? Tex(string name) => Load(name, userSkin: true);
+    public Sprite? Tex(string name) => mapDir != null && MapTex(name) is { } m ? m : Load(name, userSkin: true);
+
+    // A beatmap's own skin elements (its folder's images), used over the user's skin during play unless "Ignore all
+    // beatmap skins"; "Always use skin cursor" keeps the user's cursor.
+    string? mapDir;
+    readonly Dictionary<string, Sprite?> mapTextures = new(StringComparer.OrdinalIgnoreCase);
+
+    public void SetMapSkin(string? folder)
+    {
+        if (folder == mapDir) return;
+        foreach (var t in mapTextures.Values) if (t is { } sp) UnloadTexture(sp.Tex);
+        mapTextures.Clear();
+        own.Clear(); glyphs.Clear(); frames.Clear();
+        mapDir = folder;
+    }
+
+    Sprite? MapTex(string name)
+    {
+        if (mapTextures.TryGetValue(name, out var t)) return t;
+        Sprite? s = null;
+        if (!(name.StartsWith("cursor", StringComparison.OrdinalIgnoreCase) && Config.GetBool("UseSkinCursor", false)))
+            foreach (var (file, scale) in new[] { ($"{name}@2x.png", 0.5f), ($"{name}.png", 1f) })
+            {
+                var path = Path.Combine(mapDir!, file);
+                if (File.Exists(path) && Upload(LoadTexture(path), scale) is { } up) { s = up; break; }
+            }
+        return mapTextures[name] = s;
+    }
 
     // Whether the user's skin itself has this sprite (not stable's default).
     readonly Dictionary<string, bool> own = new(StringComparer.OrdinalIgnoreCase);
     public bool Own(string name) => own.TryGetValue(name, out bool o) ? o
-        : own[name] = File.Exists(Path.Combine(dir, name + ".png")) || File.Exists(Path.Combine(dir, name + "@2x.png"));
+        : own[name] = mapDir != null && MapTex(name) != null || File.Exists(Path.Combine(dir, name + ".png")) || File.Exists(Path.Combine(dir, name + "@2x.png"));
 
     // stable's own default sprite, ignoring the user's skin (for elements stable always takes from osu!ui).
     public Sprite? DefaultTex(string name) => Load(name, userSkin: false);

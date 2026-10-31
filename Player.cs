@@ -215,6 +215,7 @@ sealed partial class Player : Screen
         SoundPool.Stop(pauseLoop);
         if (bg.Id != 0) UnloadTexture(bg);
         video?.Dispose();
+        skin.SetMapSkin(null);
         storyboard?.Unload();
         UnloadRenderTexture(sliderRt);
         if (sliderGradient.Id != 0) UnloadTexture(sliderGradient);
