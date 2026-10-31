@@ -1397,14 +1397,26 @@ sealed partial class Player : Screen
         else SongSelect.DrawCursor();
     }
 
-    // stable's break stars: every third 60Hz tick of a break a star2 (StarBreakAdditive, added on) leaves the cursor
-    // with 4x the cursor's movement over the last tick (held keys kick it sideways), falls (+8 units/s each tick),
-    // and over a random 300-1000ms fades out, scales 1 -> 0..2 and turns between two random angles. Units are 640x480.
-    sealed class Star { public Vector2 Pos, Vel; public double Born, Life; public float Scale, Rot0, Rot1; }
+    // stable's star2 effects, in 640x480 units moved by a little physics step every 60Hz tick (+gravity to the speed,
+    // speed x 1/60 to the position); each fades out, scales from 1 and turns between two random angles over a random
+    // 300-1000ms. Cursor stars (StarBreakAdditive, added on): every third tick of a break, and every tick of sliders and
+    // spinners under Relax/Autopilot or in kiai with a key held; they leave with 4x the cursor's last-tick movement
+    // (held keys kick break stars sideways), gravity 8, scale to 0..2. Kiai fountain (white): when kiai starts, 50 stars
+    // from each bottom corner 10ms apart in song time, thrown up and inwards, gravity 12.8, scale to 1..2.8.
+    sealed class Star
+    {
+        public Vector2 Pos, Vel;
+        public double Born, Life; // real ms for cursor stars, song ms for fountain stars
+        public float Scale, Rot0, Rot1, Gravity = 8;
+        public bool Fountain;
+    }
     readonly List<Star> stars = [];
     double starTickAt = double.NaN;
     int starTicks;
     Vector2 starCursorWas;
+    bool kiaiWas;
+
+    double StarAge(Star s) => s.Fountain ? time - s.Born : Game.NowMs - s.Born;
 
     void UpdateBreakStars(byte keys)
     {
@@ -1412,41 +1424,75 @@ sealed partial class Player : Screen
         if (double.IsNaN(starTickAt)) starTickAt = now;
         float u = GetScreenHeight() / 480f;
         var at = ToScreen(cursor) / u;
+        var rnd = Random.Shared;
+        bool kiai = KiaiAt(time);
+        if (kiai && !kiaiWas && !paused && !failed)
+            for (int i = 0; i < 50; i++)
+                foreach (bool right in (bool[])[false, true])
+                    stars.Add(new Star
+                    {
+                        Fountain = true, Born = time + i * 10, Life = rnd.Next(300, 1000), Gravity = 8 * 1.6f,
+                        Pos = new Vector2(right ? GetScreenWidth() / u - 30 : 30, 490),
+                        Vel = new Vector2(rnd.Next(300, 450) * (right ? -1 : 1), rnd.Next(-800, -700)),
+                        Scale = 1 + rnd.NextSingle() * 1.8f, Rot0 = rnd.NextSingle() * 4 - 2, Rot1 = rnd.NextSingle() * 4 - 2,
+                    });
+        kiaiWas = kiai;
         for (; now - starTickAt >= 1000 / 60.0; starTickAt += 1000 / 60.0)
         {
             var moved = at - starCursorWas;
             starCursorWas = at;
             foreach (var s in stars)
             {
-                s.Vel.Y += 8;
+                if (StarAge(s) < 0) continue; // a fountain star waits for its start
+                s.Vel.Y += s.Gravity;
                 s.Pos += s.Vel * (1 / 60f);
             }
-            if (!InBreak(time) || paused || failed || starTicks++ <= 1) continue;
-            starTicks = 0;
+            if (paused || failed) continue;
+            bool spray = !InBreak(time) && (relax || autopilot || keys != 0 && kiai) && SliderOrSpinnerActive();
+            if (!spray && (!InBreak(time) || starTicks++ <= 1)) continue;
+            if (!spray) starTicks = 0;
             var vel = moved * 4;
-            var rnd = Random.Shared;
-            bool left = (keys & 5) != 0, right = (keys & 10) != 0;
-            if (left && right) vel += new Vector2(rnd.Next(-460, 460), rnd.Next(-160, 160));
+            bool left = !spray && (keys & 5) != 0, rightKey = !spray && (keys & 10) != 0;
+            if (left && rightKey) vel += new Vector2(rnd.Next(-460, 460), rnd.Next(-160, 160));
             else if (left) vel += new Vector2(rnd.Next(-460, 0), rnd.Next(-40, 40));
-            else if (right) vel += new Vector2(rnd.Next(0, 460), rnd.Next(-40, 40));
+            else if (rightKey) vel += new Vector2(rnd.Next(0, 460), rnd.Next(-40, 40));
             stars.Add(new Star { Pos = at, Vel = vel, Born = now, Life = rnd.Next(300, 1000), Scale = rnd.NextSingle() * 2,
                 Rot0 = rnd.NextSingle() * 4 - 2, Rot1 = rnd.NextSingle() * 4 - 2 });
         }
-        stars.RemoveAll(s => now - s.Born >= s.Life);
+        stars.RemoveAll(s => StarAge(s) >= s.Life);
+    }
+
+    bool KiaiAt(double t)
+    {
+        bool kiai = false;
+        foreach (var tp in map.TimingPoints) { if (tp.Time > t) break; kiai = tp.Kiai; }
+        return kiai;
+    }
+
+    bool SliderOrSpinnerActive()
+    {
+        for (int i = firstActive; i < objs.Count && objs[i].Time <= time; i++)
+            if (objs[i].Type != ObjType.Circle && time <= objs[i].EndTime) return true;
+        return false;
     }
 
     void DrawBreakStars()
     {
         if (stars.Count == 0 || skin.Tex("star2") is not { } tex) return;
         float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
-        double now = Game.NowMs;
-        BeginBlendMode(BlendMode.Additive);
-        foreach (var s in stars)
+        foreach (bool fountain in (bool[])[true, false])
         {
-            float f = (float)Math.Clamp((now - s.Born) / s.Life, 0, 1);
-            tex.Draw(s.Pos * u, sd * (1 + (s.Scale - 1) * f), ColorAlpha(skin.StarBreakAdditive, 1 - f), (s.Rot0 + (s.Rot1 - s.Rot0) * f) * 180 / MathF.PI);
+            if (!fountain) BeginBlendMode(BlendMode.Additive);
+            foreach (var s in stars)
+            {
+                double age = StarAge(s);
+                if (s.Fountain != fountain || age < 0) continue;
+                float f = (float)Math.Clamp(age / s.Life, 0, 1);
+                var tint = fountain ? Color.White : skin.StarBreakAdditive;
+                tex.Draw(s.Pos * u, sd * (1 + (s.Scale - 1) * f), ColorAlpha(tint, (1 - f) * playfieldAlpha), (s.Rot0 + (s.Rot1 - s.Rot0) * f) * 180 / MathF.PI);
+            }
+            if (!fountain) EndBlendMode();
         }
-        EndBlendMode();
     }
 
     float CircleScale => map.Radius / 64f * scale;
