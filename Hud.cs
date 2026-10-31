@@ -105,10 +105,26 @@ sealed partial class Player
 
         float accW = skin.FontWidth(skin.ScorePrefix, skin.ScoreOverlap, "00.00%", accScale, constant: true);
         DrawBreakGrade(new Vector2(right - Math.Max(0, accW) - 52 * u, accY + glyphH * accScale / 2), sd);
-        if (Config.Get("ProgressBarType", "Pie") != "Pie") return;
-        var centre = new Vector2(right - Math.Max(0, accW) - 24 * u, accY + glyphH * accScale / 2);
         double first = objs[0].Time, last = objs[^1].EndTime;
         double frac = time < first ? -Math.Clamp((first - time) / Math.Max(1, first - playStart), 0, 1) : Math.Clamp((time - first) / Math.Max(1, last - first), 0, 1);
+        string progress = Config.Get("ProgressBarType", "Pie");
+        if (progress != "Pie")
+        {
+            // stable's bars (3 units tall): white at alpha 20 behind, (255,255,128) at half alpha filling from the first
+            // object to the end. Top-Right: 170 wide from 178 units in from the right, 2 above the accuracy's bottom;
+            // Bottom-Right: the last 118 units of row 460; Bottom: the full width at 477.
+            float wu = w / u, accBottom = (accY + glyphH * accScale) / u;
+            (float X, float Y, float W) bar = progress switch
+            {
+                "Bottom" => (0, 477, wu),
+                "BottomRight" => (wu - 118, 460, 118),
+                _ => (wu - 178, accBottom - 2, 170),
+            };
+            DrawRectangleRec(new Rectangle(bar.X * u, bar.Y * u, bar.W * u, 3 * u), new Color(255, 255, 255, 20));
+            DrawRectangleRec(new Rectangle(bar.X * u, bar.Y * u, bar.W * (float)Math.Max(0, frac) * u, 3 * u), new Color(255, 255, 128, 128));
+            return;
+        }
+        var centre = new Vector2(right - Math.Max(0, accW) - 24 * u, accY + glyphH * accScale / 2);
         var fill = frac < 0 ? new Color(199, 255, 47, 153) : new Color(255, 255, 255, 153);
         if (frac != 0) DrawCircleSector(centre, 10 * u, -90, -90 + 360 * (float)Math.Abs(frac), 48, fill);
         skin.Tex("circularmetre")?.Draw(centre, sd, Color.White); // osu!gameplay.dll
