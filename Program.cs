@@ -249,6 +249,20 @@ static class Game
                 Rlgl.DrawRenderBatchActive(); // screenshots read the framebuffer, so flush pending draws first
                 TakeScreenshot($"shot-{shotIndex++}.png");
             }
+            // F12 (Save Screenshot): the frame as Screenshots/screenshotN.png next to the remake (never in stable's folder)
+            if (Input.IsKeyPressed(Config.Key("keyScreenshot", KeyboardKey.F12)))
+            {
+                Rlgl.DrawRenderBatchActive();
+                var dir = Path.Combine(AppContext.BaseDirectory, "Screenshots");
+                Directory.CreateDirectory(dir);
+                int n = 1;
+                while (File.Exists(Path.Combine(dir, $"screenshot{n:000}.png"))) n++;
+                var img = LoadImageFromScreen();
+                string file = Path.Combine(dir, $"screenshot{n:000}.png");
+                ExportImage(img, file);
+                UnloadImage(img);
+                Notification.Show($"Saved screenshot to {file}", 3000);
+            }
             if (secs >= exitAfter) Quit = true;
             if (AllocProfile.Instance is { } ap) ap.On = secs > 8; // gameplay only, after loading
             EndDrawing();

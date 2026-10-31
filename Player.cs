@@ -56,7 +56,7 @@ sealed partial class Player : Screen
     RenderTexture2D sliderRt;
 
     readonly KeyboardKey key1, key2;
-    readonly bool mouseButtons;
+    bool mouseButtons;
     Vector2 cursor;
     float scale;
     Vector2 origin;
@@ -616,6 +616,12 @@ sealed partial class Player : Screen
         if (retryHold >= 100) { Retry(); return; }
 
         if (playback == null && !auto && (Input.IsKeyPressed(key1) || Input.IsKeyPressed(key2))) SongSelect.Ripple(Input.GetMousePosition()); // keys click too
+        if (Input.IsKeyPressed(Config.Key("keyDisableMouseButtons", KeyboardKey.F10))) // stable: toggles the option in play
+        {
+            mouseButtons = !mouseButtons;
+            Config.SetOwn("MouseDisableButtons", mouseButtons ? "0" : "1");
+            if (!mouseButtons) Notification.Show($"Mouse buttons are currently disabled. Hit {Config.Get("keyDisableMouseButtons", "F10")} to enable them again.", 3000);
+        }
         int offsetStep = Input.IsKeyDown(KeyboardKey.LeftShift) ? 1 : 5;
         if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
         if (Input.IsKeyPressed(Config.Key("keyDecreaseAudioOffset", KeyboardKey.Minus)) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);

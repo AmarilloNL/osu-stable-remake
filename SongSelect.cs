@@ -198,6 +198,31 @@ sealed class SongSelect : Screen
     // stable's local offset for this difficulty (0 before osu!.db has loaded)
     internal short LocalOffsetOf(string md5) => DbEntry(md5)?.LocalOffset ?? 0;
 
+    // stable's mod caption: the selected mods' names (in its order, ", " between) in size 30 at (60, 397), white at
+    // half alpha, under the panels
+    static readonly (Mods Flag, string Name)[] CaptionOrder =
+    [
+        (Mods.Autoplay, "Autoplay"), (Mods.SpunOut, "SpunOut"), (Mods.Easy, "Easy"), (Mods.NoFail, "NoFail"),
+        (Mods.Hidden, "Hidden"), (Mods.Nightcore, "Nightcore"), (Mods.DoubleTime, "DoubleTime"), (Mods.HalfTime, "HalfTime"),
+        (Mods.HardRock, "HardRock"), (Mods.Relax, "Relax"), (Mods.Autopilot, "Autopilot"), (Mods.Perfect, "Perfect"),
+        (Mods.SuddenDeath, "SuddenDeath"), (Mods.Flashlight, "Flashlight"),
+    ];
+    Mods captionMods = (Mods)(-1);
+    string caption = "";
+
+    void DrawModCaption()
+    {
+        if (mods != captionMods)
+        {
+            captionMods = mods;
+            caption = string.Join(", ", CaptionOrder.Where(c => mods.HasFlag(c.Flag)
+                && !(c.Flag == Mods.DoubleTime && mods.HasFlag(Mods.Nightcore)) && !(c.Flag == Mods.SuddenDeath && mods.HasFlag(Mods.Perfect))).Select(c => c.Name));
+        }
+        if (caption.Length == 0) return;
+        float u = GetScreenHeight() / 480f;
+        Game.Text(caption, 60 * u, 397 * u, 30 * u, new Color(255, 255, 255, 128));
+    }
+
     internal void ApplyFilter()
     {
         var keep = view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
@@ -803,6 +828,7 @@ sealed class SongSelect : Screen
         float s = S;
         DrawBackground(w, h);
         DrawBackdrop(w, h, s);
+        DrawModCaption();
         if (loading != null)
         {
             Game.TextBold("Loading osu!.db…", 40 * s, 40 * s, 36 * s, Color.White);
