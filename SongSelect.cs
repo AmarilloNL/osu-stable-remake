@@ -188,7 +188,7 @@ sealed class SongSelect : Screen
         return true;
     }
 
-    void ApplyFilter()
+    internal void ApplyFilter()
     {
         var keep = view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
         var all = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
@@ -202,9 +202,13 @@ sealed class SongSelect : Screen
             else words.Add(token);
         }
         var wordArr = words.ToArray();
+        // the options' "Display beatmaps from .. up to .. stars" (10 = no upper limit)
+        double lo = Config.GetDouble("DisplayStarsMinimum", 0), hi = Config.GetDouble("DisplayStarsMaximum", 10);
+        bool starRange = lo > 0 || hi < 10;
+        bool InRange(DbBeatmap b) => !starRange || b.StarsFor(mods) is var st && st >= lo && (hi >= 10 || st <= hi);
         foreach (var set in sets)
         {
-            var diffs = filter.Length == 0 ? set.Diffs : set.Diffs.Where(b => Matches(b, wordArr, terms)).ToList();
+            var diffs = filter.Length == 0 && !starRange ? set.Diffs : set.Diffs.Where(b => InRange(b) && Matches(b, wordArr, terms)).ToList();
             if (diffs.Count > 0) all.Add((set, diffs));
         }
         BuildGroups(all);

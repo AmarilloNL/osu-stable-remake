@@ -126,14 +126,14 @@ sealed class Options : Screen
             new(Kind.Choice, "Progress display:", "ProgressBarType", Values: ["Off", "Pie", "TopRight", "BottomRight", "Bottom"],
                 Names: ["Off", "Top-Right (Pie)", "Top-Right (Bar)", "Bottom-Right (Bar)", "Bottom (Bar)"], DefValue: "Pie"),
             new(Kind.Choice, "Score meter type:", "ScoreMeter", Values: ["None", "Colour", "Error"], Names: ["None", "Colour", "Hit error"], DefValue: "Error"),
-            new(Kind.Slider, "Score meter size:", "ScoreMeterScale", 0.5, 2, 1, "0.0", "x"),
+            new(Kind.Slider, "Score meter size:", "ScoreMeterScale", 0.5, 2, 1, "0.##", "x"),
             T("Always show key overlay", "KeyOverlay"),
             T("Show approach circle on first \"Hidden\" object", "HiddenShowFirstApproach", true),
             T("Scale osu!mania scroll speed with BPM", "ManiaSpeedBPMScale"),
             T("Remember osu!mania scroll speed per beatmap", "UsePerBeatmapManiaSpeed"),
             H("SONG SELECT"),
-            new(Kind.Slider, "Display beatmaps from", "DisplayStarsMinimum", 0, 10, 0, "0.0", " stars"),
-            new(Kind.Slider, "up to", "DisplayStarsMaximum", 0, 10, 10, "0.0", " stars"),
+            new(Kind.Slider, "Display beatmaps from", "DisplayStarsMinimum", 0, 10, 0, "0.#", " stars"),
+            new(Kind.Slider, "up to", "DisplayStarsMaximum", 0, 10, 10, "0.#", " stars"),
 
             S("AUDIO", 0xf026),
             H("DEVICES"),
@@ -159,13 +159,13 @@ sealed class Options : Screen
             T("Use skin's sound samples", "SkinSamples", true),
             T("Use Taiko skin for Taiko mode", "UseTaikoSkin"),
             T("Always use skin cursor", "UseSkinCursor"),
-            new(Kind.Slider, "Cursor size:", "CursorSize", 0.5, 2, 1, "0.00", "x"),
+            new(Kind.Slider, "Cursor size:", "CursorSize", 0.5, 2, 1, "0.##", "x"),
             T("Automatic cursor size", "AutomaticCursorSizing"),
             T("Use combo colour as tint for slider ball", "ComboColourSliderBall", true),
 
             S("INPUT", 0xf11b),
             H("MOUSE"),
-            new(Kind.Slider, "Sensitivity:", "MouseSpeed", 0.4, 6, 1, "0.00", "x"),
+            new(Kind.Slider, "Sensitivity:", "MouseSpeed", 0.4, 6, 1, "0.##", "x"),
             T("Raw input", "RawInput"),
             T("Map absolute raw input to the osu! window", "AbsoluteToOsuWindow"),
             new(Kind.Choice, "Confine mouse cursor:", "ConfineMouse", Values: ["Never", "Fullscreen", "Always"],
@@ -244,7 +244,7 @@ sealed class Options : Screen
         return current;
     }
 
-    static string Show(double v, Item it) => v.ToString(it.Format, CultureInfo.InvariantCulture) + it.Unit;
+    static string Show(double v, Item it) => v.ToString(it.Format, CultureInfo.InvariantCulture) + (it.Key == "DisplayStarsMaximum" && v >= 10 && it.Unit.Length > 0 ? "+" : "") + it.Unit;
 
     double Value(Item it) => Config.GetDouble(it.Key, it.Def);
 
@@ -299,6 +299,7 @@ sealed class Options : Screen
         switch (it.Key)
         {
             case "VolumeUniversal" or "VolumeMusic": songs.ApplyMusicVolume(); break;
+            case "DisplayStarsMinimum" or "DisplayStarsMaximum": songs.ApplyFilter(); break;
             case "FrameSync":
                 if (value == "VSync") SetWindowState(ConfigFlags.VSyncHint);
                 else ClearWindowState(ConfigFlags.VSyncHint);

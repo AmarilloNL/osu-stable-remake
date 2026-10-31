@@ -547,7 +547,6 @@ sealed class FrameStats
     // green under 8ms, yellow under 16, else orange; a frame over 30ms lights one more of ten drop dots, which go out
     // one per 800ms. With no limit (Unlimited in play) only the frame time box shows, like stable.
     static readonly Color Green = new(172, 220, 25, 255), Yellow = new(255, 204, 34, 255), Orange = new(255, 149, 24, 255), Red = new(255, 36, 0, 255);
-    bool visible = Config.GetBool("FpsCounter", false);
     readonly CachedText<double> msText = new(v => v >= 10 ? $"{v:0}" : v >= 1 ? $"{v:0.0}" : $"{v:0.00}"), limitText = new(v => $"/{v:0}");
     readonly CachedText<long> fpsText = new(v => v.ToString());
     double frameMs = 1, fpsShown, windowLeft = 250, windowMs, drops, atLimitSince = double.NaN, lastNow;
@@ -570,7 +569,7 @@ sealed class FrameStats
 
     public void Draw(double limit)
     {
-        if (Input.IsKeyPressed(KeyboardKey.F11)) visible = !visible;
+        if (Input.IsKeyPressed(KeyboardKey.F11)) Config.SetOwn("FpsCounter", Config.GetBool("FpsCounter", false) ? "0" : "1"); // the option and F11 share it
         double now = Game.NowMs, dt = now - lastNow;
         lastNow = now;
         double k = Math.Pow(0.05, Math.Max(0, dt) / 1000);
@@ -580,7 +579,7 @@ sealed class FrameStats
         bool atLimit = limited && Math.Abs(fpsShown - limit) < 0.5;
         if (!atLimit) atLimitSince = double.NaN;
         else if (double.IsNaN(atLimitSince)) atLimitSince = now;
-        if (!visible) return;
+        if (!Config.GetBool("FpsCounter", false)) return;
 
         // stable draws it from osu!ui sprites: fps-box (tinted) boxes centred 23 units from the right at 25 and 10
         // up, the frame time in the big "fps-" font with its "ms" glyph, the fps centred 35 in with "/limit" in the

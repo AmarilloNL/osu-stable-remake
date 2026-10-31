@@ -1355,7 +1355,7 @@ sealed partial class Player : Screen
         for (int i = firstActive; i < objs.Count && objs[i].Time - map.Preempt <= time; i++) visible.Add(i);
 
         float sbDim = 1 - bgDim / 100f;
-        bool showStoryboard = storyboard != null && Toggles.Storyboard;
+        bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
         DrawFollowPoints();
 
@@ -2072,7 +2072,7 @@ sealed partial class Player : Screen
         if (o.Type == ObjType.Spinner) return;
         if (o.Type == ObjType.Circle ? s.Done : s.HeadDone) return;
         if (time > o.Time) return;
-        if (mods.HasFlag(Mods.Hidden) && i != 0) return; // HD: only the first object keeps its approach circle
+        if (mods.HasFlag(Mods.Hidden) && (i != 0 || !Config.GetBool("HiddenShowFirstApproach", true))) return; // HD: only the first object keeps its approach circle (an option)
         double t = (o.Time - time) / map.Preempt; // 1 -> 0
         float alpha = Math.Min(0.9f, FadeInAlpha(o) * 0.9f / Math.Max(0.001f, (float)Math.Min(1, map.FadeIn * 2 / map.Preempt)));
         alpha = Math.Clamp(alpha, 0, 0.9f) * playfieldAlpha;
