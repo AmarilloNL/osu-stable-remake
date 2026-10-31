@@ -204,7 +204,7 @@ sealed class SongSelect : Screen
     [
         (Mods.Autoplay, "Autoplay"), (Mods.SpunOut, "SpunOut"), (Mods.Easy, "Easy"), (Mods.NoFail, "NoFail"),
         (Mods.Hidden, "Hidden"), (Mods.Nightcore, "Nightcore"), (Mods.DoubleTime, "DoubleTime"), (Mods.HalfTime, "HalfTime"),
-        (Mods.HardRock, "HardRock"), (Mods.Relax, "Relax"), (Mods.Autopilot, "Autopilot"), (Mods.Perfect, "Perfect"),
+        (Mods.HardRock, "HardRock"), (Mods.Relax, "Relax"), (Mods.Autopilot, "AutoPilot"), (Mods.Perfect, "Perfect"),
         (Mods.SuddenDeath, "SuddenDeath"), (Mods.Flashlight, "Flashlight"),
     ];
     Mods captionMods = (Mods)(-1);
