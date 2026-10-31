@@ -1371,6 +1371,11 @@ sealed partial class Player : Screen
             }
             if (Falling) Rlgl.PopMatrix();
         }
+        if (!Falling)
+        {
+            UpdateKiaiFlashes();
+            DrawKiaiFlashes();
+        }
         for (int k = visible.Count - 1; k >= 0; k--)
         {
             if (Falling) PushFall(visible[k]);
@@ -1474,6 +1479,53 @@ sealed partial class Player : Screen
                 Rot0 = rnd.NextSingle() * 4 - 2, Rot1 = rnd.NextSingle() * 4 - 2 });
         }
         stars.RemoveAll(s => StarAge(s) >= s.Life);
+    }
+
+    // stable's kiai pulse: on every beat in kiai each circle / slider head on screen and not yet hit gets an added-on
+    // copy of its body in its combo colour brightened (by max(25, 300 - R - G - B)), fading 23% -> 0 (measured) over 3/4 of a beat
+    // (cut at the object's end).
+    readonly List<(int Obj, double At, double Len)> kiaiFlashes = [];
+    long kiaiBeatSeen = long.MinValue;
+
+    void UpdateKiaiFlashes()
+    {
+        var tp = map.UninheritedAt(time);
+        if (tp.BeatLength <= 0) return;
+        long beat = (long)Math.Floor((time - tp.Time) / tp.BeatLength);
+        long key = beat ^ ((long)tp.Time << 20);
+        if (key == kiaiBeatSeen) return;
+        kiaiBeatSeen = key;
+        if (!KiaiAt(time) || paused) return;
+        double len = tp.BeatLength * 0.75;
+        for (int i = firstActive; i < objs.Count && objs[i].Time - map.Preempt <= time; i++)
+        {
+            var o = objs[i];
+            if (o.Type == ObjType.Spinner || (o.Type == ObjType.Circle ? st[i].Done : st[i].HeadDone)) continue;
+            double l = Math.Min(len, o.EndTime - time);
+            if (l >= 0) kiaiFlashes.Add((i, time, l));
+        }
+    }
+
+    void DrawKiaiFlashes()
+    {
+        kiaiFlashes.RemoveAll(f => time - f.At > f.Len);
+        if (kiaiFlashes.Count == 0) return;
+        BeginBlendMode(BlendMode.Additive);
+        foreach (var (i, at, len) in kiaiFlashes)
+        {
+            var o = objs[i];
+            double age = time - at;
+            var p = ToScreen(PosOf(o));
+            var c = ColourOf(o);
+            int add = Math.Max(25, 300 - c.R - c.G - c.B);
+            var bright = new Color(Math.Min(255, c.R + add), Math.Min(255, c.G + add), Math.Min(255, c.B + add), 255);
+            if (age > len || (o.Type == ObjType.Circle ? st[i].Done : st[i].HeadDone)) continue;
+            float fa = 0.23f * (float)(1 - age / Math.Max(1, len)) * FadeInAlpha(o);
+            float cs = CircleScale;
+            var body = (o.Type == ObjType.Slider ? skin.Tex("sliderstartcircle") : null) ?? skin.Tex("hitcircle");
+            body?.Draw(p, cs, ColorAlpha(bright, fa));
+        }
+        EndBlendMode();
     }
 
     bool KiaiAt(double t)
@@ -1778,7 +1830,10 @@ sealed partial class Player : Screen
         var dir = o.PointAt(toward) - o.PointAt(d);
         float rot = MathF.Atan2(dir.Y, dir.X) * 180 / MathF.PI;
         var p = ToScreen(osuPos);
-        if (skin.Tex("reversearrow") is { } ra) ra.Draw(p, CircleScale, ColorAlpha(Color.White, alpha), rot);
+        // stable: the default skin's arrow turns black on light combo colours (R + G + B over 600)
+        var c = ColourOf(o);
+        var tint = !skin.Own("reversearrow") && c.R + c.G + c.B > 600 ? Color.Black : Color.White;
+        if (skin.Tex("reversearrow") is { } ra) ra.Draw(p, CircleScale, ColorAlpha(tint, alpha), rot);
         else Game.Text("<", p.X - 10, p.Y - 20, 40 * scale / 2.25f, ColorAlpha(Color.White, alpha));
     }
 
