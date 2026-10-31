@@ -102,7 +102,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] HP drain calibration identical to stable's, with and without HardRock or Easy (checked object by object against a running stable: 39 maps without mods, 32 with HR or EZ)
 - [x] Slider curves, timing, ticks, repeats and stacking bit-identical to stable on 39 maps (18,602 objects, also with HR and EZ; one HR slider ends a float step off)
 - [x] Song select, main menu, mod select, dialogs, HUD, pause/fail and ranking screens measured pixel by pixel against stable at 720p, 900p and 1080p
-- [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
+- [x] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**
 - [ ] Hit lighting (stable draws it only under a condition not yet identified)
