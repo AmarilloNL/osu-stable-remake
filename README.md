@@ -97,7 +97,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Accuracy vs stable**
 - [x] Hit windows, notelock, stacking, slider curves and timing ported from stable's behaviour
 - [x] Slider tracking with stable's button rules
-- [x] Judging identical to a running stable (300/100/50/miss, max combo and score) on 39 maps with generated sloppy replays, also with DoubleTime and HardRock
+- [x] Judging identical to a running stable (300/100/50/miss, max combo and score) on 39 maps with generated sloppy replays, and with DoubleTime, HardRock, HalfTime and Easy (5 maps each, scores too)
 - [ ] The last ~10% of mismatches on real 60Hz replays (mostly cursor right on the slider follow-radius edge)
 - [x] HP drain calibration identical to stable's, with and without HardRock or Easy (checked object by object against a running stable: 39 maps without mods, 32 with HR or EZ)
 - [x] Slider curves, timing, ticks, repeats and stacking bit-identical to stable on 39 maps (18,602 objects, also with HR and EZ; one HR slider ends a float step off)
