@@ -60,6 +60,17 @@ static class Config
     public static KeyboardKey Key(string key, KeyboardKey def)
     {
         string v = Get(key, "");
+        // stable's cfg uses .NET key names: D0-D9 and the Oem keys
+        if (v.Length == 2 && v[0] == 'D' && char.IsDigit(v[1])) return (KeyboardKey)v[1];
+        KeyboardKey? oem = v switch
+        {
+            "OemTilde" => KeyboardKey.Grave, "OemMinus" => KeyboardKey.Minus, "OemPlus" => KeyboardKey.Equal,
+            "OemOpenBrackets" => KeyboardKey.LeftBracket, "OemCloseBrackets" => KeyboardKey.RightBracket, "OemPipe" => KeyboardKey.Backslash,
+            "OemSemicolon" => KeyboardKey.Semicolon, "OemQuotes" => KeyboardKey.Apostrophe, "OemComma" => KeyboardKey.Comma,
+            "OemPeriod" => KeyboardKey.Period, "OemQuestion" => KeyboardKey.Slash, "LeftControl" => KeyboardKey.LeftControl,
+            _ => null,
+        };
+        if (oem is { } o) return o;
         if (v.Length == 1 && char.IsAsciiLetterOrDigit(v[0])) return (KeyboardKey)char.ToUpperInvariant(v[0]);
         return Enum.TryParse<KeyboardKey>(v, true, out var k) ? k : def;
     }

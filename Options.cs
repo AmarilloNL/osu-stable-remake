@@ -44,7 +44,7 @@ sealed class Options : Screen
     float scroll = lastScroll, scrollTarget = lastScroll;
     static float lastScroll; // stable reopens the panel where it was left
     int dragging = -1, binding = -1, dropdown = -1, dropFirst;
-    bool showKeys;
+    BindingsDialog? bindings;
     double openedAt = Game.NowMs, closingAt = double.NaN;
 
     // Layout of the visible items (content y, height), rebuilt each frame; slider tracks and dropdown boxes from the last draw.
@@ -174,9 +174,7 @@ sealed class Options : Screen
             T("Disable mouse buttons in play mode", "MouseDisableButtons"),
             T("Cursor ripples", "CursorRipple"),
             H("KEYBOARD"),
-            B("Change keyboard bindings", Blue, () => showKeys = !showKeys),
-            new(Kind.Key, "Left click:", "keyOsuLeft", Def: (int)KeyboardKey.Z, Visible: () => showKeys),
-            new(Kind.Key, "Right click:", "keyOsuRight", Def: (int)KeyboardKey.X, Visible: () => showKeys),
+            B("Change keyboard bindings", Blue, () => bindings = new BindingsDialog()),
             B("osu!mania layout", Blue),
             H("OTHER"),
             T("OS TabletPC support", "Tablet"),
@@ -412,6 +410,13 @@ sealed class Options : Screen
         if (!double.IsNaN(closingAt))
         {
             if (Game.NowMs - closingAt > 200) Game.Screen = back;
+            return;
+        }
+
+        if (bindings != null)
+        {
+            bindings.Update();
+            if (bindings.Closed) bindings = null;
             return;
         }
 
@@ -730,8 +735,9 @@ sealed class Options : Screen
         }
         EndScissorMode();
 
-        backButton.Draw(h, mouse);
-        if (tooltip != null) DrawTooltip(tooltip, mouse);
+        bindings?.Draw();
+        backButton.Draw(h, mouse); // stable: above the bindings dialog too
+        if (tooltip != null && bindings == null) DrawTooltip(tooltip, mouse);
         SongSelect.DrawCursor();
     }
 
