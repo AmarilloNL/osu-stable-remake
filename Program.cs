@@ -110,6 +110,22 @@ static class Game
 
     [DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
     [DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
+    [DllImport("user32.dll")] static extern bool ClipCursor(ref ClipRect r);
+    [DllImport("user32.dll", EntryPoint = "ClipCursor")] static extern bool ClipCursorOff(IntPtr none);
+    struct ClipRect { public int L, T, R, B; }
+    static ClipRect? clipped;
+
+    // The ConfineMouse option (Never / Fullscreen / Always): keeps the cursor inside the window while it has focus.
+    static void ConfineCursor()
+    {
+        string mode = Config.Get("ConfineMouse", "Fullscreen");
+        bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() != "Windowed");
+        ClipRect? r = null;
+        if (want) { var p = GetWindowPosition(); r = new ClipRect { L = (int)p.X, T = (int)p.Y, R = (int)p.X + GetScreenWidth(), B = (int)p.Y + GetScreenHeight() }; }
+        if (r.Equals(clipped)) return;
+        clipped = r;
+        if (r is { } c) ClipCursor(ref c); else ClipCursorOff(IntPtr.Zero);
+    }
 
     static void Main(string[] args)
     {
@@ -214,6 +230,7 @@ static class Game
             if (Input.IsKeyPressed(KeyboardKey.Enter) && Input.IsKeyDown(KeyboardKey.LeftAlt)) ToggleFullscreen();
 
             Input.Update(now / 1000);
+            if (!testRun) ConfineCursor();
             VolumeControl.Update(songSelect);
             Screen.Update(dt);
 
@@ -254,6 +271,7 @@ static class Game
         Bass.BASS_Free();
         CloseWindow();
         timeEndPeriod(1);
+        ClipCursorOff(IntPtr.Zero); // the cursor clip is system-wide
     }
 
     // --fuzz-osr <file.osu> <seed> <out.osr> [mods]: plays the map with the test bot (Auto's cursor, jittered presses),

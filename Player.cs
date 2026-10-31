@@ -1357,6 +1357,8 @@ sealed partial class Player : Screen
         float sbDim = 1 - bgDim / 100f;
         bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
+        UpdateComboBursts();
+        DrawComboBursts(w, h);
         DrawFollowPoints();
 
         // Earlier objects on top: draw later ones first.
@@ -1526,6 +1528,56 @@ sealed partial class Player : Screen
             body?.Draw(p, cs, ColorAlpha(bright, fa));
         }
         EndBlendMode();
+    }
+
+    // stable's combo bursts (the Combo bursts option): at combo 30, 60 and every 50 from 100 (not during a spinner), the
+    // skin's next comboburst image (a random one with ComboBurstRandom) slides in at the bottom of a random side over
+    // 700ms (Out; flipped on the right) and fades out from 200 to 1200ms (In). Its texels are 0.625 units.
+    Sprite[]? burstFrames;
+    int burstIndex, burstLastCombo, burstSeenCombo = -1;
+    readonly List<(Sprite Tex, bool Right, double At)> bursts = [];
+
+    void UpdateComboBursts()
+    {
+        if (combo == burstSeenCombo) return;
+        burstSeenCombo = combo;
+        if (combo == 0) burstLastCombo = 0;
+        bool milestone = combo is 30 or 60 || combo > 99 && combo % 50 == 0;
+        if (!milestone || burstLastCombo >= combo || !Config.GetBool("ComboBurst", false) || SpinnerActive()) return;
+        burstLastCombo = combo;
+        if (burstFrames == null)
+        {
+            var list = new List<Sprite>();
+            while (skin.Tex($"comboburst-{list.Count}") is { } f) list.Add(f);
+            if (list.Count == 0 && skin.Tex("comboburst") is { } one) list.Add(one);
+            burstFrames = list.ToArray();
+        }
+        if (burstFrames.Length == 0) return;
+        if (skin.ComboBurstRandom) burstIndex = Random.Shared.Next(burstFrames.Length);
+        bursts.Add((burstFrames[burstIndex], Random.Shared.NextDouble() > 0.5, Game.NowMs));
+        burstIndex = (burstIndex + 1) % burstFrames.Length;
+    }
+
+    bool SpinnerActive()
+    {
+        for (int i = firstActive; i < objs.Count && objs[i].Time <= time; i++)
+            if (objs[i].Type == ObjType.Spinner && time <= objs[i].EndTime) return true;
+        return false;
+    }
+
+    void DrawComboBursts(int w, int h)
+    {
+        bursts.RemoveAll(b => Game.NowMs - b.At > 1200);
+        float sd = h / 768f;
+        foreach (var (tex, right, at) in bursts)
+        {
+            double age = Game.NowMs - at;
+            float slide = (float)Easing.Apply(1, Math.Clamp(age / 700, 0, 1)), bw = tex.Width * sd, bh = tex.Height * sd;
+            float a = 1 - (float)Easing.Apply(2, Math.Clamp((age - 200) / 1000, 0, 1));
+            float x = right ? w - bw * slide : -bw + bw * slide; // left edge
+            DrawTexturePro(tex.Tex, new Rectangle(0, 0, right ? -tex.Tex.Width : tex.Tex.Width, tex.Tex.Height),
+                new Rectangle(x, h - bh, bw, bh), Vector2.Zero, 0, ColorAlpha(Color.White, a * playfieldAlpha));
+        }
     }
 
     bool KiaiAt(double t)

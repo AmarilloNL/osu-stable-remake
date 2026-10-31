@@ -35,7 +35,7 @@ sealed class Skin
     public Color? SliderTrackOverride;
     public string HitCirclePrefix = "default";
     public float HitCircleOverlap = -2;
-    public bool AllowSliderBallTint;
+    public bool AllowSliderBallTint, ComboBurstRandom;
     public double Version = 1; // skin.ini Version; "latest" counts as newest. >1 switches stable's newer layouts
     public string ScorePrefix = "score", ComboPrefix = "score";
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
@@ -122,6 +122,7 @@ sealed class Skin
                 case "HitCirclePrefix": HitCirclePrefix = v.Replace('\\', '/'); break;
                 case "HitCircleOverlap": float.TryParse(v, CultureInfo.InvariantCulture, out HitCircleOverlap); break;
                 case "AllowSliderBallTint": AllowSliderBallTint = v == "1"; break;
+                case "ComboBurstRandom": ComboBurstRandom = v == "1"; break;
                 case "Version": Version = v.Equals("latest", StringComparison.OrdinalIgnoreCase) ? 99 : double.TryParse(v, CultureInfo.InvariantCulture, out var ver) ? ver : 1; break;
                 case "SongSelectActiveText": SongSelectActiveText = ParseColour(v) ?? SongSelectActiveText; break;
                 case "MenuGlow": MenuGlow = ParseColour(v) ?? MenuGlow; break;
