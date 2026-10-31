@@ -1414,8 +1414,10 @@ sealed partial class Player : Screen
         DrawVisualSettings(w, h);
         UpdateBreakStars(auto && playback == null ? autoKeys : inputKeys);
         DrawBreakStars();
+        SongSelect.CursorPlayScale = Config.GetBool("AutomaticCursorSizing", false) ? 1 - 0.7f * (float)(map.CS - 4) / 5 : 1;
         if (auto || autopilot || playback != null) SongSelect.DrawCursorAt(ToScreen(cursor));
         else SongSelect.DrawCursor();
+        SongSelect.CursorPlayScale = 1;
     }
 
     // stable's star2 effects, in 640x480 units moved by a little physics step every 60Hz tick (+gravity to the speed,

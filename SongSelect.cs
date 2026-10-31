@@ -1393,9 +1393,12 @@ sealed class SongSelect : Screen
     static double lastTrail = double.MinValue;
     static Vector2? smoothFrom;
 
+    // Set by the player: stable's "Automatic cursor size" scales the cursor by 1 - 0.7 x (CS - 4) / 5 in play.
+    internal static float CursorPlayScale = 1;
+
     public static void DrawCursorAt(Vector2 pos)
     {
-        float s = GetScreenHeight() / 768f * (float)Config.GetDouble("CursorSize", 1);
+        float s = GetScreenHeight() / 768f * (float)Config.GetDouble("CursorSize", 1) * CursorPlayScale;
         var skin = Game.Skin;
         // CursorCentre: 0 anchors the sprite's top-left at the cursor instead of its centre.
         Vector2 Anchor(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * s / 2;
