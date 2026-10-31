@@ -114,6 +114,7 @@ static class Game
     [DllImport("user32.dll", EntryPoint = "ClipCursor")] static extern bool ClipCursorOff(IntPtr none);
     struct ClipRect { public int L, T, R, B; }
     static ClipRect? clipped;
+    static double clippedAt;
 
     // The ConfineMouse option (Never / Fullscreen / Always): keeps the cursor inside the window while it has focus.
     static void ConfineCursor()
@@ -122,8 +123,10 @@ static class Game
         bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() != "Windowed");
         ClipRect? r = null;
         if (want) { var p = GetWindowPosition(); r = new ClipRect { L = (int)p.X, T = (int)p.Y, R = (int)p.X + GetScreenWidth(), B = (int)p.Y + GetScreenHeight() }; }
-        if (r.Equals(clipped)) return;
+        // Windows drops the clip on focus changes and the like, so it's re-applied every 250ms while wanted
+        if (r.Equals(clipped) && (r == null || NowMs - clippedAt < 250)) return;
         clipped = r;
+        clippedAt = NowMs;
         if (r is { } c) ClipCursor(ref c); else ClipCursorOff(IntPtr.Zero);
     }
 
