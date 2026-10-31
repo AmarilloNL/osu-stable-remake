@@ -45,9 +45,10 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 
 - osu!standard with all of stable's mods and hotkeys: EZ NF HT HR SD PF DT NC HD FL RX AP SO and Auto
 - Stable's flashlight, countdown, breaks (pass/fail), warning arrows, skip, the fail animation and sound
-- Pause and resume exactly like stable (click the orange cursor to resume), retry, Visual Settings bar (dim, storyboard, skin, hitsound toggles)
+- Pause and resume exactly like stable (click the orange cursor to resume), hold-to-retry, Visual Settings bar (dim, storyboard, video, skin, hitsound toggles, per map)
 - Follow points, snaking sliders, judgement animations and particles, old- and new-style spinners
-- Loved/Qualified map warning, offset adjustment with `+` / `-`
+- Loved/Qualified map warning, local beatmap offset with `+` / `-` (read from stable's `osu!.db`)
+- Stable's keyboard bindings (Options → Change keyboard bindings), F7 frame limiter, F10 mouse buttons, F12 screenshots
 </details>
 
 <details>
