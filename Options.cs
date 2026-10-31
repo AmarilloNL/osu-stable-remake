@@ -85,7 +85,7 @@ sealed class Options : Screen
             S("GRAPHICS", 0xf108),
             H("RENDERER"),
             new(Kind.Choice, "Frame limiter:", "FrameSync", Values: ["VSync", "PowerSaving", "Optimal", "Unlimited"],
-                Names: ["VSync", "Power saving (2x refresh)", "Optimal (8x refresh)", "Unlimited (gameplay)"], DefValue: "Optimal"),
+                Names: ["VSync", "Power Saving", "Optimal", "Unlimited (gameplay)"], DefValue: "Optimal"),
             new(Kind.Warning, "Using unlimited frame limiter can lead to stutters. \"Optimal\" is recommended.", Visible: () => Config.Get("FrameSync", "Optimal") == "Unlimited"),
             T("Show FPS counter", "FpsCounter"),
             T("Compatibility mode", "CompatibilityContext"),
