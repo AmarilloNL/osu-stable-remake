@@ -638,7 +638,7 @@ sealed class SongSelect : Screen
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods) headerFor;
     string[] header = [];
-    // stable colours the length line by the speed mod and the stats line by the difficulty change (salmon harder, light
+    // stable colours the length line by the speed mod and the stats line by HR / EZ (salmon harder, light
     // blue easier), and marks AR, OD and HP with a small arrow when a speed mod changes them in play
     static readonly Color Harder = new(246, 154, 161, 255), Easier = new(173, 216, 230, 255);
     Color lengthColour = Color.White, statsColour = Color.White;
@@ -1032,8 +1032,7 @@ sealed class SongSelect : Screen
                 float stars = b.StarsFor(mods);
                 statArrow = rate > 1 ? 1 : rate < 1 ? -1 : 0;
                 lengthColour = rate > 1 ? Harder : rate < 1 ? Easier : Color.White;
-                bool up = rate > 1 || mods.HasFlag(Mods.HardRock), down = rate < 1 || mods.HasFlag(Mods.Easy);
-                statsColour = up && !down ? Harder : down && !up ? Easier : Color.White; // mixed (EZ+DT): not checked against stable
+                statsColour = mods.HasFlag(Mods.HardRock) ? Harder : mods.HasFlag(Mods.Easy) ? Easier : Color.White; // speed mods leave it white (HT checked)
                 header = [$"{(b.Source.Length > 0 ? $"{b.Source} ({b.Artist})" : b.Artist)} - {b.Title} [{b.Version}]", // stable: "Source (Artist)" when there is one
                     $"Mapped by {b.Creator}",
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
