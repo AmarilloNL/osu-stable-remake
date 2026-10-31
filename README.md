@@ -104,7 +104,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**
-- [ ] Hit lighting and cursor ripples
+- [ ] Hit lighting (stable draws it only under a condition not yet identified)
 - [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
 - [ ] Remember Visual Settings per map (currently per session)
 - [ ] Faster fallback when `osu!.db` is missing (folder scan is slow on big libraries)
