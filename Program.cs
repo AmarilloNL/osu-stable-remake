@@ -46,8 +46,8 @@ static class Game
         return oldStyle[s] = result;
     }
 
-    public static void Text(string s, float x, float y, float size, Color c) =>
-        DrawTextEx(Ui(size), OldStyle(s), new Vector2(x, y), size, 0, c);
+    public static void Text(string s, float x, float y, float size, Color c, float spacing = 0) =>
+        DrawTextEx(Ui(size), OldStyle(s), new Vector2(x, y), size, spacing, c);
 
     public static float TextWidth(string s, float size) => MeasureTextEx(Ui(size), OldStyle(s), size, 0).X;
 
