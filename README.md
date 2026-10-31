@@ -106,7 +106,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Missing pieces**
 - [ ] Hit lighting (stable draws it only under a condition not yet identified)
 - [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
-- [ ] Remember Visual Settings per map (currently per session)
+- [x] Visual Settings per map (stable's from `osu!.db`, changes kept in `remake.cfg`)
 - [ ] Faster fallback when `osu!.db` is missing (folder scan is slow on big libraries)
 - [ ] Verify guessed details: the Qualified warning text, some notice texts
 

@@ -188,12 +188,15 @@ sealed class SongSelect : Screen
         return true;
     }
 
-    // stable's local offset for this difficulty (0 before osu!.db has loaded)
-    internal short LocalOffsetOf(string md5)
+    // this difficulty's osu!.db entry (null before osu!.db has loaded)
+    internal DbBeatmap? DbEntry(string md5)
     {
-        foreach (var set in sets) foreach (var b in set.Diffs) if (b.Md5 == md5) return b.LocalOffset;
-        return 0;
+        foreach (var set in sets) foreach (var b in set.Diffs) if (b.Md5 == md5) return b;
+        return null;
     }
+
+    // stable's local offset for this difficulty (0 before osu!.db has loaded)
+    internal short LocalOffsetOf(string md5) => DbEntry(md5)?.LocalOffset ?? 0;
 
     internal void ApplyFilter()
     {

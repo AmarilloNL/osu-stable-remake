@@ -7,8 +7,7 @@ namespace OsuStableRemake;
 // stable's "Visual Settings" bar, in 640x480 units: while paused or
 // failed, a 45-unit strip sits at the bottom (blue 3-unit line, 180-alpha black, "Visual" / "Settings"); hovering
 // it slides it up to show the background dim slider and the per-beatmap toggles (storyboard, video, skin,
-// hitsounds). Dim changes the global setting; the toggles last for the map for this session.
-// TODO: stable stores the per-map toggles/dim in osu!.db; ours are session-only (no writes to stable's files).
+// hitsounds). Dim changes the global setting; the toggles are per map (osu!.db's, changes kept in remake.cfg).
 sealed partial class Player
 {
     static readonly Dictionary<string, (bool Storyboard, bool Video, bool Skin, bool Hitsounds)> mapToggles = [];
@@ -16,18 +15,31 @@ sealed partial class Player
     const float ExpandedHeight = 140;
     int visualDragging = -1;
 
+    // Per map like stable: changes are kept in remake.cfg (Visual_<md5> = storyboard,video,skin,hitsounds as 0/1);
+    // otherwise the map's settings from osu!.db, then the global options.
     (bool Storyboard, bool Video, bool Skin, bool Hitsounds) Toggles
     {
         get
         {
             mapMd5 ??= Replays.Md5Of(map.File);
-            return mapToggles.TryGetValue(mapMd5, out var t) ? t
-                : (true, true, !Config.GetBool("IgnoreBeatmapSkins", false), !Config.GetBool("IgnoreBeatmapSamples", false));
+            if (mapToggles.TryGetValue(mapMd5, out var t)) return t;
+            if (Config.Get($"Visual_{mapMd5}", "") is { Length: 7 } s)
+                t = (s[0] == '1', s[2] == '1', s[4] == '1', s[6] == '1');
+            else
+            {
+                var db = back.DbEntry(mapMd5);
+                t = (db?.DisableStoryboard != true, db?.DisableVideo != true,
+                    !Config.GetBool("IgnoreBeatmapSkins", false) && db?.IgnoreSkin != true,
+                    !Config.GetBool("IgnoreBeatmapSamples", false) && db?.IgnoreSound != true);
+            }
+            return mapToggles[mapMd5] = t;
         }
         set
         {
             mapMd5 ??= Replays.Md5Of(map.File);
             mapToggles[mapMd5] = value;
+            static char C(bool b) => b ? '1' : '0';
+            Config.SetOwn($"Visual_{mapMd5}", $"{C(value.Storyboard)},{C(value.Video)},{C(value.Skin)},{C(value.Hitsounds)}");
             ApplyToggles();
         }
     }

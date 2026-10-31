@@ -22,6 +22,7 @@ sealed class DbBeatmap
     }
     public int Circles, Sliders, Spinners, DrainSeconds, TotalMs, PreviewMs, BeatmapId, SetId;
     public short LocalOffset; // stable's per-map offset (+/- in play)
+    public bool IgnoreSound, IgnoreSkin, DisableStoryboard, DisableVideo;
     public float AR, CS, HP, OD;
     public long LastModified, LastPlayed;
     public bool Unplayed;
@@ -181,7 +182,8 @@ static class OsuDb
         r.ReadBoolean();                  // osz2
         b.Folder = rd.String(8);
         r.ReadInt64();                    // last online check
-        r.ReadInt32(); r.ReadByte();      // ignore sound/skin, disable storyboard/video, visual override (5 bytes)
+        b.IgnoreSound = r.ReadBoolean(); b.IgnoreSkin = r.ReadBoolean(); // the map's Visual Settings
+        b.DisableStoryboard = r.ReadBoolean(); b.DisableVideo = r.ReadBoolean(); r.ReadBoolean(); // visual override
         if (version < 20140609) r.ReadInt16();
         r.ReadInt32();                    // last modification
         r.ReadByte();                     // mania scroll speed
