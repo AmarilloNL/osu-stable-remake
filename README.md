@@ -64,7 +64,8 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 
 - Main menu with the beating cookie, audio visualizer, seasonal backgrounds, tips and music controls
 - Ranking screen with stable's layout, HP graph and replay watching
-- Options panel as stable's: all nine sections with dropdowns, buttons and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
+- Options panel as stable's: all nine sections with dropdowns, buttons, stable's tooltips and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
+- Menu snow, kiai star fountains, break stars, combo bursts and kiai beat pulses, ported from stable
 - Volume overlay, stable's FPS / frame time counter, notifications
 </details>
 
@@ -84,7 +85,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] osu!standard gameplay with stable's judging, scoring and HP
 - [x] All stable mods and mod hotkeys
 - [x] Storyboards
-- [x] Skins with stable's default skin fallback
+- [x] Skins with stable's default skin fallback, and beatmap-specific skin elements
 - [x] Song select reading `osu!.db`, collections, search and grouping
 - [x] Own replays (exact playback) and stable `.osr` import
 - [x] Main menu, options, ranking screen, pause/fail menus
@@ -95,7 +96,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Accuracy vs stable**
 - [x] Hit windows, notelock, stacking, slider curves and timing ported from stable's behaviour
 - [x] Slider tracking with stable's button rules
-- [x] Judging identical to a running stable (300/100/50/miss, max combo and score) on 39 maps with generated sloppy replays
+- [x] Judging identical to a running stable (300/100/50/miss, max combo and score) on 39 maps with generated sloppy replays, also with DoubleTime and HardRock
 - [ ] The last ~10% of mismatches on real 60Hz replays (mostly cursor right on the slider follow-radius edge)
 - [x] HP drain calibration identical to stable's, with and without HardRock or Easy (checked object by object against a running stable: 39 maps without mods, 32 with HR or EZ)
 - [x] Slider curves, timing, ticks, repeats and stacking bit-identical to stable on 39 maps (18,602 objects, also with HR and EZ; one HR slider ends a float step off)
@@ -103,8 +104,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [ ] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**
-- [ ] Smooth (dense) cursor trail for skins with a `cursormiddle`
-- [ ] Hit lighting, combo bursts and cursor ripples
+- [ ] Hit lighting and cursor ripples
 - [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
 - [ ] Remember Visual Settings per map (currently per session)
 - [ ] Faster fallback when `osu!.db` is missing (folder scan is slow on big libraries)
