@@ -1302,7 +1302,7 @@ sealed class SongSelect : Screen
         {
             var (label, colour, list) = ModRows[r];
             float ls = 25.2f * u, cy = (modContentY + 35 + r * 60) * u;
-            Game.Text(label, 23 * u, cy - ls / 2, ls, ColorAlpha(colour, fade));
+            Game.Text(label, 22.7f * u, cy - ls / 2, ls, ColorAlpha(colour, fade)); // measured at 1080p
             for (int c = 0; c < list.Length; c++)
             {
                 var (_, flag, alt, icon, altIcon) = list[c];
