@@ -677,6 +677,8 @@ sealed class MainMenu : Screen
         if (!double.IsNaN(exitAskedAt)) DrawExitDialog(now);
         if (!double.IsNaN(quitAt))
             DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((quitAt - now) / 1500, 0, 1)));
+        Snow.Update(songs);
+        Snow.Draw();
         SongSelect.DrawCursor();
     }
 

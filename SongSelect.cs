@@ -806,6 +806,8 @@ sealed class SongSelect : Screen
         DrawTopBar(w, s);
         DrawScores(w, h, s); // over the top bar: stable's ranking box overlaps its lower edge
         DrawBottomBar(w, h, s);
+        Snow.Update(this);
+        Snow.Draw();
         DrawCursor();
         if (modSelect) DrawModSelect(w, h);
         if (beatmapOptions) DrawBeatmapOptions();
