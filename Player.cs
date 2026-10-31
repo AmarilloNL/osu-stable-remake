@@ -76,6 +76,7 @@ sealed partial class Player : Screen
     // the universal offset (options) plus this map's local offset: stable's from osu!.db, or one set here with +/-
     double Offset => Config.GetDouble("RemakeOffset", 0) + localOffset;
     int localOffset;
+    double retryHold;
     double localOffsetChangedAt = double.MinValue;
 
     readonly Mods mods;
@@ -593,7 +594,7 @@ sealed partial class Player : Screen
         if (playback != null && TestSpeedAt.Count > 0 && Game.NowMs / 1000 >= TestSpeedAt[0]) { TestSpeedAt.RemoveAt(0); CycleSpeed(); }
         if (playback != null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; }
         if (auto && playback == null && UpdateReplayOverlay()) { Leave(back); return; } // End Replay
-        if (Input.IsKeyPressed(KeyboardKey.Escape))
+        if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape)))
         {
             if (!paused) SetPaused(true);
             else if (resumePending) resumePending = false; // back to the pause menu
@@ -608,13 +609,17 @@ sealed partial class Player : Screen
             else if (c == "pause-back" || Input.IsKeyPressed(KeyboardKey.Q)) Leave(back);
         }
         if (paused) return;
-        if (Input.IsKeyPressed(KeyboardKey.Grave)) { Retry(); return; }
+        // stable's quick retry: holding the Quick Retry key (or Ctrl+R) fills 10 a 60Hz tick and retries at 100;
+        // letting go drains 3 a tick. The screen fades to black with it.
+        bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyDown(KeyboardKey.R);
+        retryHold = retryHeld ? Math.Min(100, retryHold + 10 * dtMs / (1000 / 60.0)) : Math.Max(0, retryHold - 3 * dtMs / (1000 / 60.0));
+        if (retryHold >= 100) { Retry(); return; }
 
         if (playback == null && !auto && (Input.IsKeyPressed(key1) || Input.IsKeyPressed(key2))) SongSelect.Ripple(Input.GetMousePosition()); // keys click too
         int offsetStep = Input.IsKeyDown(KeyboardKey.LeftShift) ? 1 : 5;
-        if (Input.IsKeyPressed(KeyboardKey.Equal) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
-        if (Input.IsKeyPressed(KeyboardKey.Minus) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);
-        if (CanSkip && (Input.IsKeyPressed(KeyboardKey.Space) || Input.IsMouseButtonPressed(MouseButton.Left) && SkipRect() is { } sr && CheckCollisionPointRec(Input.GetMousePosition(), sr)))
+        if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
+        if (Input.IsKeyPressed(Config.Key("keyDecreaseAudioOffset", KeyboardKey.Minus)) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);
+        if (CanSkip && (Input.IsKeyPressed(Config.Key("keySkip", KeyboardKey.Space)) || Input.IsMouseButtonPressed(MouseButton.Left) && SkipRect() is { } sr && CheckCollisionPointRec(Input.GetMousePosition(), sr)))
         {
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
             Skip();
@@ -1000,6 +1005,9 @@ sealed partial class Player : Screen
         if (i < 0) return;
         var o = objs[i];
         var s = st[i];
+        // stable: a click on a circle whose previous object is stacked (stack index above 0) and still unjudged does
+        // nothing at all (no notelock shake either)
+        if (o.Type == ObjType.Circle && i > 0 && objs[i - 1].Stack > 0 && !st[i - 1].Done && time >= objs[i - 1].Time - map.Preempt) return;
         for (int k = firstActive; k < i; k++)
             if (!st[k].Done && objs[k].EndTime + 3 < o.Time) { if (VerifyLog) Console.Error.WriteLine($"  notelock: press at {time:0} on #{i} blocked by #{k}"); return; } // notelock
         double err = time - o.Time;
@@ -1414,6 +1422,7 @@ sealed partial class Player : Screen
         DrawBreakOverlays(w, h);
         if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
         DrawHud(w, h);
+        if (retryHold > 0) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (float)(retryHold / 100)));
         if (paused && resumePending) DrawResume();
         else if (paused) DrawPauseMenu(fail: false);
         if (failed) DrawPauseMenu(fail: true);

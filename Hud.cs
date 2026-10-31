@@ -291,7 +291,7 @@ sealed partial class Player
 
     void DrawScoreboard(float u)
     {
-        if (Input.IsKeyPressed(KeyboardKey.Tab)) scoreboardOn = !scoreboardOn;
+        if (Input.IsKeyPressed(Config.Key("keyToggleScoreboard", KeyboardKey.Tab))) scoreboardOn = !scoreboardOn;
         // stable's "Hit <Tab> to toggle scoreboard!" when the board appears: bold 12 just above it, fading out over 6s.
         hintFrom = double.IsNaN(hintFrom) ? Game.NowMs : hintFrom;
         double hintAge = Game.NowMs - hintFrom;
