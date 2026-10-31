@@ -468,6 +468,7 @@ sealed class SongSelect : Screen
         KeyboardKey.Q, KeyboardKey.W, KeyboardKey.E, KeyboardKey.A, KeyboardKey.S, KeyboardKey.D,
         KeyboardKey.F, KeyboardKey.G, KeyboardKey.Z, KeyboardKey.X, KeyboardKey.C, KeyboardKey.V,
     ];
+    static readonly string[] ModBindings = ["keyEasy", "keyNoFail", "keyHalfTime", "keyHardRock", "keySuddenDeath", "keyDoubleTime", "keyHidden", "keyFlashlight", "keyRelax", "keyAutopilot", "keySpunOut", "keyAuto"];
 
     static bool Pressed(KeyboardKey k) => Input.IsKeyPressed(k) || Input.IsKeyPressedRepeat(k);
 
@@ -1316,8 +1317,9 @@ sealed class SongSelect : Screen
 
     void UpdateModSelect()
     {
-        foreach (var k in ModKeys)
-            if (Input.IsKeyPressed(k)) mods = ModInfo.Toggle(mods, k);
+        // each mod's key follows its binding (keyEasy ... keyAuto); Toggle works on stable's default keys
+        for (int i = 0; i < ModKeys.Length; i++)
+            if (Input.IsKeyPressed(Config.Key(ModBindings[i], ModKeys[i]))) mods = ModInfo.Toggle(mods, ModKeys[i]);
         var mouse = Input.GetMousePosition();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (click)
