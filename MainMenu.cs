@@ -50,7 +50,7 @@ sealed class MainMenu : Screen
         playTier = play;
         LoadBackground();
         lastActivity = Game.NowMs;
-        skin.Sound("welcome")?.Play(BeatmapSamples.EffectVolume);
+        if (Config.GetBool("MenuVoice", true)) skin.Sound("welcome")?.Play(BeatmapSamples.EffectVolume);
     }
 
     public override void Entered() => NextTip();
@@ -297,7 +297,7 @@ sealed class MainMenu : Screen
             case "multiplayer": toast = ("Multiplayer isn't part of this offline remake.", Game.NowMs); break;
             case "options": Game.Screen = new Options(this, songs); break;
             case "exit":
-                skin.Sound("seeya")?.Play(BeatmapSamples.EffectVolume);
+                if (Config.GetBool("MenuVoice", true)) skin.Sound("seeya")?.Play(BeatmapSamples.EffectVolume);
                 quitAt = Game.NowMs + 1500; // fade out under the farewell, like stable
                 break;
         }

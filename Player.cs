@@ -72,9 +72,11 @@ sealed partial class Player : Screen
     readonly List<double> hitErrors = [];
     readonly List<(Vector2 Pos, double Time, int Result, string Sprite)> popups = [];
     readonly List<int> visible = [];
-    double offsetShownUntil = double.MinValue;
 
-    static double Offset => Config.GetDouble("RemakeOffset", 0);
+    // the universal offset (options) plus this map's local offset: stable's from osu!.db, or one set here with +/-
+    double Offset => Config.GetDouble("RemakeOffset", 0) + localOffset;
+    int localOffset;
+    double localOffsetChangedAt = double.MinValue;
 
     readonly Mods mods;
     readonly bool auto, relax, autopilot;
@@ -172,6 +174,12 @@ sealed partial class Player : Screen
         if (dimAlpha > 0) LoadBackground();
         sliderRt = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
         if (!VirtualClock) ApplyToggles();
+        if (!VirtualClock)
+        {
+            mapMd5 ??= Replays.Md5Of(map.File);
+            localOffset = Config.GetInt($"LocalOffset_{mapMd5}", back.LocalOffsetOf(mapMd5));
+            if (localOffset != 0) Notification.Show($"Using local beatmap offset ({localOffset}ms)", 1000);
+        }
         SetupCountdown();
 
         // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
@@ -923,10 +931,15 @@ sealed partial class Player : Screen
         return Vector2.Lerp(At(Math.Min(e0, len)), At(e1), f);
     }
 
+    // stable: +/- change the map's local offset (5ms, 1 with Shift; within +-1000) in the first 10 seconds of the
+    // map, in breaks, or anytime when watching; at most every 150ms. Kept in remake.cfg, never in osu!.db.
     void ChangeOffset(int delta)
     {
-        Config.SetOwn("RemakeOffset", (Offset + delta).ToString(System.Globalization.CultureInfo.InvariantCulture));
-        offsetShownUntil = Game.NowMs + 1500;
+        if (!(time <= objs[0].Time + 10000 || InBreak(time) || auto || playback != null) || Game.NowMs - localOffsetChangedAt < 150) return;
+        localOffsetChangedAt = Game.NowMs;
+        localOffset = Math.Clamp(localOffset + delta, -1000, 1000);
+        Config.SetOwn($"LocalOffset_{mapMd5 ??= Replays.Md5Of(map.File)}", localOffset.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Notification.Show($"Local beatmap offset set to {localOffset}ms", 1000);
     }
 
     void MissExpired(int i)

@@ -85,11 +85,6 @@ sealed partial class Player
         if (Config.GetBool("KeyOverlay", false) || playback != null || auto) DrawKeyOverlay(w, u, sd, now); // stable always shows it when watching
 
         DrawSkip();
-        if (now < offsetShownUntil)
-        {
-            string ot = $"Offset: {Offset:+0;-0;0}ms (+/- adjust, Shift for 1ms)";
-            Game.Text(ot, w / 2f - Game.TextWidth(ot, 30) / 2, h / 2f - 200, 30, Color.Yellow);
-        }
     }
 
     // Score rolls toward the real value (x0.75 per 60Hz frame), accuracy eases (x0.5); the pie sits 24 units left

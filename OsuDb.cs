@@ -21,6 +21,7 @@ sealed class DbBeatmap
             ? prev.SearchKey : $"{Artist} {ArtistUnicode} {Title} {TitleUnicode} {Creator} {Source} {Tags}".ToLowerInvariant();
     }
     public int Circles, Sliders, Spinners, DrainSeconds, TotalMs, PreviewMs, BeatmapId, SetId;
+    public short LocalOffset; // stable's per-map offset (+/- in play)
     public float AR, CS, HP, OD;
     public long LastModified, LastPlayed;
     public bool Unplayed;
@@ -169,7 +170,7 @@ static class OsuDb
         b.BeatmapId = r.ReadInt32(); b.SetId = r.ReadInt32();
         r.ReadInt32();                    // thread id
         r.ReadInt32();                    // grades per mode (4 bytes)
-        r.ReadInt16();                    // local offset
+        b.LocalOffset = r.ReadInt16();    // local offset
         r.ReadSingle();                   // stack leniency
         b.Mode = r.ReadByte();
         b.Source = rd.String(6); b.Tags = rd.String(7);
