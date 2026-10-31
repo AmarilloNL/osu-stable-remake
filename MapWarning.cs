@@ -13,7 +13,7 @@ sealed partial class Player
         string? text = status switch
         {
             7 => "This map is in a loved state.\nNo performance points will be awarded.\nLeaderboards may be reset.",
-            6 => "This map is in a qualified state.\nNo performance points will be awarded.\nLeaderboards will be reset once the map is ranked.",
+            6 => "This map is in a qualified state.\nNo performance points will be awarded.\nAll scores will be deleted when it is ranked.",
             _ => null,
         };
         if (text != null) Notification.Show(text, 5000, isWarning: true);

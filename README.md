@@ -109,7 +109,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
 - [x] Visual Settings per map (stable's from `osu!.db`, changes kept in `remake.cfg`)
 - [ ] Faster fallback when `osu!.db` is missing (folder scan is slow on big libraries)
-- [ ] Verify guessed details: the Qualified warning text, some notice texts
+- [x] Verify guessed details: the Qualified warning text, notice texts and menu tips (read from a running stable)
 
 **Not planned**
 - Online features of any kind (login, multiplayer, online leaderboards, score submission)
