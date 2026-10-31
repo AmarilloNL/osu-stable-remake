@@ -873,7 +873,7 @@ sealed partial class Player : Screen
         if (!LiveFail) return;
         if (Input.IsKeyPressed(KeyboardKey.F1)) Leave(new Player(map, back, mods, recording.ToArray(), CurrentInfo()));
         else if (Input.IsKeyPressed(KeyboardKey.F2) && !failSaved)
-            try { Notification.Show($"Saved replay to {Replays.Save(CurrentInfo(), recording, "Failed").Path}", 3000); failSaved = true; }
+            try { Notification.Show($"Saved replay to {Replays.Save(CurrentInfo(), recording, "Failed").Path}.", 3000); failSaved = true; }
             catch (IOException e) { Notification.Show($"Replay not saved: {e.Message}", 3000); }
     }
     bool failSaved;
