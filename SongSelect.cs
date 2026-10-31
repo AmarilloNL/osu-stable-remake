@@ -1405,8 +1405,29 @@ sealed class SongSelect : Screen
     // Set by the player: stable's "Automatic cursor size" scales the cursor by 1 - 0.7 x (CS - 4) / 5 in play.
     internal static float CursorPlayScale = 1;
 
+    // stable's cursor ripples (the Cursor ripples option): each click leaves the skin's cursor-ripple (else a ring) at
+    // the cursor, added on, growing 0.05 -> 0.5 (Out) and fading out from 20% over 700ms.
+    static readonly List<(Vector2 Pos, double At)> ripples = [];
+    internal static void Ripple(Vector2 at) { if (Config.GetBool("CursorRipple", false)) ripples.Add((at, Game.NowMs)); }
+
+    static void DrawRipples()
+    {
+        ripples.RemoveAll(r => Game.NowMs - r.At > 700);
+        if (ripples.Count == 0 || (Game.Skin.Own("cursor-ripple") ? Game.Skin.Tex("cursor-ripple") : Game.Skin.DefaultTex("approachcircle")) is not { } tex) return;
+        float sd = GetScreenHeight() / 768f;
+        BeginBlendMode(BlendMode.Additive);
+        foreach (var (p, at) in ripples)
+        {
+            float f = (float)((Game.NowMs - at) / 700);
+            tex.Draw(p, sd * (0.05f + 0.45f * (float)Easing.Apply(1, f)), ColorAlpha(Color.White, 0.2f * (1 - f)));
+        }
+        EndBlendMode();
+    }
+
     public static void DrawCursorAt(Vector2 pos)
     {
+        if (Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) Ripple(pos);
+        DrawRipples();
         float s = GetScreenHeight() / 768f * (float)Config.GetDouble("CursorSize", 1) * CursorPlayScale;
         var skin = Game.Skin;
         // CursorCentre: 0 anchors the sprite's top-left at the cursor instead of its centre.

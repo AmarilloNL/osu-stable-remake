@@ -610,6 +610,7 @@ sealed partial class Player : Screen
         if (paused) return;
         if (Input.IsKeyPressed(KeyboardKey.Grave)) { Retry(); return; }
 
+        if (playback == null && !auto && (Input.IsKeyPressed(key1) || Input.IsKeyPressed(key2))) SongSelect.Ripple(Input.GetMousePosition()); // keys click too
         int offsetStep = Input.IsKeyDown(KeyboardKey.LeftShift) ? 1 : 5;
         if (Input.IsKeyPressed(KeyboardKey.Equal) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
         if (Input.IsKeyPressed(KeyboardKey.Minus) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);
