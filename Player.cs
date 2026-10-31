@@ -34,7 +34,7 @@ sealed partial class Player : Screen
     readonly ObjState[] st;
     readonly Vector2[][] bodies;
     readonly bool snaking = Config.GetBool("SnakingSliders", true);
-    readonly (Vector2 Pos, float Rotation, double Time)[] followPoints;
+    readonly (Vector2 From, Vector2 Pos, float Rotation, double Time)[] followPoints;
     readonly int fpFrames;
     readonly double fpFrameMs;
     int fpFirst;
@@ -85,7 +85,7 @@ sealed partial class Player : Screen
     double lastTime = double.NaN;
     int autoNext;
     double autoReleaseAt;
-    int autoAlt, autoButton = 4; byte autoKeys; // the key overlay's view of Auto: stable's M1/M2 choice (judging uses held)
+    int autoAlt, autoButton = 4; byte autoKeys; byte autoPressed; // the key overlay's view of Auto: stable's M1/M2 choice (judging uses held)
 
     // Replays: recording during live play, or playback when watching.
     readonly ReplayFrame[]? playback;
@@ -135,16 +135,21 @@ sealed partial class Player : Screen
             return pts.ToArray();
         }).ToArray();
 
-        var fps = new List<(Vector2, float, double)>();
+        // stable's follow points: every 32 units from 48 in, short of the last 32, over the whole-unit distance; each slides
+        // in from 10% further back.
+        var fps = new List<(Vector2, Vector2, float, double)>();
         for (int i = 1; i < objs.Count; i++)
         {
             HitObject a = objs[i - 1], b = objs[i];
             if (b.ComboNumber == 1 || a.Type == ObjType.Spinner || b.Type == ObjType.Spinner) continue;
             Vector2 from = a.EndPos + map.StackOffset(a), to = PosOf(b);
-            float dist = Vector2.Distance(from, to);
+            int dist = (int)Vector2.Distance(from, to);
             float rot = MathF.Atan2(to.Y - from.Y, to.X - from.X) * 180 / MathF.PI;
-            for (float d = 48; d < dist - 32; d += 32)
-                fps.Add((Vector2.Lerp(from, to, d / dist), rot, a.EndTime + (b.Time - a.EndTime) * d / dist));
+            for (int d = 48; d < dist - 32; d += 32)
+            {
+                float f = (float)d / dist;
+                fps.Add((from + (to - from) * (f - 0.1f), from + (to - from) * f, rot, a.EndTime + (b.Time - a.EndTime) * f));
+            }
         }
         followPoints = fps.ToArray();
         while (skin.Frame("followpoint", fpFrames) != null) fpFrames++;
@@ -681,6 +686,7 @@ sealed partial class Player : Screen
                 if (o.Type == ObjType.Spinner) continue;
                 cursor = PosOf(o);
                 HandlePress();
+                autoPressed |= (byte)autoButton; // counted on the overlay even if the press ends before the next frame
                 autoReleaseAt = time + 50;
             }
             cursor = AutoCursor();
@@ -1302,7 +1308,6 @@ sealed partial class Player : Screen
         bool showStoryboard = storyboard != null && Toggles.Storyboard;
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
         DrawFollowPoints();
-        DrawPopups(); // stable: judgements sit under the objects (an exploding circle or a spinner covers them)
 
         // Earlier objects on top: draw later ones first.
         for (int k = visible.Count - 1; k >= 0; k--)
@@ -1313,7 +1318,6 @@ sealed partial class Player : Screen
             {
                 case ObjType.Circle: DrawHitCircle(i); break;
                 case ObjType.Slider: DrawSlider(i); break;
-                case ObjType.Spinner: DrawSpinner(i); break;
             }
             if (Falling) Rlgl.PopMatrix();
         }
@@ -1321,6 +1325,15 @@ sealed partial class Player : Screen
         {
             if (Falling) PushFall(visible[k]);
             DrawApproach(visible[k]);
+            if (Falling) Rlgl.PopMatrix();
+        }
+        // stable: judgements above the hit objects, spinners above the judgements (measured)
+        DrawPopups();
+        for (int k = visible.Count - 1; k >= 0; k--)
+        {
+            if (objs[visible[k]].Type != ObjType.Spinner) continue;
+            if (Falling) PushFall(visible[k]);
+            DrawSpinner(visible[k]);
             if (Falling) Rlgl.PopMatrix();
         }
 
@@ -1719,20 +1732,24 @@ sealed partial class Player : Screen
     // Follow points: dots along the gap between consecutive objects of the same combo, appearing in sequence.
     void DrawFollowPoints()
     {
-        const double fadeIn = 400, lead = 800, fadeOut = 400;
-        while (fpFirst < followPoints.Length && followPoints[fpFirst].Time + fadeOut < time) fpFirst++;
+        // stable: each point fades in over FadeIn from 800ms (x preempt/450 when that is under 450) before its time,
+        // sliding into place and shrinking 1.5 -> 1 (Out), then fades out over FadeIn from its time.
+        double lead = 800 * Math.Min(1, map.Preempt / 450), fade = map.FadeIn;
+        while (fpFirst < followPoints.Length && followPoints[fpFirst].Time + fade < time) fpFirst++;
         for (int k = fpFirst; k < followPoints.Length && followPoints[k].Time - lead <= time; k++)
         {
             var fp = followPoints[k];
             double age = time - (fp.Time - lead);
-            float a = (float)(Math.Clamp(age / fadeIn, 0, 1) * Math.Clamp(1 - (time - fp.Time) / fadeOut, 0, 1)) * playfieldAlpha;
+            float t = (float)Math.Clamp(age / fade, 0, 1), e = 1 - (1 - t) * (1 - t);
+            float a = t * (float)Math.Clamp(1 - (time - fp.Time) / fade, 0, 1) * playfieldAlpha;
             if (a <= 0) continue;
             Sprite? sprite = fpFrames > 0
                 ? skin.Frame("followpoint", Math.Min(fpFrames - 1, (int)(age / fpFrameMs)))
                 : skin.Tex("followpoint");
-            var p = ToScreen(fp.Pos);
-            if (sprite is { } sp) sp.Draw(p, GetScreenHeight() / 768f, ColorAlpha(Color.White, a), fp.Rotation);
-            else DrawCircleV(p, 2.5f * scale, ColorAlpha(Color.White, a * 0.8f));
+            var p = ToScreen(Vector2.Lerp(fp.From, fp.Pos, e));
+            float sc = 1.5f - 0.5f * e;
+            if (sprite is { } sp) sp.Draw(p, GetScreenHeight() / 768f * sc, ColorAlpha(Color.White, a), fp.Rotation);
+            else DrawCircleV(p, 2.5f * scale * sc, ColorAlpha(Color.White, a * 0.8f));
         }
     }
 

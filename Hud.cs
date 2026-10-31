@@ -240,8 +240,10 @@ sealed partial class Player
                 keysShown ^= 1 << i;
                 keyChangedAt[i] = now;
                 if (down && (keysEverPressed & (1 << i)) == 0) { keysEverPressed |= 1 << i; firstPressAt[i] = now; }
-                if (down && counting) keyCounts[i]++;
+                if (down && counting && (autoPressed & (1 << i)) == 0) keyCounts[i]++;
             }
+            if ((autoPressed & (1 << i)) != 0 && counting) keyCounts[i]++; // each Auto press, even one shorter than a frame
+            autoPressed &= (byte)~(1 << i);
             float p = (float)Math.Clamp((now - keyChangedAt[i]) / 160, 0, 1);
             float ease = 1 - (1 - p) * (1 - p);
             float scale = down ? 1 - 0.2f * ease : 0.8f + 0.2f * ease;

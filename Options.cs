@@ -41,7 +41,8 @@ sealed class Options : Screen
     readonly Item[] items;
     string? jumpTo;
     string search = "";
-    float scroll, scrollTarget;
+    float scroll = lastScroll, scrollTarget = lastScroll;
+    static float lastScroll; // stable reopens the panel where it was left
     int dragging = -1, binding = -1, dropdown = -1, dropFirst;
     bool showKeys;
     double openedAt = Game.NowMs, closingAt = double.NaN;
@@ -319,6 +320,7 @@ sealed class Options : Screen
         if (!double.IsNaN(closingAt)) return;
         Game.Skin.Sound("menuback")?.Play(BeatmapSamples.EffectVolume);
         closingAt = Game.NowMs;
+        lastScroll = search.Length > 0 ? lastScroll : scrollTarget;
     }
 
     // Labels wrap like stable's (toggles and plain text): lines of 12 units, up to the panel's right edge.
