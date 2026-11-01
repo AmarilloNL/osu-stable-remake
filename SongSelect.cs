@@ -1874,13 +1874,13 @@ sealed class SongSelect : Screen
         Dialog.Backdrop(fade);
         modContentY = Dialog.Title(ModBlurb, fade);
         string mult = $"Score Multiplier: {mods.Multiplier():0.00}x";
-        float ms = 31.1f * u; // stable's 30, measured
+        float ms = 30.8f * u; // stable's 30, measured at 1080p
         // stable: the text fades over 400ms to green-yellow above 1x, orange-red below, white at 1x
         double mul = mods.Multiplier();
         var multTarget = mul > 1 ? new Color(173, 255, 47, 255) : mul < 1 ? new Color(255, 69, 0, 255) : Color.White;
         if (multTarget.R != multTo.R || multTarget.G != multTo.G || multTarget.B != multTo.B) { multFrom = multNow; multTo = multTarget; multAt = now; }
         multNow = ColorLerp(multFrom, multTo, (float)Math.Clamp((now - multAt) / 400, 0, 1));
-        Game.Text(mult, w / 2f - Game.TextWidth(mult, ms) / 2, (modContentY - 20) * u - ms / 2, ms, ColorAlpha(multNow, fade));
+        Game.Text(mult, w / 2f - Game.TextWidth(mult, ms) / 2, (modContentY - 21.3f) * u - ms / 2, ms, ColorAlpha(multNow, fade));
         for (int r = 0; r < ModRows.Length; r++)
         {
             var (label, colour, list) = ModRows[r];
