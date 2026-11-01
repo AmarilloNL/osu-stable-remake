@@ -633,6 +633,8 @@ sealed class SongSelect : Screen
         if (!Ambient()) return;
 
         if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
+        // stable offline: the chat keys open the options at sign-in
+        if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, this); return; }
 
         // F1: stable's mod select, with stable's hotkeys.
         if (beatmapOptions) { while (Input.GetCharPressed() != 0) { } UpdateBeatmapOptions(); return; }

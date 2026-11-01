@@ -364,6 +364,8 @@ sealed class MainMenu : Screen
         else if (playTier && Input.IsKeyPressed(KeyboardKey.M)) Activate(1);
         else if (playTier && (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.B))) Activate(2);
         else if (playTier) { }
+        // stable offline: the chat keys (F8 / F9) open the options at sign-in, since chat needs a login
+        else if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, songs); }
         else if (Input.IsKeyPressed(KeyboardKey.E)) Activate(1);
         else if (Input.IsKeyPressed(KeyboardKey.O)) Activate(2);
         else if (Input.IsKeyPressed(KeyboardKey.Q)) Activate(3);

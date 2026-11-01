@@ -42,7 +42,7 @@ sealed class Options : Screen
     string? jumpTo;
     string search = "";
     float scroll = lastScroll, scrollTarget = lastScroll;
-    static float lastScroll; // stable reopens the panel where it was left
+    internal static float lastScroll; // stable reopens the panel where it was left
     int dragging = -1, binding = -1, dropdown = -1, dropFirst;
     BindingsDialog? bindings;
     double openedAt = Game.NowMs, closingAt = double.NaN;
