@@ -296,21 +296,12 @@ sealed partial class Player
                 Vector2 a = At(graph[i - 1]), b = At(graph[i]);
                 float len = Vector2.Distance(a, b);
                 if (len > left) b = a + (b - a) * (left / len);
-                DrawLineEx(a, b, thick, graph[i].Y > 0.5f ? new Color(154, 205, 50, 255) : Color.Red);
+                DrawLineEx(a, b, thick, graph[i].Y > 0.5f ? new Color(154, 205, 50, 255) : Xna.Red);
                 left -= len;
             }
         }
 
-        void DrawTooltip(Vector2 mouse)
-        {
-            float size = 12 * u;
-            var lines = tooltip.Split('\n');
-            float tw = lines.Max(l => Game.TextWidth(l, size)) + 8 * u, th = lines.Length * size + 6 * u;
-            float x = Math.Min(mouse.X + 12 * u, w - tw), y = mouse.Y + 12 * u;
-            DrawRectangleRec(new Rectangle(x, y, tw, th), new Color(0, 0, 0, 200));
-            DrawRectangleLinesEx(new Rectangle(x, y, tw, th), 1, Color.Gray);
-            for (int i = 0; i < lines.Length; i++) Game.Text(lines[i], x + 4 * u, y + 3 * u + i * size, size, Color.White);
-        }
+        void DrawTooltip(Vector2 mouse) => Options.DrawTooltip(tooltip, mouse); // stable's tooltip box
 
         void DrawTopBar()
         {

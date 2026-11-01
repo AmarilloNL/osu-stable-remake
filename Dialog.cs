@@ -71,3 +71,11 @@ static class Dialog
         return hover;
     }
 }
+
+// stable's named colours are XNA's, which differ from raylib's (raylib's Red is 230,41,55, its DarkGray 80,80,80).
+static class Xna
+{
+    public static readonly Color Red = new(255, 0, 0, 255), Gold = new(255, 215, 0, 255), Orange = new(255, 165, 0, 255),
+        LightGray = new(211, 211, 211, 255), Gray = new(128, 128, 128, 255), DarkGray = new(169, 169, 169, 255),
+        SkyBlue = new(135, 206, 235, 255);
+}

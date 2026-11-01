@@ -72,8 +72,8 @@ sealed class BindingsDialog
             bool hover = binding < 0 && CheckCollisionPointRec(mouse, r);
             if (i == KeyBindings.Rows.Length)
             {
-                DrawRectangleRec(r, ColorAlpha(hover ? Color.Red : Color.Black, a));
-                DrawRectangleLinesEx(r, Edge, ColorAlpha(Color.LightGray, a));
+                DrawRectangleRec(r, ColorAlpha(hover ? Xna.Red : Color.Black, a));
+                DrawRectangleLinesEx(r, Edge, ColorAlpha(Xna.LightGray, a));
                 Centred("Reset all bindings", r, 14 * u, ColorAlpha(Color.White, a));
                 continue;
             }
@@ -84,13 +84,13 @@ sealed class BindingsDialog
                 Centred(row.Name[1..], r, 16 * u, ColorAlpha(new Color(154, 205, 50, 255), a));
                 continue;
             }
-            DrawRectangleRec(r, ColorAlpha(hover ? Color.Gray : Color.Black, a));
-            DrawRectangleLinesEx(r, Edge, ColorAlpha(Color.LightGray, a));
+            DrawRectangleRec(r, ColorAlpha(hover ? Xna.Gray : Color.Black, a));
+            DrawRectangleLinesEx(r, Edge, ColorAlpha(Xna.LightGray, a));
             Game.Text(row.Name, x + 2 * u, y + rh / 2 - 8.85f * u, 14.7f * u, ColorAlpha(Color.White, a)); // stable: 14, renders 5% wider (measured)
             var k = new Rectangle(x + 300 * u, y + u, 100 * u, 15 * u);
             DrawRectangleRec(k, ColorAlpha(Color.Black, a));
             DrawRectangleLinesEx(k, Edge, ColorAlpha(new Color(211, 178, 0, 255), a));
-            Centred(KeyBindings.Shown(row), new Rectangle(k.X, k.Y - 1.3f * u, k.Width, k.Height), 12 * u, ColorAlpha(Color.Gold, a));
+            Centred(KeyBindings.Shown(row), new Rectangle(k.X, k.Y - 1.3f * u, k.Width, k.Height), 12 * u, ColorAlpha(Xna.Gold, a));
         }
         // a scroll bar along the right while the list is hovered
         float total = Count * RowH;
@@ -107,7 +107,7 @@ sealed class BindingsDialog
                 for (int i = 0; i < lines.Length; i++)
                     Game.Text(lines[i], cx - Game.TextWidth(lines[i], size * u) / 2, (y - lines.Length * size / 2 + i * size) * u, size * u, c);
             }
-            Lines(KeyBindings.Rows[binding].Name, 120, 40, Color.Orange);
+            Lines(KeyBindings.Rows[binding].Name, 120, 40, Xna.Orange);
             Lines("Press a key to change the binding...\nHit ESC to cancel.", 240, 40, Color.White);
             Lines("Notice: Be careful to avoid any\npotential binding conflicts!", 360, 30, Color.White);
         }

@@ -1310,7 +1310,7 @@ sealed class SongSelect : Screen
         ("Remove from Unplayed", new Color(207, 124, 215, 255), "The remake doesn't write osu!stable's database."),
         ("Clear local scores", new Color(207, 124, 215, 255), "Your scores are kept; clear them in osu!stable."),
         ("Edit", new Color(255, 69, 0, 255), "The beatmap editor isn't part of this offline remake."),
-        ("Cancel", Color.Gray, null),
+        ("Cancel", Xna.Gray, null),
     ];
     bool beatmapOptions;
     double beatmapOptionsAt;
@@ -1420,7 +1420,7 @@ sealed class SongSelect : Screen
                 if (on && Game.Skin.Tex("lighting") is { } glow)
                 {
                     BeginBlendMode(BlendMode.Additive);
-                    glow.Draw(pos, s, ColorAlpha(Color.SkyBlue, 0.2f * fade));
+                    glow.Draw(pos, s, ColorAlpha(Xna.SkyBlue, 0.2f * fade));
                     EndBlendMode();
                 }
                 string name = alt != Mods.None && mods.HasFlag(alt) ? altIcon : icon;
@@ -1430,7 +1430,7 @@ sealed class SongSelect : Screen
         var mouse = Input.GetMousePosition();
         float buttonsY = modContentY + 35 + 180;
         Dialog.Button(0, "Reset All Mods", new Color(255, 69, 0, 255), buttonsY, age, mouse, modButtonFlashed == 0 ? now - modButtonFlashAt : double.MaxValue);
-        Dialog.Button(1, "Close", Color.Gray, buttonsY + 50, age, mouse);
+        Dialog.Button(1, "Close", Xna.Gray, buttonsY + 50, age, mouse);
     }
 
     // ---------------------------------------------------------------- background (loaded off the main thread)

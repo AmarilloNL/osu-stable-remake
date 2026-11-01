@@ -447,7 +447,7 @@ sealed partial class Player : Screen
         foreach (var (from, count) in blinks)
         {
             if (time < from || time >= from + 200 * count || (time - from) % 200 >= 100) continue;
-            var tint = skin.Version > 1 ? Color.Red : Color.White; // stable reds the new-style arrow for v2+ skins
+            var tint = skin.Version > 1 ? Xna.Red : Color.White; // stable reds the new-style arrow for v2+ skins
             for (int c = 0; c < 4; c++)
             {
                 bool right = c >= 2;
@@ -2169,7 +2169,7 @@ sealed partial class Player : Screen
             skin.Tex("spinner-bottom")?.Draw(c, grow, white, top / 3);
             skin.Tex("spinner-top")?.Draw(c, grow, white, top);
             skin.Tex("spinner-middle2")?.Draw(c, grow, white, rotDeg);
-            skin.Tex("spinner-middle")?.Draw(c, grow, ColorAlpha(ColorLerp(Color.White, Color.Red, (float)progress), alpha));
+            skin.Tex("spinner-middle")?.Draw(c, grow, ColorAlpha(ColorLerp(Color.White, Xna.Red, (float)progress), alpha));
         }
         else
         {
@@ -2417,7 +2417,7 @@ sealed partial class Player : Screen
             bool newStyle = skin.Tex("scorebar-marker") != null;
             var tint = Color.White;
             bool additive = newStyle, coloured = newStyle && (!hpFilling || HpFillStart > 0); // stable leaves the bar white while it fills
-            if (coloured && hpShown < 40) { tint = ColorLerp(Color.Black, Color.Red, (float)((40 - hpShown) / 40)); additive = false; }
+            if (coloured && hpShown < 40) { tint = ColorLerp(Color.Black, Xna.Red, (float)((40 - hpShown) / 40)); additive = false; }
             else if (coloured && hpShown < 100) { tint = ColorLerp(Color.White, Color.Black, (float)((100 - hpShown) / 100)); additive = false; }
             var at = (newStyle ? new Vector2(12f, 12.5f) * s : new Vector2(5f, 16f) * s) + new Vector2(0, by);
             tint = ColorAlpha(tint, ba);

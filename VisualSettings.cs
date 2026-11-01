@@ -122,10 +122,10 @@ sealed partial class Player
         {
             var r = ToggleRect(top, i, u);
             var c = new Vector2(r.X + 4 * u, r.Y + 5 * u);
-            var col = rows[i].Enabled ? pink : Color.DarkGray;
+            var col = rows[i].Enabled ? pink : Xna.DarkGray;
             if (rows[i].On) DrawCircleV(c, 3.8f * u, col);
             else DrawRing(c, 3.0f * u, 3.8f * u, 0, 360, 24, col);
-            Game.Text(rows[i].Label, r.X + 12 * u, r.Y, 11 * u, rows[i].Enabled ? Color.White : Color.DarkGray);
+            Game.Text(rows[i].Label, r.X + 12 * u, r.Y, 11 * u, rows[i].Enabled ? Color.White : Xna.DarkGray);
         }
     }
 }
