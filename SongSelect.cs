@@ -633,6 +633,8 @@ sealed class SongSelect : Screen
             if (click || esc) { while (Input.GetCharPressed() != 0) { } return; }
         }
 
+        // stable: Ctrl+A toggles Auto outside the mod select too
+        if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.A)) { mods = ModInfo.Toggle(mods, KeyboardKey.V); while (Input.GetCharPressed() != 0) { } }
         int page = Math.Max(1, (int)((GetScreenHeight() - TopH - BottomH) / RowH) - 2);
         if (Grouped)
         {
