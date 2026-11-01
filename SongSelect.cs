@@ -872,6 +872,8 @@ sealed class SongSelect : Screen
         DrawBottomBar(w, h, s);
         Snow.Update(this);
         Snow.Draw();
+        if (webTip && !modSelect && !beatmapOptions) Options.DrawTooltip("Quick web access for this beatmap", Input.GetMousePosition());
+        webTip = false;
         DrawCursor();
         if (modSelect) DrawModSelect(w, h);
         if (beatmapOptions) DrawBeatmapOptions();
@@ -1256,6 +1258,24 @@ sealed class SongSelect : Screen
         }
     }
 
+    // stable's web access button (rank-forum, a 25-texel sprite at (214, 81) units) for maps with an online id: fades in/out over
+    // 300ms, grows 1.1x while hovered. Offline it opens nothing; the tooltip stays.
+    double webShownAt = double.MinValue;
+    bool webShown;
+    void DrawWebButton(float u)
+    {
+        bool show = Selected is { BeatmapId: > 0 };
+        if (show != webShown) { webShown = show; webShownAt = Game.NowMs; }
+        float f = (float)Math.Clamp((Game.NowMs - webShownAt) / 300, 0, 1), a = webShown ? f : 1 - f;
+        if (a <= 0 || Game.Skin.Tex("rank-forum") is not { } tex) return;
+        var at = new Vector2(214 * u, 81 * u);
+        float sd = GetScreenHeight() / 768f, half = 12.5f * sd;
+        bool hover = webShown && Math.Abs(Input.GetMousePosition().X - at.X) < half && Math.Abs(Input.GetMousePosition().Y - at.Y) < half;
+        tex.Draw(at, sd * (hover ? 1.1f : 1), ColorAlpha(Color.White, a));
+        if (hover) webTip = true;
+    }
+    bool webTip;
+
     // stable's dropdown outline (measured): about half a unit thick with ~1.3-unit rounded corners.
     void DropdownBorder(Rectangle r, Color c) =>
         DrawRectangleRoundedLinesEx(r, 2.6f * U / r.Height, 8, Math.Max(1, U / 2), c);
@@ -1268,6 +1288,7 @@ sealed class SongSelect : Screen
         DropdownBorder(box, new Color(22, 130, 179, 255));
         Game.Text("Local Ranking", box.X + 3 * u, box.Y + box.Height / 2 - 7 * u, 14 * u, Color.White);
         Options.DrawIcon(0xf078, box.X + box.Width - 9.8f * u, box.Y + box.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
+        DrawWebButton(u);
 
         var list = SelectedScores;
         if (list.Count == 0) Game.Text("No records set!", 63 * u, ScoreTop + 6 * u, 14 * u, ColorAlpha(Color.White, 0.8f));
