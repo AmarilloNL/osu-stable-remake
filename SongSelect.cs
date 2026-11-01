@@ -1461,6 +1461,9 @@ sealed class SongSelect : Screen
     void DropdownBorder(Rectangle r, Color c) =>
         DrawRectangleRoundedLinesEx(r, 2.6f * U / r.Height, 8, Math.Max(1, U / 2), c);
 
+    string? noRecordsFor;
+    double noRecordsAt;
+
     void DrawScores(int w, int h, float s)
     {
         float u = U;
@@ -1472,7 +1475,15 @@ sealed class SongSelect : Screen
         DrawWebButton(u);
 
         var list = SelectedScores;
-        if (list.Count == 0) Game.Text("No records set!", 63 * u, ScoreTop + 6 * u, 14 * u, ColorAlpha(Color.White, 0.8f));
+        // stable: osu!ui's selection-norecords centred at (118, 170) units, fading in and sliding 30 down over 400ms (Out)
+        if (Selected?.Md5 != noRecordsFor) { noRecordsFor = Selected?.Md5; noRecordsAt = Game.NowMs; }
+        if (list.Count == 0 && Selected != null)
+        {
+            float k = (float)Math.Clamp((Game.NowMs - noRecordsAt) / 400, 0, 1);
+            var at = new Vector2(118 * u, (170 + 30 * (float)Easing.Apply(1, k)) * u);
+            if (Game.Skin.DefaultTex("selection-norecords") is { } nr) nr.Draw(at, s, ColorAlpha(Color.White, k));
+            else Game.Text("No records set!", at.X - Game.TextWidth("No records set!", 14 * u) / 2, at.Y - 7 * u, 14 * u, ColorAlpha(Color.White, k));
+        }
         var mouse = Input.GetMousePosition();
         for (int n = 0; n < Math.Min(8, list.Count); n++)
         {
@@ -1717,7 +1728,22 @@ sealed class SongSelect : Screen
         return Game.Skin.CursorExpand ? Current() : 1;
     }
 
-    public static void DrawCursorAt(Vector2 pos)
+    // Screens ask for the cursor while drawing; it's drawn at the end of the frame (FlushCursor), over the volume meter
+    // and notifications too, like stable's.
+    static (Vector2 Pos, float PlayScale, byte? Keys)? pendingCursor;
+    public static void DrawCursorAt(Vector2 pos) => pendingCursor = (pos, CursorPlayScale, CursorKeys);
+
+    internal static void FlushCursor()
+    {
+        if (pendingCursor is not { } c) return;
+        pendingCursor = null;
+        (float scale, byte? keys) = (CursorPlayScale, CursorKeys);
+        (CursorPlayScale, CursorKeys) = (c.PlayScale, c.Keys);
+        DrawCursorNow(c.Pos);
+        (CursorPlayScale, CursorKeys) = (scale, keys);
+    }
+
+    static void DrawCursorNow(Vector2 pos)
     {
         if (Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) Ripple(pos);
         DrawRipples();
