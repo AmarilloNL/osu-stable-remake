@@ -128,7 +128,7 @@ sealed partial class Player : Screen
         UpdateVisualSettings(dtMs);
         fadeVolume -= 0.02f * (float)(dtMs / (1000 / 60.0));
         fadeOut.Volume = Math.Max(0, fadeVolume) * Config.MusicVolume;
-        if (fadeVolume > 0 || visualHeight > 46 || visualDragging >= 0) { UpdateDim(dtMs); return true; }
+        if (fadeVolume > 0 || VisualOpen) { UpdateDim(dtMs); return true; }
         fadeOut.Dispose();
         fadeOut = null;
         sw.Start();

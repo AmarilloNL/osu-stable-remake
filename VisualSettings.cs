@@ -55,6 +55,10 @@ sealed partial class Player
     }
 
     bool VisualActive => (paused && !resumePending || failed && !double.IsPositiveInfinity(menuShownAt) || fadeOut != null) && playback == null;
+    float visualFrom, visualTo;
+    double visualAt;
+    int visualMs = 1, visualEase;
+    bool VisualOpen => visualTo == ExpandedHeight;
     // stable opens the panel on hover only once the cursor has moved 30px since the play was set up
     Vector2? visualMouseAt;
     bool visualMoved;
@@ -68,7 +72,13 @@ sealed partial class Player
         if (!visualMoved && Vector2.Distance(mouse, visualMouseAt.Value) > 30) visualMoved = true;
         bool hover = VisualActive && visualMoved && mouse.Y > GetScreenHeight() - Math.Max(45, visualHeight) * u;
         float target = !VisualActive ? 0 : hover || visualDragging >= 0 ? ExpandedHeight : 45;
-        visualHeight += (target - visualHeight) * (float)Math.Min(1, dtMs / 70);
+        // stable's tweens: open 400ms Out, up to the strip 400ms In, down (closing or hiding) 600ms OutBounce
+        if (target != visualTo)
+        {
+            (visualFrom, visualTo, visualAt) = (visualHeight, target, Game.NowMs);
+            (visualMs, visualEase) = target == ExpandedHeight ? (400, 1) : target >= visualHeight ? (400, 2) : (600, 33);
+        }
+        visualHeight = visualFrom + (visualTo - visualFrom) * (float)Easing.Apply(visualEase, Math.Clamp((Game.NowMs - visualAt) / visualMs, 0, 1));
         if (!VisualActive || visualHeight < ExpandedHeight - 2) { visualDragging = -1; return false; }
 
         float top = GetScreenHeight() - visualHeight * u;
