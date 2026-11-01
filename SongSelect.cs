@@ -623,6 +623,12 @@ sealed class SongSelect : Screen
             return;
         }
         if (modSelect) { while (Input.GetCharPressed() != 0) { } return; }
+        if (modeMenuAt >= 0) // the mode menu takes every click and Esc while open
+        {
+            bool click = Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right), esc = Input.IsKeyPressed(KeyboardKey.Escape);
+            UpdateModeMenu(Input.GetMousePosition());
+            if (click || esc) { while (Input.GetCharPressed() != 0) { } return; }
+        }
 
         int page = Math.Max(1, (int)((GetScreenHeight() - TopH - BottomH) / RowH) - 2);
         if (Grouped)
@@ -1047,6 +1053,7 @@ sealed class SongSelect : Screen
         Snow.Draw();
         if (webTip && !modSelect && !beatmapOptions) Options.DrawTooltip("Quick web access for this beatmap", Input.GetMousePosition());
         webTip = false;
+        DrawModeMenu();
         if (modSelect) DrawModSelect(w, h);
         if (beatmapOptions) DrawBeatmapOptions();
         DrawCursor(); // over the overlays, like stable
@@ -1384,6 +1391,71 @@ sealed class SongSelect : Screen
         (Mods.SpunOut, "spunout"), (Mods.Autoplay, "autoplay"), (Mods.ScoreV2, "scorev2"),
     ];
 
+    // ---- stable's mode menu (the Mode button): osu!, osu!taiko, osu!catch, osu!mania upward from y 344 at x 140 (units),
+    // each a 280x80 box of black at 160/255 (purple (165,90,234,230) while hovered), the osu!ui mode-*-med icon centred
+    // 40 in and the mode's name (bold 24, shadowed) 90 in; rows fade in over 200ms, 20ms apart, and out over 100ms.
+    // Hovering grows the icon to 1.1 and nudges the name 10 units right. Any click closes it; only osu! is playable here.
+    static readonly (string Icon, string Name)[] ModeRows = [("mode-osu-med", "osu!"), ("mode-taiko-med", "osu!taiko"), ("mode-fruits-med", "osu!catch"), ("mode-mania-med", "osu!mania")];
+    double modeMenuAt = -1, modeMenuClosedAt = double.NegativeInfinity;
+    int modeHover = -1;
+    readonly double[] modeHoverAt = [double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity];
+    readonly double[] modeLeaveAt = [double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity];
+
+    void OpenModeMenu() { modeMenuAt = Game.NowMs; modeHover = -1; }
+    void CloseModeMenu() { if (modeMenuAt >= 0) { modeMenuAt = -1; modeMenuClosedAt = Game.NowMs; } }
+    static Rectangle ModeRowRect(int i, float u) => new(140 * u, (344 - 80 * i) * u, 280 * u, 80 * u);
+
+    // true when the menu took the click
+    bool UpdateModeMenu(Vector2 mouse)
+    {
+        if (modeMenuAt < 0) return false;
+        float u = U;
+        int over = -1;
+        for (int i = 0; i < ModeRows.Length; i++) if (CheckCollisionPointRec(mouse, ModeRowRect(i, u))) over = i;
+        if (over != modeHover)
+        {
+            if (modeHover >= 0) modeLeaveAt[modeHover] = Game.NowMs;
+            if (over >= 0) { modeHoverAt[over] = Game.NowMs; Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume); }
+            modeHover = over;
+        }
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { CloseModeMenu(); return true; }
+        if (!Input.IsMouseButtonPressed(MouseButton.Left) && !Input.IsMouseButtonPressed(MouseButton.Right)) return false;
+        if (over > 0) Notification.Show($"{ModeRows[over].Name} isn't part of this osu! remake.", 1000);
+        if (over >= 0) Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+        CloseModeMenu();
+        return over >= 0;
+    }
+
+    void DrawModeMenu()
+    {
+        double now = Game.NowMs;
+        bool open = modeMenuAt >= 0;
+        if (!open && now - modeMenuClosedAt > 100) return;
+        float u = U, s = S;
+        for (int i = 0; i < ModeRows.Length; i++)
+        {
+            float a = open ? (float)Math.Clamp((now - modeMenuAt - 20 * i) / 200, 0, 1) : 1 - (float)Math.Clamp((now - modeMenuClosedAt) / 100, 0, 1);
+            if (a <= 0) continue;
+            var r = ModeRowRect(i, u);
+            bool hover = open && modeHover == i;
+            var bg = new Color(0, 0, 0, 160);
+            var lit = new Color(165, 90, 234, 230);
+            var colour = hover ? ColorLerp(bg, lit, (float)Math.Clamp((now - modeHoverAt[i]) / 10, 0, 1))
+                : ColorLerp(lit, bg, (float)Math.Clamp((now - modeLeaveAt[i]) / 100, 0, 1));
+            DrawRectangleRec(r, ColorAlpha(colour, colour.A / 255f * a));
+            // icon 1 -> 1.1 over a second (elastic) while hovered, and back
+            double since = hover ? now - modeHoverAt[i] : now - modeLeaveAt[i];
+            float e = (float)Easing.Apply(25, Math.Clamp(since / 1000, 0, 1));
+            float grow = hover ? 1 + 0.1f * e : 1 + 0.1f * (1 - e);
+            if (since > 1000 && !hover) grow = 1;
+            if (Game.Skin.DefaultTex(ModeRows[i].Icon) is { } icon) icon.Draw(new Vector2(r.X + 40 * u, r.Y + 40 * u), s * grow, ColorAlpha(Color.White, a));
+            float nudge = 10 * (float)Easing.Apply(1, Math.Clamp(since / 300, 0, 1));
+            float tx = r.X + (93.5f + (hover ? nudge : 10 - nudge)) * u, size = 24.8f * u, ty = r.Y + 38.7f * u - size / 2; // measured at 1080p
+            Game.TextBold(ModeRows[i].Name, tx + 1, ty + 1, size, ColorAlpha(Color.Black, 0.5f * a));
+            Game.TextBold(ModeRows[i].Name, tx, ty, size, ColorAlpha(Color.White, a));
+        }
+    }
+
     bool ClickBottomBar(Vector2 mouse)
     {
         int w = GetScreenWidth(), h = GetScreenHeight();
@@ -1397,7 +1469,8 @@ sealed class SongSelect : Screen
         {
             if (!CheckCollisionPointRec(mouse, ButtonRect(name, bx, h, s))) continue;
             Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
-            if (name == "selection-mods") OpenModSelect(!modSelect);
+            if (name == "selection-mode") { if (modeMenuAt < 0) OpenModeMenu(); else CloseModeMenu(); }
+            else if (name == "selection-mods") OpenModSelect(!modSelect);
             else if (name == "selection-random" && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
             else if (name == "selection-options") OpenBeatmapOptions(); // stable's Beatmap Options dialog
             return true;
