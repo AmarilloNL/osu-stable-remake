@@ -804,11 +804,12 @@ sealed class FrameStats
         string big = fpsText.Of((long)Math.Round(fpsShown)), small = limited ? limitText.Of(Math.Round(limit)) : "";
         var tint = ColorAlpha(Color.White, fpsAlpha);
         float bigW = RunWidth(Big, big, null, sd);
-        // stable: the number centred 35 in, "/limit fps" straight after it (measured). Unlimited ("5805fps") is
+        // stable: the number centred 35 in (the limit text has its own spot below). Unlimited ("5805fps") is
         // centred in the box instead, so wide numbers don't run out of it.
         float bigX = limited ? W - 35 * u - bigW / 2 : fpsCentre.X - (bigW + RunWidth(Small, "", "fpss-fps", sd)) / 2;
         DrawRun(Big, big, null, bigX, fpsCentre.Y, sd, tint, centreY: true);
-        DrawRun(Small, small, "fpss-fps", bigX + bigW, fpsCentre.Y, sd, tint, centreY: false);
+        // stable: "/limit fps" has its top left at a fixed 29 units in from the right (it can touch the number)
+        DrawRun(Small, small, "fpss-fps", limited ? W - 29 * u : bigX + bigW, fpsCentre.Y, sd, tint, centreY: false);
     }
 
     static readonly string[] Big = [.. Enumerable.Range(0, 10).Select(i => $"fps-{i}")], Small = [.. Enumerable.Range(0, 10).Select(i => $"fpss-{i}")];
@@ -822,11 +823,13 @@ sealed class FrameStats
         _ => null,
     };
 
+    // stable's sprite text here overlaps neighbouring glyphs by 1 texel (half an SD pixel with the @2x sprites)
     static float RunWidth(string[] font, string text, string? tail, float s)
     {
-        float w = 0;
-        foreach (char c in text) w += (Glyph(font, c)?.Width ?? 0) * s;
-        return w + (tail != null ? (Ui(tail)?.Width ?? 0) * s : 0);
+        float w = 0, last = 0;
+        foreach (char c in text) if (Glyph(font, c) is { } g) { w += (g.Width - g.Scale) * s; last = g.Scale * s; }
+        if (tail != null && Ui(tail) is { } t) { w += (t.Width - t.Scale) * s; last = t.Scale * s; }
+        return w + last; // the last glyph is drawn whole
     }
 
     // Draws glyphs left to right from x; vertically centred on y, or with their tops at y.
@@ -837,7 +840,7 @@ sealed class FrameStats
             if (g is not { } sp) return;
             float gw = sp.Width * s, gh = sp.Height * s;
             sp.Draw(new Vector2(x + gw / 2, centreY ? y : y + gh / 2), s, tint);
-            x += gw;
+            x += gw - sp.Scale * s;
         }
         foreach (char c in text) One(Glyph(font, c));
         if (tail != null) One(Ui(tail));
