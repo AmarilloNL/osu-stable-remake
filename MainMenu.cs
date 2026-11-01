@@ -369,6 +369,7 @@ sealed class MainMenu : Screen
         else if (Input.IsKeyPressed(KeyboardKey.E)) Activate(1);
         else if (Input.IsKeyPressed(KeyboardKey.O)) Activate(2);
         else if (Input.IsKeyPressed(KeyboardKey.Q)) Activate(3);
+        else if (Input.IsKeyPressed(KeyboardKey.F)) Config.SetOwn("FpsCounter", Config.GetBool("FpsCounter", false) ? "0" : "1"); // stable: F toggles the FPS counter here
         else if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
             if (open) SetOpen(false);
