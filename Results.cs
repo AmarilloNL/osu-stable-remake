@@ -113,31 +113,27 @@ sealed partial class Player
             p.Dispose();
         }
 
-        void Leave(Screen next)
-        {
-            Cleanup();
-            Game.Screen = next;
-        }
+        void Leave(Func<Screen> next) => Game.FadeTo(next, Cleanup); // stable's ranking screen leaves through black
 
         void Back()
         {
             skin.Sound("menuback")?.Play(BeatmapSamples.EffectVolume);
-            Game.FadeTo(p.back, Cleanup); // stable goes back through black
+            Leave(() => p.back);
         }
 
         void Retry()
         {
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
-            Leave(new Player(p.map, p.back, p.mods, p.playback, p.watching));
+            Leave(() => new Player(p.map, p.back, p.mods, p.playback, p.watching));
         }
 
         void Watch()
         {
-            if (AutoPlay && Replay == null) { skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume); Leave(new Player(p.map, p.back, p.mods)); return; } // Auto again: the same replay
+            if (AutoPlay && Replay == null) { skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume); Leave(() => new Player(p.map, p.back, p.mods)); return; } // Auto again: the same replay
             if (Replay is not { } r) return;
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
             if (p.summary) p.back.StopPreview();
-            Leave(new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
+            Leave(() => new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
         }
 
         // stable's F2: the replay as "{player} - {Artist - Title [Version]} ({UTC date}) Osu.osr" (" (n)" when taken),

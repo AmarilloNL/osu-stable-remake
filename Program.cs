@@ -22,10 +22,12 @@ static class Game
 
     // stable's fading mode change: a black overlay (0-100) rises 8 a 60Hz tick, the screen switches at 100, then it
     // falls 4 a tick from 140 (so it holds black a moment). The old screen sits still meanwhile.
-    static Screen? fadeTo;
+    static Func<Screen>? fadeTo;
     static Action? fadeSwitch;
     static double fadeLevel;
-    public static void FadeTo(Screen next, Action? onSwitch = null) { if (fadeTo == null) (fadeTo, fadeSwitch) = (next, onSwitch); }
+    public static void FadeTo(Screen next, Action? onSwitch = null) => FadeTo(() => next, onSwitch);
+    // the screen is made at the switch, after onSwitch (a new play's clock starts there)
+    public static void FadeTo(Func<Screen> make, Action? onSwitch = null) { if (fadeTo == null) (fadeTo, fadeSwitch) = (make, onSwitch); }
 
     // false while fading out (the current screen gets no update)
     static bool UpdateFade(double dtMs)
@@ -34,10 +36,10 @@ static class Game
         if (fadeTo == null) { fadeLevel = Math.Max(0, fadeLevel - 4 * ticks); return true; }
         fadeLevel = Math.Min(100, fadeLevel + 8 * ticks);
         if (fadeLevel < 100) return false;
-        var (next, onSwitch) = (fadeTo, fadeSwitch);
+        var (make, onSwitch) = (fadeTo, fadeSwitch);
         (fadeTo, fadeSwitch, fadeLevel) = (null, null, 140);
         onSwitch?.Invoke();
-        Screen = next;
+        Screen = make();
         return true;
     }
 
