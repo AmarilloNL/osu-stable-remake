@@ -849,7 +849,13 @@ sealed class SongSelect : Screen
         ("Collections", "Collections"), ("Favourites", "Favourites"), ("MyMaps", "My Maps"), ("Status", "Ranked Status"), ("Recent", "Recently Played"),
     ];
     static readonly string[] GroupTabLabels = [.. GroupModes.Select(m => m.Label)];
-    static string GroupMode => Config.Get("RemakeGroupMode", "None");
+    // ours once changed here (remake.cfg), else stable's own TreeSortMode
+    static string GroupMode => Config.Get("RemakeGroupMode", Config.Get("TreeSortMode", "Show_All") switch
+    {
+        "Artist" => "Artist", "BPM" => "Bpm", "Creator" => "Creator", "Date" => "Date", "Difficulty" => "Difficulty", "Length" => "Length",
+        "Mode" => "Mode", "Rank" => "Rank", "Title" => "Title", "Collection" => "Collections", "Online_Favourites" => "Favourites",
+        "My_Maps" => "MyMaps", "RankedStatus" => "Status", "Last_Played" => "Recent", _ => "None",
+    });
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods) headerFor;
     string[] header = [];
