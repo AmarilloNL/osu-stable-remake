@@ -493,6 +493,9 @@ sealed class SongSelect : Screen
             if (!loading.IsCompleted) return false;
             sets = loading.Result;
             loading = null;
+            // every non-Latin character the library's names use, into the fallback glyph atlases at once (one build
+            // instead of one each time a new title scrolls into view)
+            Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
             ApplyFilter();
             if (filter.Length == 0 && view.Count > 0)
             {

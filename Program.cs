@@ -121,6 +121,22 @@ static class Game
         return runs[s] = [.. list];
     }
 
+    public static void PreloadGlyphs(IEnumerable<string> texts)
+    {
+        var start = Stopwatch.GetTimestamp();
+        List<int> gothic = [], hangul = [];
+        foreach (var s in texts)
+            for (int i = 0; i < s.Length; i += char.IsSurrogatePair(s, i) ? 2 : 1)
+            {
+                int cp = char.IsSurrogatePair(s, i) ? char.ConvertToUtf32(s, i) : s[i];
+                if (!InUiFont(cp)) (IsHangul(cp) ? hangul : gothic).Add(cp);
+            }
+        if (gothic.Count > 0) Gothic.Add(gothic);
+        if (hangul.Count > 0) Hangul.Add(hangul);
+        if (gothic.Count + hangul.Count > 0)
+            Console.Error.WriteLine($"fallback glyphs: {gothic.Distinct().Count()} + {hangul.Distinct().Count()} in {Stopwatch.GetElapsedTime(start).TotalMilliseconds:0}ms");
+    }
+
     static Font FontFor(int i, Font ui) => i == 0 ? ui : i == 2 && Hangul.Loaded ? Hangul.Font : Gothic.Loaded ? Gothic.Font : ui;
 
     static void Draw(Font f, string s, float x, float y, float size, float spacing, Color c)
