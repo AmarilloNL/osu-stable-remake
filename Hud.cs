@@ -10,7 +10,7 @@ namespace OsuStableRemake;
 sealed partial class Player
 {
     readonly double playStart;
-    double shownScore, shownAcc = 100, hudLast = double.NaN;
+    double shownScore, shownAcc = double.NaN, hudLast = double.NaN;
 
     // Combo counter: the main number lags behind a pop that plays on every increment.
     int shownCombo;
@@ -130,7 +130,10 @@ sealed partial class Player
     void DrawScore(int w, float u, float sd, double frames)
     {
         shownScore = Math.Abs(shownScore - score) < 0.5 ? score : score + (shownScore - score) * Math.Pow(0.75, frames);
-        shownAcc = Math.Abs(shownAcc - Accuracy) < 0.005 ? Accuracy : Accuracy + (shownAcc - Accuracy) * Math.Pow(0.5, frames);
+        // stable: a replay's display starts at 00.00% and only gets the accuracy once something is judged
+        double accTarget = playback != null && n300 + n100 + n50 + nMiss == 0 ? 0 : Accuracy;
+        if (double.IsNaN(shownAcc)) shownAcc = accTarget;
+        shownAcc = Math.Abs(shownAcc - accTarget) < 0.005 ? accTarget : accTarget + (shownAcc - accTarget) * Math.Pow(0.5, frames);
         float scoreScale = 0.96f * sd, accScale = 0.576f * sd, right = w - 6 * u;
         string sc = scoreText.Of((long)Math.Round(shownScore));
         if (hudFade <= 0) return;
@@ -165,7 +168,8 @@ sealed partial class Player
         }
         var centre = new Vector2(right - Math.Max(0, accW) - 24 * u, accY + glyphH * accScale / 2);
         var fill = frac < 0 ? new Color(199, 255, 47, 153) : new Color(255, 255, 255, 153);
-        if (frac != 0) DrawCircleSector(centre, 10 * u, -90, -90 + 360 * (float)Math.Abs(frac), 48, HudA(fill));
+        // stable's pie takes the signed progress: the lead-in countdown (negative) sweeps counter-clockwise from the top
+        if (frac != 0) DrawCircleSector(centre, 10 * u, -90 + 360 * (float)Math.Min(0, frac), -90 + 360 * (float)Math.Max(0, frac), 48, HudA(fill));
         skin.Tex("circularmetre")?.Draw(centre, sd, HudWhite); // osu!gameplay.dll
     }
 
