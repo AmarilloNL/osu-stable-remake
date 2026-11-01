@@ -2429,7 +2429,7 @@ sealed partial class Player : Screen
                 : hpShown < 40 ? skin.Tex("scorebar-kidanger2") ?? skin.Tex("scorebar-ki")
                 : hpShown < 100 ? skin.Tex("scorebar-kidanger") ?? skin.Tex("scorebar-ki")
                 : skin.Tex("scorebar-ki");
-            if (marker is not { } mk) return;
+            if (marker is not { } mk || failed) return; // stable stops drawing the marker once failed
             double now = Game.NowMs;
             float pulse = now - hpPulseAt < 150 ? 1.2f - 0.4f * (float)((now - hpPulseAt) / 150) : 1;
             if (additive) BeginBlendMode(BlendMode.Additive);

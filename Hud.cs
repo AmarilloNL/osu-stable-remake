@@ -317,10 +317,10 @@ sealed partial class Player
         // stable's "Hit <key> to toggle scoreboard!" (the bound key) when the board appears: bold 12 just above it, fading out over 6s.
         hintFrom = double.IsNaN(hintFrom) ? Game.NowMs : hintFrom;
         double hintAge = Game.NowMs - hintFrom;
-        if (hintAge < 6000 && scoreboardOn && !overlayHidden)
-            Game.TextBold($"Hit <{Config.Get("keyToggleScoreboard", "Tab")}> to toggle scoreboard!", 2 * u, 186.3f * u, 12.4f * u, ColorAlpha(Color.White, (float)(1 - hintAge / 6000)));
         // stable: the board fades 0.08 a 60Hz tick, in from 0 at the start, out when hidden, failed or the map is complete.
         boardAlpha = Math.Clamp(boardAlpha + (scoreboardOn && !failed && !Complete ? 0.08f : -0.08f) * GetFrameTime() * 60, 0, 1);
+        if (hintAge < 6000 && scoreboardOn && !overlayHidden) // part of the board in stable: fades with it
+            Game.TextBold($"Hit <{Config.Get("keyToggleScoreboard", "Tab")}> to toggle scoreboard!", 2 * u, 186.3f * u, 12.4f * u, ColorAlpha(Color.White, (float)(1 - hintAge / 6000) * boardAlpha));
         if (boardAlpha <= 0 || overlayHidden) return;
         mapMd5 ??= Replays.Md5Of(map.File);
         var others = back.ScoresFor(mapMd5); // includes the replay being watched, as stable lists it
