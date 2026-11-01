@@ -229,6 +229,21 @@ sealed class SongSelect : Screen
 
     internal bool LibraryLoading => loading != null;
 
+    // test hook (--count-search): the number of difficulties each search finds, like stable's "N matches found"
+    internal IEnumerable<(string Query, int Matches)> CountMatches(IEnumerable<string> queries)
+    {
+        sets = loading!.Result;
+        loading = null;
+        scoresLoading?.Wait();
+        PollScores();
+        foreach (var q in queries)
+        {
+            filter = q;
+            ApplyFilter();
+            yield return (q, matchCount);
+        }
+    }
+
     internal static List<DbBeatmap> ScanFolders()
     {
         var list = new List<DbBeatmap>();
@@ -254,27 +269,123 @@ sealed class SongSelect : Screen
 
     // ---------------------------------------------------------------- filtering
 
-    // stable-style search: plain words must all appear; key<op>value terms filter numbers (stars ar cs od hp bpm length).
-    bool Matches(DbBeatmap b, string[] words, List<(string Key, string Op, double Value)> terms)
+    // ---- stable's search: the text splits on spaces (a value after '=' may be quoted to keep its spaces); every term
+    // must match. key<op>value terms (op < > = == <= >= !=) filter on: ar cs od hp (one decimal), stars/star (floored to
+    // two), bpm (the main one), length (total seconds), drain, speed (mania scroll speed), key/keys (mania keys, converted
+    // for osu! maps), played (days since the last play), unplayed=, mode, status (names by prefix), and text: artist,
+    // creator, title, difficulty (= contains, != doesn't). A whole number also matches beatmap / set IDs; anything else
+    // (unknown keys included) is text found in the artist, title, creator, source, tags or difficulty name.
+    static readonly System.Text.RegularExpressions.Regex TermRx = new(@"^(\w*)([<>=]=?|!=)(.*)$"),
+        NumberRx = new(@"^[+-]?(?:\d+\.?|\.\d)\d*(?:e[+-]?\d+)?$");
+    static readonly (double Value, string Name)[] ModeNames = [(0, "osu!"), (1, "taiko"), (2, "catchthebeat"), (2, "ctb"), (3, "osu!mania"), (3, "osumania"), (3, "mania"), (3, "o!m")];
+    static readonly (double Value, string Name)[] StatusNames = [(0, "unknown"), (1, "notsubmitted"), (2, "pending"), (4, "ranked"), (5, "approved"), (6, "qualified"), (7, "loved")];
+
+    static List<string> SearchTerms(string text)
     {
-        foreach (var w in words)
-            if (!b.SearchMatches(w)) return false;
-        foreach (var (key, op, value) in terms)
+        var list = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        int quotes = text.Count(c => c == '"') & ~1, seen = 0; // an unpaired last quote is plain text
+        bool inQuotes = false;
+        char prev = ' ';
+        foreach (char c in text)
         {
-            double v = key switch
+            if (c != ' ' || inQuotes)
             {
-                "stars" or "star" => b.StarsFor(mods), "ar" => b.AR, "cs" => b.CS, "od" => b.OD, "hp" => b.HP,
-                "bpm" => b.MaxBpm, "length" => b.DrainSeconds, _ => double.NaN,
-            };
-            if (double.IsNaN(v)) continue;
-            bool ok = op switch
+                if (c == '"' && seen < quotes && (inQuotes || prev == '=')) { inQuotes = !inQuotes; seen++; }
+                else sb.Append(c);
+            }
+            else
             {
-                "<" => v < value, ">" => v > value, "<=" => v <= value, ">=" => v >= value,
-                _ => Math.Abs(v - value) < (key is "stars" or "star" ? 0.5 : 0.05),
-            };
-            if (!ok) return false;
+                if (sb.Length > 0) list.Add(sb.ToString());
+                sb.Clear();
+            }
+            prev = c;
         }
-        return true;
+        if (sb.Length > 0) list.Add(sb.ToString());
+        return list;
+    }
+
+    static bool Compare<T>(T a, string op, T b) where T : IComparable<T>
+    {
+        int c = a.CompareTo(b);
+        return op switch { "<" => c < 0, ">" => c > 0, "==" => c == 0, ">=" => c >= 0, "<=" => c <= 0, "!=" => c != 0, _ => false };
+    }
+
+    static double ByPrefix((double Value, string Name)[] names, string value)
+    {
+        if (value.Length == 0) return double.NaN;
+        foreach (var (v, name) in names) if (name.StartsWith(value, StringComparison.Ordinal)) return v;
+        return double.NaN;
+    }
+
+    // stable's mania key count for an osu! map: from the share of sliders and spinners, CS and OD
+    static int ManiaKeys(DbBeatmap b)
+    {
+        float ratio = (float)(b.Sliders + b.Spinners) / Math.Max(1, b.Circles + b.Sliders + b.Spinners);
+        if (ratio < 0.2) return 7;
+        if (ratio < 0.3 || Math.Round(b.CS) >= 5) return Math.Round(b.OD) > 5 ? 7 : 6;
+        if (ratio > 0.6) return Math.Round(b.OD) > 4 ? 5 : 4;
+        return Math.Max(4, Math.Min((int)Math.Round(b.OD) + 1, 7));
+    }
+
+    // when the map was last played: stable's record or this client's latest saved replay, whichever is newer
+    DateTime? LastPlayedUtc(DbBeatmap d)
+    {
+        DateTime? at = d.Unplayed || d.LastPlayed <= 0 ? null : new DateTime(d.LastPlayed, DateTimeKind.Utc);
+        if (scores.TryGetValue(d.Md5, out var local) && local.Count > 0 && local.Max(r => r.Date).ToUniversalTime() is var mine && (at == null || mine > at)) at = mine;
+        return at;
+    }
+
+    Func<DbBeatmap, bool> SearchTerm(string term)
+    {
+        string lower = term.ToLowerInvariant();
+        bool Text(DbBeatmap b) => b.SearchMatches(lower);
+        var m = TermRx.Match(term);
+        if (m.Success)
+        {
+            string key = m.Groups[1].Value.ToLowerInvariant(), op = m.Groups[2].Value == "=" ? "==" : m.Groups[2].Value, value = m.Groups[3].Value.ToLowerInvariant();
+            if (NumberRx.IsMatch(value) && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v))
+            {
+                switch (key)
+                {
+                    case "cs": return b => Compare(Math.Round(b.CS, 1), op, v);
+                    case "hp": return b => Compare(Math.Round(b.HP, 1), op, v);
+                    case "od": return b => Compare(Math.Round(b.OD, 1), op, v);
+                    case "ar": return b => Compare(Math.Round(b.AR, 1), op, v);
+                    case "stars" or "star": return b => Compare(Math.Floor(b.StarsFor(mods) * 100.0) / 100, op, v);
+                    case "bpm": return b => Compare(Math.Round(b.MainBpm), op, v);
+                    case "length": return b => Compare((double)(b.TotalMs / 1000), op, v);
+                    case "drain": return b => Compare((double)b.DrainSeconds, op, v);
+                    case "speed": return b => Compare((double)b.ManiaSpeed, op, v);
+                    case "key" or "keys": return b => Compare((double)ManiaKeys(b), op, v);
+                    case "played":
+                        double maxBack = (DateTime.UtcNow - DateTime.MinValue).TotalDays, maxAhead = (DateTime.MaxValue - DateTime.UtcNow).TotalDays;
+                        var since = v >= maxBack ? DateTime.MinValue : -v >= maxAhead ? DateTime.MaxValue : DateTime.UtcNow.AddDays(-v);
+                        return b => Compare(since, op, LastPlayedUtc(b) ?? DateTime.MinValue);
+                }
+            }
+            bool contains = op == "==";
+            switch (key)
+            {
+                case "unplayed" when value.Length == 0: return b => LastPlayedUtc(b) == null && BestGrade(b) == null;
+                case "mode": { double mode = ByPrefix(ModeNames, value); return b => Compare((double)b.Mode, op, mode); }
+                case "status":
+                    double status = ByPrefix(StatusNames, value);
+                    if (status == 4) // ranked takes approved along
+                    {
+                        if (op is ">" or "<=") status = 5;
+                        else if (op == "==") return b => b.Status is 4 or 5;
+                        else if (op == "!=") return b => b.Status is not (4 or 5);
+                    }
+                    return b => Compare((double)b.Status, op, status);
+                case "creator": return b => b.Creator.Contains(value, StringComparison.OrdinalIgnoreCase) == contains;
+                case "artist": return b => (b.Artist.Contains(value, StringComparison.OrdinalIgnoreCase) || b.ArtistUnicode.Contains(value, StringComparison.OrdinalIgnoreCase)) == contains;
+                case "title": return b => b.Title.Contains(value, StringComparison.OrdinalIgnoreCase) == contains;
+                case "difficulty": return b => b.Version.Contains(value, StringComparison.OrdinalIgnoreCase) == contains;
+            }
+        }
+        if (int.TryParse(term, out int id)) return b => b.BeatmapId == id || b.SetId == id || Text(b);
+        return Text;
     }
 
     // this difficulty's osu!.db entry (null before osu!.db has loaded)
@@ -317,23 +428,14 @@ sealed class SongSelect : Screen
         var keep = select != null ? sets.FirstOrDefault(s => s.Diffs.Contains(select)) : view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
         var keepDiff = select ?? Selected;
         var all = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
-        var words = new List<string>();
-        var terms = new List<(string, string, double)>();
-        foreach (var token in filter.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var m = System.Text.RegularExpressions.Regex.Match(token, @"^([a-z]+)(<=|>=|<|>|=)([\d.]+)$");
-            if (m.Success && double.TryParse(m.Groups[3].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
-                terms.Add((m.Groups[1].Value, m.Groups[2].Value, v));
-            else words.Add(token);
-        }
-        var wordArr = words.ToArray();
+        var terms = SearchTerms(filter).Select(SearchTerm).ToArray();
         // the options' "Display beatmaps from .. up to .. stars" (10 = no upper limit)
         double lo = Config.GetDouble("DisplayStarsMinimum", 0), hi = Config.GetDouble("DisplayStarsMaximum", 10);
         bool starRange = lo > 0 || hi < 10;
         bool InRange(DbBeatmap b) => !starRange || b.StarsFor(mods) is var st && st >= lo && (hi >= 10 || st <= hi);
         foreach (var set in sets)
         {
-            var diffs = filter.Length == 0 && !starRange ? set.Diffs : set.Diffs.Where(b => InRange(b) && Matches(b, wordArr, terms)).ToList();
+            var diffs = filter.Length == 0 && !starRange ? set.Diffs : set.Diffs.Where(b => InRange(b) && terms.All(t => t(b))).ToList();
             if (diffs.Count > 0) all.Add((set, diffs));
         }
         BuildGroups(all);
@@ -1175,13 +1277,7 @@ sealed class SongSelect : Screen
                 });
                 break;
             case "Recent":
-                ByDiff(d =>
-                {
-                    // Played: stable's last play (osu!.db) or this client's latest saved replay, whichever is newer.
-                    DateTime? at = d.Unplayed || d.LastPlayed <= 0 ? null : new DateTime(d.LastPlayed, DateTimeKind.Utc);
-                    if (scores.TryGetValue(d.Md5, out var local) && local.Count > 0 && local.Max(r => r.Date).ToUniversalTime() is var mine && (at == null || mine > at)) at = mine;
-                    return Ago(at);
-                });
+                ByDiff(d => Ago(LastPlayedUtc(d)));
                 break;
             case "Collections":
                 collections ??= OsuDb.LoadCollections(Path.Combine(Config.OsuDir, "collection.db"));

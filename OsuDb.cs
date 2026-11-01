@@ -41,6 +41,7 @@ sealed class DbBeatmap
     public float AR, CS, HP, OD;
     public long LastModified, LastPlayed;
     public bool Unplayed;
+    public byte ManiaSpeed;
     public double MinBpm, MaxBpm, MainBpm; // MainBpm: the one held longest (stable's "(147)")
     public byte Mode, Status;
     // stable stores star ratings per difficulty-changing mod combination (EZ/HR/DT/HT: 16 slots, NaN = none).
@@ -201,7 +202,7 @@ static class OsuDb
         b.DisableStoryboard = r.ReadBoolean(); b.DisableVideo = r.ReadBoolean(); r.ReadBoolean(); // visual override
         if (version < 20140609) r.ReadInt16();
         r.ReadInt32();                    // last modification
-        r.ReadByte();                     // mania scroll speed
+        b.ManiaSpeed = r.ReadByte();      // mania scroll speed (the search's speed= keyword)
         return b;
     }
 

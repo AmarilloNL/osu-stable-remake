@@ -282,6 +282,17 @@ static class Game
             Console.WriteLine($"{same} same, {diff} different");
             return;
         }
+        if (args.SkipWhile(a => a != "--count-search").Skip(1).FirstOrDefault() is { } searches) // test hook: match counts for '|'-separated searches
+        {
+            Config.Load();
+            Config.SetTemp("RemakeGroupMode", "None");
+            SetTraceLogLevel(TraceLogLevel.None);
+            SetConfigFlags(ConfigFlags.HiddenWindow);
+            InitWindow(640, 480, "count-search");
+            foreach (var (q, n) in new SongSelect().CountMatches(searches.Split('|'))) Console.WriteLine($"{n,4}  {q}");
+            CloseWindow();
+            return;
+        }
         if (args.Contains("--check-ui"))
         {
             Config.Load();
