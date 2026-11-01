@@ -286,9 +286,11 @@ static class Game
 
     // The Sensitivity option (MouseSpeed), the way stable applies it without raw input: each frame the system cursor's
     // movement since the last frame is scaled and the cursor put where that lands. Outside the window it's left alone,
-    // and the first frame back in starts from where it is. (With raw input on, stable scales the device's own,
-    // unaccelerated counts instead; here it's the same as off.) Like stable it reads where the cursor is now: the
-    // window messages raylib goes by would lose a movement made just before the cursor is put back.
+    // and the first frame back in starts from where it is. Like stable it reads where the cursor is now: the window
+    // messages raylib goes by would lose a movement made just before the cursor is put back.
+    // With Raw input on, stable scales the device's own (unaccelerated) counts instead. Here that's GLFW's raw motion,
+    // which needs the cursor captured, so it's used while the cursor is confined; the game's cursor is kept here then.
+    internal static Vector2? RawCursor;
     [DllImport("user32.dll")] static extern bool GetCursorPos(out CursorPoint p);
     struct CursorPoint { public int X, Y; }
     static Vector2 sensAt;
@@ -296,6 +298,18 @@ static class Game
     static void ApplySensitivity()
     {
         float s = (float)Config.GetDouble("MouseSpeed", 1);
+        string confine = Config.Get("ConfineMouse", "Fullscreen"); // (not focus: GLFW frees and recaptures the cursor itself)
+        bool raw = Config.GetBool("RawInput", false) && (confine == "Always" || confine == "Fullscreen" && DisplayMode() != "Windowed");
+        if (raw != RawCursor.HasValue)
+        {
+            if (raw) { GetCursorPos(out var c0); RawCursor = new Vector2(c0.X, c0.Y) - GetWindowPosition(); DisableCursor(); }
+            else { EnableCursor(); HideCursor(); SetMousePosition((int)RawCursor!.Value.X, (int)RawCursor.Value.Y); RawCursor = null; }
+        }
+        if (RawCursor is { } at)
+        {
+            RawCursor = Vector2.Clamp(at + GetMouseDelta() * s, Vector2.Zero, new Vector2(GetScreenWidth() - 1, GetScreenHeight() - 1));
+            return;
+        }
         if (s == 1) { sensInside = false; return; }
         GetCursorPos(out var c);
         var p = new Vector2(c.X, c.Y) - GetWindowPosition();
