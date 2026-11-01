@@ -713,6 +713,7 @@ sealed class SongSelect : Screen
             else CycleSort(-1);
             return;
         }
+        if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, RankBox)) { openDrop = 3; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); return; }
         if (Input.IsMouseButtonPressed(MouseButton.Left) && ClickBottomBar(mouse)) return;
         if (Input.IsMouseButtonPressed(MouseButton.Left) && mouse.Y > TopH && mouse.Y < GetScreenHeight() - BottomH)
         {
@@ -895,10 +896,14 @@ sealed class SongSelect : Screen
     // ---- stable's Group / Sort dropdowns: the box fills with its label colour; the options list under it on black at
     // 94%, 16.44 units a row, the current one bold, the hovered one in the label colour with a chevron. A click picks
     // (or closes), Esc closes.
-    int openDrop; // 0 none, 1 group, 2 sort
-    const float DropRowH = 16.44f, DropTop = 34.2f;
-    (string Key, string Label)[] DropItems => openDrop == 1 ? GroupList : SortModes;
-    Rectangle DropRow(int i) { float u = U; var box = openDrop == 1 ? GroupBox(GetScreenWidth()) : SortBox(GetScreenWidth()); return new Rectangle(box.X - 1.6f * u, (DropTop + i * DropRowH) * u, box.Width + 1.6f * u, DropRowH * u); }
+    int openDrop; // 0 none, 1 group, 2 sort, 3 the leaderboard type
+    const float DropRowH = 16.44f;
+    // stable's leaderboard types; offline only Local Ranking works
+    static readonly (string Key, string Label)[] RankTypes = [("Local", "Local Ranking"), ("Country", "Country Ranking"), ("Top", "Global Ranking"), ("SelectedMod", "Global Ranking (Selected Mods)"), ("Friends", "Friend Ranking")];
+    static Rectangle RankBox => new(5 * U, 73 * U, 191 * U, 15 * U);
+    (string Key, string Label)[] DropItems => openDrop switch { 1 => GroupList, 2 => SortModes, _ => RankTypes };
+    Rectangle DropBox => openDrop switch { 1 => GroupBox(GetScreenWidth()), 2 => SortBox(GetScreenWidth()), _ => RankBox };
+    Rectangle DropRow(int i) { float u = U; var box = DropBox; float left = openDrop == 3 ? 0 : 1.6f * u; return new Rectangle(box.X - left, box.Y + box.Height + 2 * u + i * DropRowH * u, box.Width + left, DropRowH * u); }
     int DropHover() { var m = Input.GetMousePosition(); for (int i = 0; i < DropItems.Length; i++) if (CheckCollisionPointRec(m, DropRow(i))) return i; return -1; }
 
     void UpdateDropdown()
@@ -906,11 +911,11 @@ sealed class SongSelect : Screen
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { openDrop = 0; return; }
         if (!Input.IsMouseButtonPressed(MouseButton.Left) && !Input.IsMouseButtonPressed(MouseButton.Right)) return;
         int i = DropHover(), which = openDrop;
-        var box = which == 1 ? GroupBox(GetScreenWidth()) : SortBox(GetScreenWidth());
-        if (CheckCollisionPointRec(Input.GetMousePosition(), box)) { openDrop = 0; return; }
+        if (CheckCollisionPointRec(Input.GetMousePosition(), DropBox)) { openDrop = 0; return; }
         openDrop = 0;
         if (i < 0) return;
-        if (which == 1) SetGroupMode(GroupList[i].Key);
+        if (which == 3) { if (i > 0) Notification.Show("You need to be logged in to access online rankings!", 1500); }
+        else if (which == 1) SetGroupMode(GroupList[i].Key);
         else if (!SortModes[i].Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase)) { Config.SetOwn("TreeSortMode2", SortModes[i].Key); sets = Sorted(sets, SortMode); ApplyFilter(); Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
     }
 
@@ -919,8 +924,8 @@ sealed class SongSelect : Screen
         if (openDrop == 0) return;
         float u = U;
         var items = DropItems;
-        string current = openDrop == 1 ? GroupMode : SortMode;
-        var lit = openDrop == 1 ? new Color(146, 195, 230, 255) : new Color(174, 210, 139, 255);
+        string current = openDrop switch { 1 => GroupMode, 2 => SortMode, _ => "Local" };
+        var lit = openDrop switch { 1 => new Color(146, 195, 230, 255), 2 => new Color(174, 210, 139, 255), _ => new Color(22, 130, 179, 255) };
         var first = DropRow(0);
         DrawRectangleRec(new Rectangle(first.X, first.Y, first.Width, items.Length * DropRowH * u), new Color(0, 0, 0, 240));
         int hover = DropHover();
