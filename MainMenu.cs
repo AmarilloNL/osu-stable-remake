@@ -49,7 +49,44 @@ sealed class MainMenu : Screen
         SetOpen(open || play);
         playTier = play;
         LoadBackground();
-        if (Config.GetBool("MenuVoice", true)) skin.Sound("welcome")?.Play(BeatmapSamples.EffectVolume);
+        intro = !open && !play && !introShown;
+        introShown = true;
+        if (!intro) PlayWelcome();
+    }
+
+    // ---- stable's startup intro (first menu only): black with the visualizer ring (FFT x2, 10%, 8 units out), the
+    // ppy logo and osu!ui's welcome_text (opening vertically 200-600ms, fading in over 1.8s; measured size); the welcome voice
+    // (osu!ui's: the skin's is supporter-only) after 100ms. 120ms before 2558ms the text fades out (120ms) and the black
+    // (240ms), and the menu's bars fade in over 500ms. Input waits for it.
+    const double IntroMs = 2558, IntroOut = IntroMs - 120;
+    static bool introShown;
+    readonly bool intro;
+    double introAt = double.NaN;
+    bool welcomed;
+    double IntroT => double.IsNaN(introAt) ? 0 : Game.NowMs - introAt;
+    bool InIntro => intro && IntroT < IntroOut;
+
+    void PlayWelcome()
+    {
+        if (Config.GetBool("MenuVoice", true)) skin.DefaultSound("welcome")?.Play(BeatmapSamples.EffectVolume);
+    }
+
+    void DrawIntro(float fade)
+    {
+        double t = IntroT;
+        float textAlpha = (float)Math.Min(1, t / 1800) * (t < IntroOut ? 1 : 1 - (float)Math.Clamp((t - IntroOut) / 120, 0, 1));
+        if (fade > 0) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, fade));
+        if (t < IntroOut) DrawVisuals(Game.NowMs, ringOnly: true);
+        if (textAlpha > 0 && skin.DefaultTex("welcome_text") is { } text)
+        {
+            float open = (float)Easing.Apply(1, (t - 200) / 400);
+            if (open > 0)
+                DrawTexturePro(text.Tex, new Rectangle(0, 0, text.Tex.Width, text.Tex.Height),
+                    new Rectangle(w / 2f, h / 2f, text.Width * sd, text.Height * sd * open),
+                    new Vector2(text.Width * sd / 2, text.Height * sd * open / 2), 0, ColorAlpha(Color.White, textAlpha));
+        }
+        if (t < IntroOut && skin.Tex("menu-copyright") is { } copyright)
+            copyright.Draw(new Vector2(2 * u + copyright.Width * sd / 2, h - 2 * u - copyright.Height * sd / 2), sd, Color.White);
     }
 
     public override void Entered()
@@ -318,7 +355,10 @@ sealed class MainMenu : Screen
         u = h / 480f; sd = h / 768f;
         songs.Ambient(menu: true);
         coverAlpha = Math.Min(1, coverAlpha + (float)(dtMs / 200));
+        if (intro && double.IsNaN(introAt)) introAt = Game.NowMs;
+        if (intro && !welcomed && IntroT >= 100) { welcomed = true; PlayWelcome(); }
         UpdateVisuals(dtMs);
+        if (InIntro) return;
         if (!double.IsNaN(quitAt))
         {
             if (Game.NowMs >= quitAt) Game.Quit = true;
@@ -499,7 +539,7 @@ sealed class MainMenu : Screen
             for (int n = 1023; n >= 0; n--)
             {
                 ref float bar = ref bars[1023 - n];
-                bar = (float)(Math.Max(bar, fft[(n + visOffset) % 1024] * 1.6f * 3) * decay); // stable amplifies the menu's FFT 1.6x
+                bar = (float)(Math.Max(bar, fft[(n + visOffset) % 1024] * (InIntro ? 2 : 1.6f) * 3) * decay); // stable amplifies the menu's FFT 1.6x (2x in the intro)
                 if (bar < 0.01f) bar = 0;
             }
             if (over == 0) break;
@@ -535,10 +575,10 @@ sealed class MainMenu : Screen
     // stable tints the bars with the skin's MenuGlow only for supporters; everyone else (and offline) gets this
     static readonly Color VisColour = new(128, 128, 160, 255);
 
-    void DrawVisuals(double now)
+    void DrawVisuals(double now, bool ringOnly = false)
     {
         BeginBlendMode(BlendMode.Additive);
-        if (skin.Tex("menu-flash") is { } fl)
+        if (!ringOnly && skin.Tex("menu-flash") is { } fl)
         {
             float fw = fl.Width * sd, fh = h; // stretched to full height like stable's 4x
             var src = new Rectangle(0, 0, fl.Tex.Width, fl.Tex.Height);
@@ -551,9 +591,9 @@ sealed class MainMenu : Screen
         if (skin.Tex("menu-vis") is { } vis)
         {
             var centre = CookiePos;
-            float radius = VisRadius * u, bw = vis.Width * sd, bh = vis.Height * sd * 0.5f;
-            // stable: the ring dims as the cookie slides left (to 30% when open) and to 70% outside kiai
-            float ringAlpha = (1 - cookieX / -120f * 0.7f) * (songs.Beat() is { Kiai: true } ? 1 : 0.7f);
+            float radius = (VisRadius + (InIntro ? 8 : 0)) * u, bw = vis.Width * sd, bh = vis.Height * sd * 0.5f;
+            // stable: the ring dims as the cookie slides left (to 30% when open) and to 70% outside kiai; 10% in the intro
+            float ringAlpha = InIntro ? 0.1f : (1 - cookieX / -120f * 0.7f) * (songs.Beat() is { Kiai: true } ? 1 : 0.7f);
             var src = new Rectangle(0, 0, vis.Tex.Width, vis.Tex.Height);
             for (int i = 0; i < bars.Length; i++)
             {
@@ -571,7 +611,7 @@ sealed class MainMenu : Screen
         int kept = 0; // RemoveAll without a per-frame closure
         for (int i = 0; i < shockwaves.Count; i++) if (now - shockwaves[i].At < 1000) shockwaves[kept++] = shockwaves[i];
         shockwaves.RemoveRange(kept, shockwaves.Count - kept);
-        if (skin.Tex("menu-osu-shockwave") is { } sw)
+        if (!ringOnly && skin.Tex("menu-osu-shockwave") is { } sw)
             foreach (var (at, s0) in shockwaves)
             {
                 float t = (float)((now - at) / 1000);
@@ -613,8 +653,9 @@ sealed class MainMenu : Screen
         else songs.DrawBackground(w, h);
 
         // stable's black bars top and bottom (54 units, 40%), in the layer that fades when idle.
-        DrawRectangle(0, 0, w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * layer)));
-        DrawRectangle(0, h - (int)(54 * u), w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * layer)));
+        float bars = intro ? (float)Math.Clamp((IntroT - IntroOut) / 500, 0, 1) : 1; // hidden through the intro
+        DrawRectangle(0, 0, w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * layer * bars)));
+        DrawRectangle(0, h - (int)(54 * u), w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * layer * bars)));
         // stable's info lines, top left of the bar (size 14 at x 210).
         double up = Game.NowMs / 1000;
         var clock = DateTime.Now;
@@ -706,7 +747,8 @@ sealed class MainMenu : Screen
             DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((quitAt - now) / 1500, 0, 1)));
         Snow.Update(songs);
         Snow.Draw();
-        SongSelect.DrawCursor();
+        if (intro && IntroT < IntroOut + 240) DrawIntro(IntroT < IntroOut ? 1 : 1 - (float)Math.Clamp((IntroT - IntroOut) / 240, 0, 1));
+        if (!InIntro) SongSelect.DrawCursor();
     }
 
     // Esc on the closed menu: stable's "Are you sure you want to exit osu!?" dialog. 1 / Enter quits, 2 / Esc cancels.
