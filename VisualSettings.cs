@@ -137,6 +137,8 @@ sealed partial class Player
         DrawRectangleRec(new Rectangle(x0, cy - 0.45f * u, Math.Max(0, knob.X - 4.7f * u - x0), 0.9f * u), pink);
         DrawRectangleRec(new Rectangle(knob.X + 4.7f * u, cy - 0.45f * u, Math.Max(0, x1 + 2 * u - knob.X - 4.7f * u), 0.9f * u), ColorAlpha(pink, 0.5f));
         DrawRing(knob, 4.0f * u, 4.7f * u, 0, 360, 32, pink);
+        var mouseAt = Input.GetMousePosition();
+        bool overDim = visualDragging >= 0 || CheckCollisionPointRec(mouseAt, new Rectangle(x0 - 5 * u, top + 63 * u, x1 - x0 + 10 * u, 10 * u));
 
         var t = Toggles;
         (string Label, bool Ticked)[] rows = [("Disable storyboard", !t.Storyboard), ("Disable video", !t.Video), ("Ignore beatmap skin", !t.Skin), ("Ignore beatmap hitsounds", !t.Hitsounds)];
@@ -151,5 +153,6 @@ sealed partial class Player
             else DrawRing(c, 2.9f * u, 3.6f * u, 0, 360, 24, col);
             Game.Text(rows[i].Label, r.X + 17.4f * u, c.Y - 6.8f * u, 12.45f * u, enabled ? Color.White : Xna.Gray);
         }
+        if (overDim) Options.DrawTooltip($"{dim}% dimmed", mouseAt); // stable's slider tooltip
     }
 }
