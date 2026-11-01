@@ -637,7 +637,7 @@ sealed class MainMenu : Screen
             // song change; unless PermanentSongInfo is set they leave the same way 6-8s later.
             if (npFor != b) { npFor = b; npText = b.BothUnicode ? $"{b.ArtistUnicode} - {b.TitleUnicode}" : $"{b.Artist} - {b.Title}"; }
             string np = npText;
-            float npSize = 14 * u, npW = Game.LightWidth(np, npSize);
+            float npSize = 14.45f * u, npW = Game.RegularWidth(np, npSize); // stable: 14, regular (measured at 1080p)
             double t = now - songChangedAt;
             float into = (float)Easing.Apply(1, t / 1000), outOf = PermanentInfo ? 0 : (float)Easing.Apply(1, (t - 6000) / 2000);
             float slide = (1 - into + outOf) * 90 * u, alpha = Math.Clamp(into - outOf, 0, 1) * layer;
@@ -646,7 +646,7 @@ sealed class MainMenu : Screen
             {
                 if (skin.Tex("menu-np") is { } npSprite)
                     npSprite.Draw(new Vector2(npX - 100 * sd + npSprite.Width * sd / 2, npSprite.Height * sd / 2), sd, ColorAlpha(Color.White, alpha));
-                Game.TextLight(np, npX, 2 * u, npSize, ColorAlpha(Color.White, alpha));
+                Game.TextRegular(np, npX, 1.3f * u, npSize, ColorAlpha(Color.White, alpha));
             }
         }
         if (skin.Tex("menu-copyright") is { } copyright) // ppy logo, bottom left
