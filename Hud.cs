@@ -397,7 +397,11 @@ sealed partial class Player
         if (Input.IsKeyPressed(Config.Key("keyToggleScoreboard", KeyboardKey.Tab)))
         {
             if (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) ToggleInterface();
-            else scoreboardOn = !scoreboardOn;
+            else
+            {
+                scoreboardOn = !scoreboardOn;
+                if (playback == null && !auto) Config.SetOwn("ScoreboardVisible", scoreboardOn ? "1" : "0"); // stable keeps a live play's choice
+            }
         }
         // stable's "Hit <key> to toggle scoreboard!" (the bound key) when the board appears: bold 12 just above it, fading out over 6s.
         hintFrom = double.IsNaN(hintFrom) ? Game.NowMs : hintFrom;
