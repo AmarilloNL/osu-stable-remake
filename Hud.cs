@@ -405,6 +405,7 @@ sealed partial class Player
 
     void DrawScoreboard(float u)
     {
+        if (fadeOut != null) return; // stable: the board (and its hint) come in when the clock starts
         if (Input.IsKeyPressed(Config.Key("keyToggleScoreboard", KeyboardKey.Tab)))
         {
             if (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) ToggleInterface();
