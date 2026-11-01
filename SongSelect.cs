@@ -143,15 +143,15 @@ sealed class SongSelect : Screen
     static List<BeatmapSet> Sorted(IEnumerable<BeatmapSet> sets, string mode)
     {
         var cmp = StringComparer.OrdinalIgnoreCase;
-        return (mode switch
+        return (mode.ToLowerInvariant() switch // stable writes BPM, ours Bpm
         {
-            "Title" => sets.OrderBy(s => s.First.Title, cmp),
-            "Creator" => sets.OrderBy(s => s.First.Creator, cmp),
-            "Bpm" => sets.OrderBy(s => s.First.MainBpm),
-            "Length" => sets.OrderBy(s => s.Diffs.Max(d => d.TotalMs)),
-            "Rank" => sets.OrderBy(s => GradeOrder(s)), // best local grade first, unplayed last
-            "Difficulty" => sets.OrderBy(s => s.First.StarsFor(Mods.None)),
-            "Date" => sets.OrderBy(s => s.Diffs.Max(d => d.LastModified)),
+            "title" => sets.OrderBy(s => s.First.Title, cmp),
+            "creator" => sets.OrderBy(s => s.First.Creator, cmp),
+            "bpm" => sets.OrderBy(s => s.First.MainBpm),
+            "length" => sets.OrderBy(s => s.Diffs.Max(d => d.TotalMs)),
+            "rank" => sets.OrderBy(s => GradeOrder(s)), // best local grade first, unplayed last
+            "difficulty" => sets.OrderBy(s => s.First.StarsFor(Mods.None)),
+            "date" => sets.OrderBy(s => s.Diffs.Max(d => d.LastModified)),
             _ => sets.OrderBy(s => s.First.Artist, cmp),
         }).ThenBy(s => s.First.Artist, cmp).ThenBy(s => s.First.Title, cmp).ToList();
     }
@@ -1117,7 +1117,7 @@ sealed class SongSelect : Screen
         for (int i = 0; i < groups.Count; i++)
         {
             var flat = groups[i].Entries.SelectMany(e => e.Diffs.Select(d => (e.Set, new List<DbBeatmap> { d })));
-            if (SortMode == "Difficulty") flat = flat.OrderBy(e => e.Item2[0].StarsFor(Mods.None));
+            if (SortMode.Equals("Difficulty", StringComparison.OrdinalIgnoreCase)) flat = flat.OrderBy(e => e.Item2[0].StarsFor(Mods.None));
             groups[i] = (groups[i].Name, flat.ToList());
         }
     }
