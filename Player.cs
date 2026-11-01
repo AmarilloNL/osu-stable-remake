@@ -1571,7 +1571,7 @@ sealed partial class Player : Screen
         if (failed) DrawPauseMenu(fail: true);
         if (LiveFail) // stable: bold 16 with a shadow at (10, 10), fading in with the menu
         {
-            float u = h / 480f, a = (float)Math.Clamp((Game.NowMs - menuShownAt) / 300, 0, 1);
+            float u = h / 480f, a = (float)Math.Clamp((Game.NowMs - menuShownAt) / 300, 0, 1) * MenuAlpha;
             string[] hint = ["Press F1 to view replay", "Press F2 to save replay"];
             for (int i = 0; i < hint.Length; i++)
             {
@@ -2703,7 +2703,8 @@ sealed partial class Player : Screen
     {
         int w = GetScreenWidth(), h = GetScreenHeight();
         float s = h / 768f;
-        float fade = (float)Math.Clamp((Game.NowMs - menuShownAt) / 300, 0, 1);
+        // the Visual Settings panel fades the whole menu (darkening included) out as it opens
+        float fade = (float)Math.Clamp((Game.NowMs - menuShownAt) / 300, 0, 1) * MenuAlpha;
         DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (skin.Version > 1 ? 0.8f : 0.95f) * fade));
         var centre = new Vector2(w / 2f, h / 2f);
         if (skin.Tex(fail ? "fail-background" : "pause-overlay") is { } bg)

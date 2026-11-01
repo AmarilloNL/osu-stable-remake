@@ -12,7 +12,7 @@ sealed partial class Player
 {
     static readonly Dictionary<string, (bool Storyboard, bool Video, bool Skin, bool Hitsounds)> mapToggles = [];
     float visualHeight; // units currently shown: 0 hidden, 45 collapsed, ExpandedHeight open
-    const float ExpandedHeight = 140;
+    const float ExpandedHeight = 150;
     int visualDragging = -1;
 
     // Per map like stable: changes are kept in remake.cfg (Visual_<md5> = storyboard,video,skin,hitsounds as 0/1);
@@ -67,16 +67,25 @@ sealed partial class Player
         if (!VisualActive || visualHeight < ExpandedHeight - 2) { visualDragging = -1; return false; }
 
         float top = GetScreenHeight() - visualHeight * u;
-        var slider = new Rectangle(24 * u, top + 63 * u, 200 * u, 10 * u);
+        var slider = new Rectangle(20 * u, top + 63 * u, 200 * u, 10 * u);
         if (!Input.IsMouseButtonDown(MouseButton.Left)) visualDragging = -1;
         if (Input.IsMouseButtonPressed(MouseButton.Left))
         {
             if (CheckCollisionPointRec(mouse, new Rectangle(slider.X - 5 * u, slider.Y, slider.Width + 10 * u, slider.Height))) visualDragging = 0; // + the knob at either end
             var t = Toggles;
-            if (CheckCollisionPointRec(mouse, ToggleRect(top, 0, u))) Toggles = t with { Storyboard = !t.Storyboard };
-            else if (CheckCollisionPointRec(mouse, ToggleRect(top, 1, u)) && map.VideoFile.Length > 0) Toggles = t with { Video = !t.Video };
-            else if (CheckCollisionPointRec(mouse, ToggleRect(top, 2, u))) Toggles = t with { Skin = !t.Skin };
-            else if (CheckCollisionPointRec(mouse, ToggleRect(top, 3, u))) Toggles = t with { Hitsounds = !t.Hitsounds };
+            int hit = -1;
+            for (int i = 0; i < 4 && hit < 0; i++) if (ToggleEnabled(i) && CheckCollisionPointRec(mouse, ToggleRect(top, i, u))) hit = i;
+            if (hit >= 0)
+            {
+                Toggles = hit switch
+                {
+                    0 => t with { Storyboard = !t.Storyboard }, 1 => t with { Video = !t.Video },
+                    2 => t with { Skin = !t.Skin }, _ => t with { Hitsounds = !t.Hitsounds },
+                };
+                // the boxes say "Disable ..." / "Ignore ...": ticked when the thing is off
+                bool ticked = hit switch { 0 => !Toggles.Storyboard, 1 => !Toggles.Video, 2 => !Toggles.Skin, _ => !Toggles.Hitsounds };
+                skin.Sound(ticked ? "check-on" : "check-off")?.Play(BeatmapSamples.EffectVolume);
+            }
             else if (visualDragging < 0) return mouse.Y > top;
         }
         if (visualDragging >= 0)
@@ -88,12 +97,24 @@ sealed partial class Player
         return false;
     }
 
-    // Toggle rows: storyboard (x 260, row 0), video (x 520, row 0, unavailable), skin (row 1), hitsounds (row 2).
+    // stable's checkboxes (top-left of a 16-unit box at): storyboard (260, 68), video (520, 68), skin (260, 88),
+    // hitsounds (260, 108); circle-empty/-full at 0.8 centred 8 units in, the 12-unit label 16 units right of the box.
     static Rectangle ToggleRect(float top, int which, float u) => which switch
     {
-        1 => new Rectangle(520 * u, top + 63 * u, 120 * u, 18 * u),
-        _ => new Rectangle(260 * u, top + (63 + 20 * Math.Max(0, which - 1)) * u, 160 * u, 18 * u),
+        1 => new Rectangle(520 * u, top + 68 * u, 110 * u, 16 * u),
+        _ => new Rectangle(260 * u, top + (68 + 20 * Math.Max(0, which - 1)) * u, 160 * u, 16 * u),
     };
+
+    // stable: storyboard only for a map with one (or already ticked), video only with a video (and the option on)
+    bool ToggleEnabled(int which) => which switch
+    {
+        0 => storyboard != null || !Toggles.Storyboard,
+        1 => Config.GetBool("Video", true) && (map.VideoFile.Length > 0 || !Toggles.Video),
+        _ => true,
+    };
+
+    // stable fades the pause / fail menu out as the panel opens past 75 units
+    float MenuAlpha => 1 - Math.Clamp((visualHeight - 75) / (ExpandedHeight - 75), 0, 1);
 
     void DrawVisualSettings(int w, int h)
     {
@@ -105,27 +126,30 @@ sealed partial class Player
         Game.TextBold("Settings", 53 * u, top + 18 * u, 22.7f * u, Color.White);
         if (visualHeight < 60) return;
 
-        Game.TextBold("Background dim", 24 * u, top + 48 * u, 10 * u, Color.White);
-        Game.TextBold("Toggles", 264 * u, top + 48 * u, 10 * u, Color.White);
+        // measured against stable at 1080p: labels 10 units at (20, 48) and (260, 48); the dim slider 200 units from
+        // (20, 68), full pink to the knob ring and half after it.
+        Game.TextBold("Background dim:", 21.3f * u, top + 47.6f * u, 10.4f * u, Color.White);
+        Game.TextBold("Toggles", 261.4f * u, top + 47.6f * u, 10.4f * u, Color.White);
         int dim = Config.GetInt("DimLevel", 80);
-        float x0 = 24 * u, x1 = 224 * u, cy = top + 68 * u;
-        DrawRectangleRec(new Rectangle(x0, cy - 0.5f * u, x1 - x0, u), new Color(232, 104, 161, 255));
-        var knob = new Vector2(x0 + (x1 - x0) * dim / 100f, cy);
-        DrawCircleV(knob, 4.3f * u, new Color(30, 20, 26, 255));
-        DrawRing(knob, 3.4f * u, 4.3f * u, 0, 360, 24, new Color(232, 104, 161, 255));
-        Game.Text($"{dim}%", x1 + 6 * u, cy - 5 * u, 10 * u, Color.White);
+        float x0 = 20 * u, x1 = 220 * u, cy = top + 68.6f * u;
+        var pink = new Color(236, 117, 140, 255);
+        var knob = new Vector2(x0 + (x1 - x0) * dim / 100f, cy - 0.6f * u);
+        DrawRectangleRec(new Rectangle(x0, cy - 0.45f * u, Math.Max(0, knob.X - 4.7f * u - x0), 0.9f * u), pink);
+        DrawRectangleRec(new Rectangle(knob.X + 4.7f * u, cy - 0.45f * u, Math.Max(0, x1 + 2 * u - knob.X - 4.7f * u), 0.9f * u), ColorAlpha(pink, 0.5f));
+        DrawRing(knob, 4.0f * u, 4.7f * u, 0, 360, 32, pink);
 
         var t = Toggles;
-        (string Label, bool On, bool Enabled)[] rows = [("Storyboard", t.Storyboard, true), ("Video", t.Video && map.VideoFile.Length > 0, map.VideoFile.Length > 0), ("Skin", t.Skin, true), ("Hitsounds", t.Hitsounds, true)];
-        var pink = new Color(235, 117, 140, 255);
+        (string Label, bool Ticked)[] rows = [("Disable storyboard", !t.Storyboard), ("Disable video", !t.Video), ("Ignore beatmap skin", !t.Skin), ("Ignore beatmap hitsounds", !t.Hitsounds)];
         for (int i = 0; i < rows.Length; i++)
         {
             var r = ToggleRect(top, i, u);
-            var c = new Vector2(r.X + 4 * u, r.Y + 5 * u);
-            var col = rows[i].Enabled ? pink : Xna.DarkGray;
-            if (rows[i].On) DrawCircleV(c, 3.8f * u, col);
-            else DrawRing(c, 3.0f * u, 3.8f * u, 0, 360, 24, col);
-            Game.Text(rows[i].Label, r.X + 12 * u, r.Y, 11 * u, rows[i].Enabled ? Color.White : Xna.DarkGray);
+            bool enabled = ToggleEnabled(i);
+            var c = new Vector2(r.X + 8 * u, r.Y + 8 * u);
+            var col = enabled ? pink : Xna.Gray;
+            if (Game.Skin.DefaultTex(rows[i].Ticked ? "circle-full" : "circle-empty") is { } sp) sp.Draw(c, 0.8f * GetScreenHeight() / 768f, col);
+            else if (rows[i].Ticked) DrawCircleV(c, 3.6f * u, col);
+            else DrawRing(c, 2.9f * u, 3.6f * u, 0, 360, 24, col);
+            Game.Text(rows[i].Label, r.X + 17.4f * u, c.Y - 6.8f * u, 12.45f * u, enabled ? Color.White : Xna.Gray);
         }
     }
 }
