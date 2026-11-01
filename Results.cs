@@ -80,7 +80,6 @@ sealed partial class Player
                 bg = LoadTexture(bgPath); ownsBg = true;
                 if (bg.Id != 0) SetTextureFilter(bg, TextureFilter.Bilinear);
             }
-            skin.Sound("applause")?.Play(BeatmapSamples.EffectVolume);
         }
 
         ReplayInfo? Replay => p.savedReplay ?? p.watching;
@@ -124,6 +123,26 @@ sealed partial class Player
             Leave(new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
         }
 
+        // stable's F2: the replay as "{player} - {Artist - Title [Version]} ({UTC date}) Osu.osr" (" (n)" when taken),
+        // here in Exports next to the remake (never stable's or this client's Replays), with a blue-violet notice.
+        void Export()
+        {
+            if (Replay is not { } r) return;
+            try
+            {
+                var dir = Path.Combine(AppContext.BaseDirectory, "Exports");
+                Directory.CreateDirectory(dir);
+                string name = $"{r.Player} - {p.map.Artist} - {p.map.Title} [{p.map.Version}] ({r.Date.ToUniversalTime():yyyy-MM-dd}) Osu";
+                name = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+                string path = Path.Combine(dir, name + ".osr");
+                for (int n = 1; File.Exists(path); n++) path = Path.Combine(dir, $"{name} ({n}).osr");
+                if (r.FromStable) File.Copy(r.Path, path);
+                else Replays.SaveOsr(path, r, Replays.Frames(r), exact: true);
+                Toast.Show($"Saved replay to {path}.", new Color(138, 43, 226, 255), 6000);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Replay not saved: {e.Message}"); }
+        }
+
         // First click/key within 5s fast-forwards every animation, like stable.
         bool SkipAnimations()
         {
@@ -156,6 +175,7 @@ sealed partial class Player
             if (Input.IsKeyPressed(KeyboardKey.Escape)) Back();
             else if (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.Grave)) Retry();
             else if (Input.IsKeyPressed(KeyboardKey.W)) Watch();
+            else if (Input.IsKeyPressed(KeyboardKey.F2)) Export();
             else if (Input.IsKeyPressed(KeyboardKey.Space) || Input.IsKeyPressed(KeyboardKey.Enter)) SkipAnimations();
             else if (Input.IsMouseButtonPressed(MouseButton.Left))
             {

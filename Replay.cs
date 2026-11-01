@@ -124,11 +124,13 @@ static class Replays
 
     // Writes frames as a stable .osr (osu!standard), so stable can play the replay too. Frame times become whole-ms
     // deltas, keys stable's bits (K1 = 5, K2 = 10, M1 = 1, M2 = 2).
-    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames)
+    // exact: frame times as recorded (stable reads them after its -1ms lead-in frame). The fuzz tests keep the
+    // older, 1ms-early layout so their recorded stable results stay valid.
+    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames, bool exact = false)
     {
         var text = new System.Text.StringBuilder("0|256|-500|0,-1|256|-500|0,");
         var inv = System.Globalization.CultureInfo.InvariantCulture;
-        long last = 0;
+        long last = exact ? -1 : 0;
         foreach (var f in frames)
         {
             long t = (long)Math.Round(f.Time);
