@@ -36,7 +36,7 @@ sealed class MainMenu : Screen
     (int Index, double At) flash = (-1, double.MinValue);
 
     bool open;
-    double openChangedAt = double.MinValue, lastActivity, lastUpdate, quitAt = double.NaN;
+    double openChangedAt = double.MinValue, lastActivity = double.NaN, lastInput, quitAt = double.NaN;
     float cookieX; // -120..0 units, animated
     float clickShrink; // stable's hover/click scale offset: +0.1 hovered, -0.08 per click
     Vector2 lastMouse;
@@ -49,11 +49,20 @@ sealed class MainMenu : Screen
         SetOpen(open || play);
         playTier = play;
         LoadBackground();
-        lastActivity = Game.NowMs;
         if (Config.GetBool("MenuVoice", true)) skin.Sound("welcome")?.Play(BeatmapSamples.EffectVolume);
     }
 
-    public override void Entered() => NextTip();
+    public override void Entered()
+    {
+        lastInput = Game.NowMs;
+        if (Game.Previous is Options) { lastActivity = Game.NowMs; return; } // stable's options panel is an overlay: same visit
+        // stable makes a new menu each visit, collapsed at once (no animation) and with its activity time unset: the
+        // info layer starts fading at once unless the mouse moves, and the buttons don't collapse on their own until it has.
+        if (Game.Previous != null) { open = playTier = false; openChangedAt = double.MinValue; cookieX = 0; }
+        lastActivity = double.NaN;
+        layer = 1;
+        NextTip();
+    }
 
     // stable's menu tips (MenuTip_1..30; English text from the osu! wiki, worded as the game shows it): each visit to the menu shows the next
     // one, centred 52 units above the bottom in 16-unit Aller Light, fading in 2.558s after arriving (stable's intro
@@ -308,8 +317,6 @@ sealed class MainMenu : Screen
         w = GetScreenWidth(); h = GetScreenHeight();
         u = h / 480f; sd = h / 768f;
         songs.Ambient(menu: true);
-        if (Game.NowMs - lastUpdate > 250) lastActivity = Game.NowMs; // back from another screen: not idle
-        lastUpdate = Game.NowMs;
         coverAlpha = Math.Min(1, coverAlpha + (float)(dtMs / 200));
         UpdateVisuals(dtMs);
         if (!double.IsNaN(quitAt))
@@ -321,11 +328,12 @@ sealed class MainMenu : Screen
 
         var mouse = Input.GetMousePosition();
         bool moved = Vector2.Distance(mouse, lastMouse) > 5;
-        if (moved) lastActivity = Game.NowMs;
+        if (moved) { lastInput = Game.NowMs; if (open) lastActivity = Game.NowMs; } // stable: moving only counts while open
         lastMouse = mouse;
-        SongSelect.CursorIdle = Game.NowMs - lastActivity > 5000;
-        // stable: the music controls, Now Playing, tip and info layer returns quickly on activity and fades to 1%
-        // over ~16s once the mouse has been still for 6s; the info lines also fade in/out (500ms) with the menu.
+        SongSelect.CursorIdle = Game.NowMs - lastInput > 5000;
+        // stable: the music controls, Now Playing, tip and info layer returns quickly while the mouse moves and fades
+        // to 1% over ~16s otherwise once 6s have passed since the last activity (at once on arrival); the info lines
+        // also fade in/out (500ms) with the menu.
         double ticks = dtMs / (1000 / 60.0);
         layer = moved || Game.NowMs - lastActivity < 6000 ? Math.Min(1, layer + 0.08f * (float)ticks) : Math.Max(0.01f, layer - 0.001f * (float)ticks);
         infoAlpha = Math.Clamp(infoAlpha + (open ? 1 : -1) * (float)(dtMs / 500), 0, 1);
@@ -350,7 +358,7 @@ sealed class MainMenu : Screen
         hovered = now;
 
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (click) lastActivity = Game.NowMs;
+        if (click) lastActivity = lastInput = Game.NowMs;
         if (UpdateMusicControls(mouse, click, dtMs)) click = false;
         if (click && Vector2.Distance(mouse, CookiePos) <= CookieRadius)
         {
@@ -360,7 +368,7 @@ sealed class MainMenu : Screen
         }
         else if (click && hovered >= 0) Activate(hovered);
 
-        if (Input.IsKeyPressed(KeyboardKey.P) || Input.IsKeyPressed(KeyboardKey.Enter)) { lastActivity = Game.NowMs; if (open) Activate(0); else SetOpen(true); }
+        if (Input.IsKeyPressed(KeyboardKey.P) || Input.IsKeyPressed(KeyboardKey.Enter)) { lastActivity = lastInput = Game.NowMs; if (open) Activate(0); else SetOpen(true); }
         else if (playTier && Input.IsKeyPressed(KeyboardKey.M)) Activate(1);
         else if (playTier && (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.B))) Activate(2);
         else if (playTier) { }
@@ -596,9 +604,9 @@ sealed class MainMenu : Screen
         }
         else songs.DrawBackground(w, h);
 
-        // stable's black bars top and bottom (54 units, 40%).
-        DrawRectangle(0, 0, w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * coverAlpha)));
-        DrawRectangle(0, h - (int)(54 * u), w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * coverAlpha)));
+        // stable's black bars top and bottom (54 units, 40%), in the layer that fades when idle.
+        DrawRectangle(0, 0, w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * layer)));
+        DrawRectangle(0, h - (int)(54 * u), w, (int)(54 * u), new Color(0, 0, 0, (int)(102 * layer)));
         // stable's info lines, top left of the bar (size 14 at x 210).
         double up = Game.NowMs / 1000;
         var clock = DateTime.Now;
@@ -642,7 +650,7 @@ sealed class MainMenu : Screen
             }
         }
         if (skin.Tex("menu-copyright") is { } copyright) // ppy logo, bottom left
-            copyright.Draw(new Vector2(2 * u + copyright.Width * sd / 2, h - 2 * u - copyright.Height * sd / 2), sd, Color.White);
+            copyright.Draw(new Vector2(2 * u + copyright.Width * sd / 2, h - 2 * u - copyright.Height * sd / 2), sd, ColorAlpha(Color.White, layer));
         {
         }
 
