@@ -329,6 +329,17 @@ static class Game
 
     static void Main(string[] args)
     {
+        // a normal start writes what it reports (load times, problems, a crash) to remake.log next to the exe;
+        // test runs keep stderr
+        if (args.Length == 0 || !args.Any(a => a.StartsWith("--")))
+            try
+            {
+                var log = new StreamWriter(Path.Combine(AppContext.BaseDirectory, "remake.log"), append: false) { AutoFlush = true };
+                Console.SetError(log);
+                log.WriteLine($"osu!stable remake {typeof(Game).Assembly.GetName().Version?.ToString(3)} started {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                AppDomain.CurrentDomain.UnhandledException += (_, e) => log.WriteLine($"crash: {e.ExceptionObject}");
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         if (args.Contains("--check")) { Check(); return; }
         if (args.Contains("--check-stars")) // test hook: our star ratings against the ones stable stored in osu!.db
         {

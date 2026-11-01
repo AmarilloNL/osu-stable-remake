@@ -42,7 +42,7 @@ sealed class BeatmapImport : Screen
             {
                 ZipFile.ExtractToDirectory(file, dest, overwriteFiles: true); // refuses entries that would land outside dest
                 select ??= Directory.EnumerateFiles(dest, "*.osu").Order(StringComparer.OrdinalIgnoreCase)
-                    .Select(SongSelect.ReadMap).FirstOrDefault(m => m is { Mode: 0 })?.Md5;
+                    .Select(f => SongSelect.ReadMap(f, stars: false)).FirstOrDefault(m => m is { Mode: 0 })?.Md5;
             }
             catch (InvalidDataException) { Toast.Show("The beatmap file is corrupt or incomplete."); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Unable to move file {name}. It is probably in use by another application."); }

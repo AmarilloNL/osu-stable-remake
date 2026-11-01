@@ -58,7 +58,7 @@ sealed class DbBeatmap
     public void SetStars(int mods, float value)
     {
         if ((mods & ~(int)(Mods.Easy | Mods.HardRock | Mods.DoubleTime | Mods.HalfTime)) != 0) return;
-        if (stars == null) { stars = new float[16]; Array.Fill(stars, float.NaN); }
+        if (stars == null) { var a = new float[16]; Array.Fill(a, float.NaN); stars = a; } // filled before it's seen (ratings can come from another thread)
         stars[StarSlot(mods)] = value;
     }
 

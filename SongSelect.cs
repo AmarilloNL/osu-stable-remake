@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using Raylib_cs;
@@ -123,21 +124,50 @@ sealed class SongSelect : Screen
         }
     }
 
+    // what the library load is doing, for the loading screen (set by the loading task)
+    static volatile string loadStage = "Loading osu!.db…";
+    static volatile int loadDone, loadTotal;
+    // maps read from their .osu that still need their star ratings (worked out in the background once the list is up)
+    static List<DbBeatmap> unrated = [];
+
     static List<BeatmapSet> LoadLibrary()
     {
+        loadStage = "Loading osu!.db…";
+        loadTotal = 0;
+        var clock = Stopwatch.StartNew();
         List<DbBeatmap> all;
-        try { all = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")); }
+        try { all = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")); Console.Error.WriteLine($"osu!.db: {all.Count} maps in {clock.ElapsedMilliseconds}ms"); }
         catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException or UnauthorizedAccessException)
         {
-            all = ScanFolders(); // TODO: slow fallback (minutes for big libraries) if osu!.db is missing/unreadable
+            loadStage = $"osu!.db couldn't be read ({e.Message}); reading the Songs folder instead…";
+            Console.Error.WriteLine($"osu!.db: {e}");
+            all = ScanFolders(); // slow (minutes for big libraries)
         }
         // like stable after an import (or a folder copied in): Songs folders its osu!.db doesn't list yet are read too
         var known = new HashSet<string>(all.Select(b => b.Folder), StringComparer.OrdinalIgnoreCase);
-        if (Directory.Exists(Config.SongsDir))
-            foreach (var dir in Directory.EnumerateDirectories(Config.SongsDir))
-                if (!known.Contains(Path.GetFileName(dir)))
-                    foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
-                        if (ReadMap(file) is { } b) all.Add(b);
+        var fresh = new List<string>();
+        try
+        {
+            if (Directory.Exists(Config.SongsDir))
+                fresh.AddRange(Directory.EnumerateDirectories(Config.SongsDir).Where(d => !known.Contains(Path.GetFileName(d))));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Console.Error.WriteLine($"Songs folder: {e.Message}"); }
+        var newMaps = new List<DbBeatmap>();
+        if (fresh.Count > 0) { loadStage = "Reading new beatmaps…"; loadDone = 0; loadTotal = fresh.Count; }
+        foreach (var dir in fresh)
+        {
+            try
+            {
+                foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
+                    if (ReadMap(file, stars: false) is { } b) newMaps.Add(b);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            loadDone++;
+        }
+        if (fresh.Count > 0) Console.Error.WriteLine($"{fresh.Count} folders osu!.db doesn't list ({string.Join(", ", fresh.Take(5).Select(Path.GetFileName))}{(fresh.Count > 5 ? ", ..." : "")}): {newMaps.Count} maps");
+        Console.Error.WriteLine($"library read in {clock.ElapsedMilliseconds}ms");
+        all.AddRange(newMaps);
+        unrated = newMaps;
         TotalBeatmaps = all.Count;
         for (int i = 0; i < all.Count; i++) all[i].BuildSearchKey(i > 0 ? all[i - 1] : null); // here, not on the first keystroke
         return [.. all.Where(b => b.Mode == 0)
@@ -195,7 +225,7 @@ sealed class SongSelect : Screen
     static readonly Mods[] RatedMods = [Mods.None, Mods.HardRock, Mods.Easy, Mods.DoubleTime, Mods.HalfTime,
         Mods.HardRock | Mods.DoubleTime, Mods.Easy | Mods.DoubleTime, Mods.HardRock | Mods.HalfTime, Mods.Easy | Mods.HalfTime];
 
-    internal static DbBeatmap? ReadMap(string file)
+    internal static DbBeatmap? ReadMap(string file, bool stars = true)
     {
         try
         {
@@ -226,12 +256,22 @@ sealed class SongSelect : Screen
                 MaxBpm = bpms.Count > 0 ? bpms.Max(t => 60000 / t.BeatLength) : 0, MainBpm = mainBpm,
                 LastModified = DateTime.Now.Ticks, Unplayed = true, Status = (byte)(m.SetId <= 0 ? 1 : 0),
             };
-            if (m.Mode == 0)
-                foreach (var mods in RatedMods)
-                    entry.SetStars((int)mods, (float)StarRating.Compute(mods == Mods.None ? m : Beatmap.Load(file, mods: mods), mods));
+            if (stars) RateStars(entry, m);
             return entry;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return null; }
+    }
+
+    // the star ratings stable keeps for a map (every EZ/HR/DT/HT combination)
+    static void RateStars(DbBeatmap entry, Beatmap? nomod = null)
+    {
+        if (entry.Mode != 0) return;
+        try
+        {
+            foreach (var mods in RatedMods)
+                entry.SetStars((int)mods, (float)StarRating.Compute(mods == Mods.None && nomod != null ? nomod : Beatmap.Load(entry.FilePath, mods: mods), mods));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
     }
 
     // the library entry with this MD5, if it's loaded
@@ -819,6 +859,8 @@ sealed class SongSelect : Screen
             // every non-Latin character the library's names use, into the fallback glyph atlases at once (one build
             // instead of one each time a new title scrolls into view)
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
+            // like stable's background difficulty calculation: new maps' stars fill in while the list is already up
+            if (unrated.Count > 0) { var todo = unrated; unrated = []; Task.Run(() => { foreach (var b in todo) RateStars(b); rankedFor = null; }); }
             ApplyFilter(again);
             if (reselect == null && filter.Length == 0 && view.Count > 0)
             {
@@ -1554,7 +1596,8 @@ sealed class SongSelect : Screen
         DrawModCaption();
         if (loading != null)
         {
-            Game.TextBold("Loading osu!.db…", 40 * s, 40 * s, 36 * s, Color.White);
+            Game.TextBold(loadStage, 40 * s, 40 * s, 36 * s, Color.White);
+            if (loadTotal > 0) Game.Text($"{loadDone} / {loadTotal}", 40 * s, 82 * s, 24 * s, Color.White);
             DrawCursor();
             return;
         }
