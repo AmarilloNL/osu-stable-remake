@@ -263,7 +263,14 @@ sealed partial class Player : Screen
     // timing point), offered when it lies more than 1200ms + preempt past the start; usable once, until the target.
     double skipTarget = double.NaN;
     bool skipped;
-    bool CanSkip => !skipped && time < skipTarget;
+    bool CanSkip => !skipped && time < skipTarget || outroSkip;
+
+    // stable's play end: complete 200ms after the last object (or when the music stops); from then on Esc / the pause
+    // key go straight to the ranking screen, which otherwise comes at max(last object + 3s, storyboard end - 500ms).
+    // A storyboard running over 3s past completion brings the Skip button back to end it early.
+    bool Completed => !VirtualClock && (musicEnded || time > objs[^1].EndTime + 200);
+    double SbEnd => storyboard is { IsEmpty: false } sb ? sb.LatestEvent : double.NegativeInfinity;
+    bool outroSkip, endNow;
 
     void SetupSkip()
     {
@@ -702,6 +709,7 @@ sealed partial class Player : Screen
 
     void Skip()
     {
+        if (outroSkip) { endNow = true; return; }
         skipped = true;
         double target = skipTarget + Random.Shared.Next(-80, 90); // stable's jitter
         if (music != null)
@@ -721,7 +729,12 @@ sealed partial class Player : Screen
 
         if (UpdateStartHold(dtMs)) return;
         // The results screen takes over (and disposes us later), so the outro keeps playing like stable.
-        if (finished) { Game.Screen = new Results(this); return; }
+        if (finished) // stable goes to the ranking screen through black too
+        {
+            if (VirtualClock) Game.Screen = new Results(this);
+            else Game.FadeTo(() => new Results(this));
+            return;
+        }
         bool visualClick = UpdateVisualSettings(dtMs);
         if (failed)
         {
@@ -740,13 +753,20 @@ sealed partial class Player : Screen
         }
         if (!VirtualClock) { UpdateMapWarning(); UpdateDim(dtMs); UpdateHudFade(dtMs); UpdateLoopSounds(); }
         if (playback != null && TestSpeedAt.Count > 0 && Game.NowMs / 1000 >= TestSpeedAt[0]) { TestSpeedAt.RemoveAt(0); CycleSpeed(); }
-        if (playback != null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; }
-        if (auto && playback == null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; } // stable: Auto is a replay, Esc / End Replay leave
+        if (Completed && !paused && !failed)
+        {
+            if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape))) endNow = true;
+            if (!outroSkip && !endNow && SbEnd - time > 3000) outroSkip = true;
+        }
+        bool esc = !endNow && Input.IsKeyPressed(KeyboardKey.Escape);
+        if (playback != null && (esc || UpdateReplayOverlay())) { Leave(back); return; }
+        if (auto && playback == null && (esc || UpdateReplayOverlay())) { Leave(back); return; } // stable: Auto is a replay, Esc / End Replay leave
         // stable: a live play also pauses / unpauses with the middle mouse button (not with the mouse wheel disabled in play)
         bool middle = playback == null && !auto && !Config.GetBool("MouseDisableWheel", false) && Input.IsMouseButtonPressed(MouseButton.Middle);
-        if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape)) || middle)
+        if (!endNow && (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape))) || middle)
         {
-            if (!paused) TryPause();
+            if (Completed && !paused && !failed) endNow = true; // stable: after completion the pause key ends the play
+            else if (!paused) TryPause();
             else if (resumePending) resumePending = false; // back to the pause menu
             else Continue();
         }
@@ -890,7 +910,7 @@ sealed partial class Player : Screen
 
         while (firstActive < objs.Count && st[firstActive].Done && time > Math.Max(st[firstActive].JudgeTime, objs[firstActive].EndTime) + 1000)
             firstActive++;
-        if (firstActive >= objs.Count && (musicEnded || music == null || time > objs[^1].EndTime + 3000))
+        if (endNow || firstActive >= objs.Count && (musicEnded || music == null || time > objs[^1].EndTime + 3000 && time >= SbEnd - 500))
         {
             finished = true;
             passStates.Add(health.Value >= Health.Max / 2);
@@ -2821,7 +2841,7 @@ sealed partial class Player : Screen
             Game.Text("Press Space to skip", GetScreenWidth() - 360, GetScreenHeight() - 120, 36, Color.White);
             return;
         }
-        float a = (float)Math.Clamp((Game.NowMs - skipShownAt) / 400, 0, 1);
+        float a = (float)Math.Clamp((Game.NowMs - skipShownAt) / (outroSkip ? 300 : 400), 0, 1); // stable: the outro skip fades in faster
         bool over = playback == null && CheckCollisionPointRec(Input.GetMousePosition(), r);
         sp.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), GetScreenHeight() / 768f, ColorAlpha(Color.White, a * (over ? 1 : 0.6f)));
     }

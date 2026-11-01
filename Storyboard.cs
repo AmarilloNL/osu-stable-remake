@@ -56,6 +56,8 @@ sealed class Storyboard
 
     public bool IsEmpty => elements.Count == 0 && samples.Count == 0;
     // The earliest event (sprite command or sample), capped at 0: stable starts the map early enough to show it.
+    // the last event's end (stable holds the ranking screen back until 500ms before it)
+    public double LatestEvent => Math.Max(elements.Count > 0 ? elements.Max(e => e.End) : double.NegativeInfinity, samples.Count > 0 ? samples.Max(s => s.Time) : double.NegativeInfinity);
     public double EarliestEvent => Math.Min(0, Math.Min(elements.Count > 0 ? elements.Min(e => e.Start) : 0, samples.Count > 0 ? samples.Min(s => s.Time) : 0));
     readonly HashSet<string> referenced = new(StringComparer.OrdinalIgnoreCase);
     public bool UsesFile(string file) => referenced.Contains(file);
