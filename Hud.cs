@@ -59,6 +59,20 @@ sealed partial class Player
         return meterArrowFrom + (meterArrowTo - meterArrowFrom) * (1 - (1 - p) * (1 - p));
     }
 
+    // stable's in-game interface toggle (Shift + the scoreboard key): score, accuracy, combo, mods and the HP bar fade
+    // 0.07 a 60Hz tick; the leaderboard, hit meters and key overlay stay. Saved as ShowInterface, or in a live
+    // Relax / Autopilot play as ShowInterfaceDuringRelax (off by default).
+    bool ifaceOn;
+    float ifaceAlpha = -1;
+    string IfaceKey => playback == null && !auto && (mods.HasFlag(Mods.Relax) || mods.HasFlag(Mods.Autopilot)) ? "ShowInterfaceDuringRelax" : "ShowInterface";
+
+    void ToggleInterface()
+    {
+        ifaceOn = !ifaceOn;
+        Config.SetOwn(IfaceKey, ifaceOn ? "1" : "0");
+        Notification.Show(ifaceOn ? "In-game interface has been enabled." : "In-game interface has been disabled.", 1000);
+    }
+
     Color HudWhite => ColorAlpha(Color.White, hudFade);
     Color HudA(Color c) => ColorAlpha(c, c.A / 255f * hudFade);
 
@@ -71,21 +85,30 @@ sealed partial class Player
         bool inBreak = InBreak(time) && time > objs[0].Time;
         if (inBreak != hudBreak) { hudBreak = inBreak; hudBreakAt = now; }
 
+        if (ifaceAlpha < 0) { ifaceOn = Config.GetBool(IfaceKey, IfaceKey == "ShowInterface"); ifaceAlpha = ifaceOn ? 1 : 0; }
+        ifaceAlpha = Math.Clamp(ifaceAlpha + (ifaceOn ? 0.07f : -0.07f) * (float)frames, 0, 1);
+        float fade = hudFade;
+        hudFade = fade * ifaceAlpha;
         DrawScore(w, u, sd, frames);
         DrawCombo(u, sd, now);
+        hudFade = fade;
         DrawMeter(w, u, sd, now);
         DrawColourMeter(w, u, frames);
+        hudFade = fade * ifaceAlpha;
         DrawMods(w, u, sd);
         // stable's "UNRANKED" banner (play-unranked) when the mods keep the play off the rankings: scale 1, centred at y 45.1 (measured).
         if (mods.HasFlag(Mods.Autoplay) || mods.HasFlag(Mods.Relax) || mods.HasFlag(Mods.Autopilot))
             skin.Tex("play-unranked")?.Draw(new Vector2(w / 2f, 45.1f * u), sd, HudWhite);
+        hudFade = fade;
         DrawScoreboard(u);
 
         DrawReplayOverlay(w, u, now);
 
         // Drawn over everything above: skins like a full-screen scorebar-bg dim the HUD outside the playfield in
         // stable too. The key overlay stays on top.
+        hudFade = fade * ifaceAlpha;
         DrawHealthBar(w, sd);
+        hudFade = fade;
         if (Config.GetBool("KeyOverlay", false) || playback != null || auto) DrawKeyOverlay(w, u, sd, now); // stable always shows it when watching
 
         DrawSkip();
@@ -371,7 +394,11 @@ sealed partial class Player
 
     void DrawScoreboard(float u)
     {
-        if (Input.IsKeyPressed(Config.Key("keyToggleScoreboard", KeyboardKey.Tab))) scoreboardOn = !scoreboardOn;
+        if (Input.IsKeyPressed(Config.Key("keyToggleScoreboard", KeyboardKey.Tab)))
+        {
+            if (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) ToggleInterface();
+            else scoreboardOn = !scoreboardOn;
+        }
         // stable's "Hit <key> to toggle scoreboard!" (the bound key) when the board appears: bold 12 just above it, fading out over 6s.
         hintFrom = double.IsNaN(hintFrom) ? Game.NowMs : hintFrom;
         double hintAge = Game.NowMs - hintFrom;
