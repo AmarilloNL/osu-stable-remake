@@ -28,6 +28,8 @@ sealed class DbBeatmap
     }
     public bool SearchMatches(string word) => SearchKey!.Contains(word) || VersionKey!.Contains(word);
 
+    public int SortRank; // song select: this difficulty's place in the current sort
+
     public void BuildSearchKey(DbBeatmap? prev)
     {
         VersionKey = Version.ToLowerInvariant();

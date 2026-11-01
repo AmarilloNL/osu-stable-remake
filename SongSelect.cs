@@ -85,6 +85,7 @@ sealed class SongSelect : Screen
 
     public void AddScore(ReplayInfo info)
     {
+        rankedFor = null; // By Rank Achieved may change
         if (!scores.TryGetValue(info.BeatmapMd5, out var list)) scores[info.BeatmapMd5] = list = [];
         list.Add(info);
         // score, then name (stable's scoreboard order); equal ones keep their order
@@ -1256,8 +1257,22 @@ sealed class SongSelect : Screen
         return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last Week") : (2 + months, $"{months} month(s) ago");
     }
 
+    // every difficulty's place in the sort, ranked once per sort, mods, library or score change (sorting with the
+    // culture's text order on every keystroke costs ~130ms on a 50k-difficulty library)
+    object? rankedFor;
+    void RankDiffs()
+    {
+        var key = (SortMode, mods, sets);
+        if (key.Equals(rankedFor)) return;
+        rankedFor = key;
+        var all = sets.SelectMany(s => s.Diffs).ToList();
+        all.Sort(DiffOrder(mods));
+        for (int i = 0; i < all.Count; i++) all[i].SortRank = i;
+    }
+
     void BuildGroups(List<(BeatmapSet Set, List<DbBeatmap> Diffs)> all)
     {
+        RankDiffs();
         groups.Clear();
         // Groups keep each set's matching difficulties only (a set can sit in several difficulty/date groups).
         void ByDiff(Func<DbBeatmap, (int Order, string Name)?> key)
@@ -1347,18 +1362,16 @@ sealed class SongSelect : Screen
                 return;
         }
         // stable lists every difficulty in a group as its own panel, in the sort's order
-        var order = Comparer<DbBeatmap>.Create(DiffOrder(mods));
         for (int i = 0; i < groups.Count; i++)
-            groups[i] = (groups[i].Name, [.. groups[i].Entries.SelectMany(e => e.Diffs.Select(d => (e.Set, new List<DbBeatmap> { d }))).OrderBy(e => e.Item2[0], order)]);
+            groups[i] = (groups[i].Name, [.. groups[i].Entries.SelectMany(e => e.Diffs.Select(d => (e.Set, new List<DbBeatmap> { d }))).OrderBy(e => e.Item2[0].SortRank)]);
     }
 
     // ungrouped: the difficulties in the sort's order, each set's neighbouring ones forming one entry (a run); a set
     // whose difficulties sort apart (by stars, say) has several
     List<(BeatmapSet Set, List<DbBeatmap> Diffs)> Runs(IEnumerable<(BeatmapSet Set, List<DbBeatmap> Diffs)> entries)
     {
-        var order = DiffOrder(mods);
         var runs = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
-        foreach (var (set, d) in entries.SelectMany(e => e.Diffs.Select(d => (e.Set, d))).OrderBy(x => x.d, Comparer<DbBeatmap>.Create(order)))
+        foreach (var (set, d) in entries.SelectMany(e => e.Diffs.Select(d => (e.Set, d))).OrderBy(x => x.d.SortRank))
             if (runs.Count > 0 && runs[^1].Set == set) runs[^1].Diffs.Add(d);
             else runs.Add((set, [d]));
         return runs;
