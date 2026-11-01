@@ -1881,7 +1881,8 @@ sealed partial class Player : Screen
         var p = ToScreen(osuPos);
         float cs = CircleScale * expand;
         var body = (sliderHead ? skin.Tex("sliderstartcircle") : null) ?? skin.Tex("hitcircle");
-        var overlay = (sliderHead && skin.Tex("sliderstartcircle") != null ? skin.Tex("sliderstartcircleoverlay") : null) ?? skin.Tex("hitcircleoverlay");
+        // stable takes the overlay named after the body it drew (sliderstartcircle -> sliderstartcircleoverlay, or none)
+        var overlay = sliderHead && skin.Tex("sliderstartcircle") != null ? skin.Tex("sliderstartcircleoverlay") : skin.Tex("hitcircleoverlay");
         float hitAge = expand > 1.001f ? (1 - alpha) * 240 : -1; // hits: alpha is 1 - age/240 (HitAnim)
         alpha *= playfieldAlpha;
         if (body is { } b) b.Draw(p, cs, ColorAlpha(Shade(colour, lit), alpha));
