@@ -1210,7 +1210,7 @@ sealed class SongSelect : Screen
     // Local scores, left side, as stable's leaderboard panels.
     // stable's local leaderboard (measured from a stable capture, in 640x480 units): a ranking box at 73-88, then
     // up to eight rows of 33.3 from 96: rank, grade, name (16), "Score: N (Mx)" (12), and right-aligned mods /
-    // accuracy / gap to the next score (10); "Personal Best" below.
+    // accuracy / gap to the next score (10).
     static float U => GetScreenHeight() / 480f;
     float ScoreTop => 96 * U;
     float ScoreRowH => 33.3f * U;
@@ -1260,19 +1260,7 @@ sealed class SongSelect : Screen
             bool hover = mouse.X < 240 * u && ScoreRowAt(mouse.Y) == n && mouse.Y >= ScoreTop;
             DrawScoreRow(list[n], n + 1, y, n + 1 < list.Count ? list[n + 1].Score : null, hover);
         }
-
-        // Personal best: the local player's own top score.
-        string me = Config.Get("Username", "");
-        float centre = 120 * u;
-        Game.TextBold("Personal Best", centre - Game.BoldWidth("Personal Best", 12 * u) / 2, 369 * u - 6 * u, 12 * u, Color.White);
-        int best = -1; // a loop, not FindIndex: a lambda capturing me would allocate every frame
-        for (int i = 0; i < list.Count && best < 0; i++) if (!list[i].FromStable || list[i].Player.Equals(me, StringComparison.OrdinalIgnoreCase)) best = i;
-        if (best >= 0) DrawScoreRow(list[best], best + 1, 380 * u, null, false);
-        else
-        {
-            DrawRectangleRec(new Rectangle(45 * u, 380 * u, 195 * u, 29 * u), new Color(0, 0, 0, 100));
-            Game.Text("No personal record set", 63 * u, 394.5f * u - 6.5f * u, 13 * u, Color.White);
-        }
+        // (stable shows its "Personal Best" box only for the online ranking types, never for Local Ranking)
     }
     // F3 / Beatmap Options: stable's dialog for the selected set. Offline, the actions that would change stable's files
     // (collections, deleting, the unplayed flag, local scores) or need the editor only explain themselves.
