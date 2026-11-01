@@ -284,6 +284,29 @@ static class Game
         if (r is { } c) ClipCursor(ref c); else ClipCursorOff(IntPtr.Zero);
     }
 
+    // The Sensitivity option (MouseSpeed), the way stable applies it without raw input: each frame the system cursor's
+    // movement since the last frame is scaled and the cursor put where that lands. Outside the window it's left alone,
+    // and the first frame back in starts from where it is. (With raw input on, stable scales the device's own,
+    // unaccelerated counts instead; here it's the same as off.) Like stable it reads where the cursor is now: the
+    // window messages raylib goes by would lose a movement made just before the cursor is put back.
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out CursorPoint p);
+    struct CursorPoint { public int X, Y; }
+    static Vector2 sensAt;
+    static bool sensInside;
+    static void ApplySensitivity()
+    {
+        float s = (float)Config.GetDouble("MouseSpeed", 1);
+        if (s == 1) { sensInside = false; return; }
+        GetCursorPos(out var c);
+        var p = new Vector2(c.X, c.Y) - GetWindowPosition();
+        bool inside = IsWindowFocused() && p.X >= 0 && p.Y >= 0 && p.X < GetScreenWidth() && p.Y < GetScreenHeight();
+        if (!inside || !sensInside) { sensAt = p; sensInside = inside; return; }
+        sensAt += (p - new Vector2(MathF.Round(sensAt.X), MathF.Round(sensAt.Y))) * s;
+        if (clipped != null) sensAt = Vector2.Clamp(sensAt, Vector2.Zero, new Vector2(GetScreenWidth() - 1, GetScreenHeight() - 1));
+        var to = new Vector2(MathF.Round(sensAt.X), MathF.Round(sensAt.Y));
+        if (to != p) SetMousePosition((int)to.X, (int)to.Y);
+    }
+
     static void Main(string[] args)
     {
         if (args.Contains("--check")) { Check(); return; }
@@ -441,7 +464,7 @@ static class Game
             if (Input.IsKeyPressed(KeyboardKey.Enter) && Input.IsKeyDown(KeyboardKey.LeftAlt)) ToggleFullscreen();
 
             Input.Update(now / 1000);
-            if (!testRun) ConfineCursor();
+            if (!testRun) { ConfineCursor(); ApplySensitivity(); }
             if (IsFileDropped()) BeatmapImport.Open(GetDroppedFiles());
             if (testDrop != null && now >= 1500) { BeatmapImport.Open([testDrop]); testDrop = null; } // test hook: --drop <file>
             BeatmapImport.Poll();
