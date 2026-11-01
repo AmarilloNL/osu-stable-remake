@@ -176,6 +176,9 @@ sealed partial class Player
         (Sprite Sp, Rectangle Rect)? RetryButton => p.playback == null && !AutoPlay ? Button("retry", 360) : null;
         (Sprite Sp, Rectangle Rect)? ReplayButton => Replay != null || AutoPlay ? Button("replay", RetryButton != null ? 420 : 360) : null;
 
+        float retryFade = 0.7f, replayFade = 0.7f;
+        double lastDraw = Game.NowMs;
+
         Rectangle BackRect => BackButton.Rect(h);
         readonly BackButton backButton = new();
 
@@ -282,9 +285,19 @@ sealed partial class Player
 
             DrawTopBar();
 
-            float bright = 178 / 255f;
-            if (RetryButton is { } rb) rb.Sp.Draw(new(rb.Rect.X + rb.Rect.Width / 2, rb.Rect.Y + rb.Rect.Height / 2), sd, ColorAlpha(Color.White, CheckCollisionPointRec(mouse, rb.Rect) ? 1 : bright));
-            if (ReplayButton is { } pb) pb.Sp.Draw(new(pb.Rect.X + pb.Rect.Width / 2, pb.Rect.Y + pb.Rect.Height / 2), sd, ColorAlpha(Color.White, CheckCollisionPointRec(mouse, pb.Rect) ? 1 : bright));
+            // stable: the buttons are white at 178 alpha with a hover fade 0.7 -> 1 (200ms) on top (measured 0.49 / 0.70)
+            float step = (float)(Game.NowMs - lastDraw) * 0.3f / 200;
+            lastDraw = Game.NowMs;
+            if (RetryButton is { } rb)
+            {
+                retryFade = Math.Clamp(retryFade + (CheckCollisionPointRec(mouse, rb.Rect) ? step : -step), 0.7f, 1);
+                rb.Sp.Draw(new(rb.Rect.X + rb.Rect.Width / 2, rb.Rect.Y + rb.Rect.Height / 2), sd, ColorAlpha(Color.White, 178 / 255f * retryFade));
+            }
+            if (ReplayButton is { } pb)
+            {
+                replayFade = Math.Clamp(replayFade + (CheckCollisionPointRec(mouse, pb.Rect) ? step : -step), 0.7f, 1);
+                pb.Sp.Draw(new(pb.Rect.X + pb.Rect.Width / 2, pb.Rect.Y + pb.Rect.Height / 2), sd, ColorAlpha(Color.White, 178 / 255f * replayFade));
+            }
             backButton.Draw(h, mouse);
 
             if (p.watching is { FromStable: true } sr && (sr.N300, sr.N100, sr.N50, sr.NMiss, sr.MaxCombo) != (p.n300, p.n100, p.n50, p.nMiss, p.maxCombo))
@@ -346,9 +359,9 @@ sealed partial class Player
             string player = p.watching is { Player.Length: > 0 } r ? r.Player : AutoPlay ? "osu!" : Config.Get("Username", Environment.UserName);
             var date = p.watching?.Date ?? DateTime.Now;
             // Measured against stable: its header sits ~3 units in and renders ~3.5% wider than its nominal sizes.
-            Game.Text($"{map.Artist} - {map.Title} [{map.Version}]", 3.3f * u, 1 * u, 22.8f * u, Color.White); // stable: no source here (song select shows "Source (Artist)")
-            Game.TextRegular($"Beatmap by {map.Creator}", 3.3f * u, 20.7f * u, 16.5f * u, Color.White); // stable: size 16, regular weight
-            Game.TextRegular($"Played by {player} on {date}.", 3.3f * u, 34.7f * u, 16.5f * u, Color.White);
+            Game.Text($"{map.Artist} - {map.Title} [{map.Version}]", 3.3f * u, 0.1f * u, 22.8f * u, Color.White); // stable: no source here (song select shows "Source (Artist)")
+            Game.TextRegular($"Beatmap by {map.Creator}", 3.3f * u, 19.8f * u, 16.5f * u, Color.White); // stable: size 16, regular weight
+            Game.TextRegular($"Played by {player} on {date}.", 3.3f * u, 33.8f * u, 16.5f * u, Color.White);
             if (skin.Tex("ranking-title") is { } title) title.Draw(Centre(title, R(20, 0), new(1, 0), sd), sd, Color.White);
         }
     }

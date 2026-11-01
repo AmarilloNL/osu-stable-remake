@@ -42,9 +42,10 @@ sealed class BackButton
         var leftColour = ColorLerp(hover ? Pink : DarkPink, hover ? DarkPink : Pink, Math.Clamp(k, 0, 1));
         DrawTexturePro(layer.Tex, new Rectangle(0, 0, layer.Tex.Width, layer.Tex.Height), new Rectangle(right * u - lw, h - lh, lw, lh), Vector2.Zero, 0, Pink);
         DrawTexturePro(layer.Tex, new Rectangle(0, 0, layer.Tex.Width, layer.Tex.Height), new Rectangle(left * u - lw, h - lh, lw, lh), Vector2.Zero, 0, leftColour);
-        float textX = (right - left) / 2.4f + left, size = 16 * u, drop = Math.Max(1, u / 3), tx = textX * u - Game.TextWidth("back", size) / 2;
-        Game.Text("back", tx + drop, h - 21 * u - size / 2 + drop, size, new Color(0, 0, 0, 128)); // text and icon cast a drop shadow
-        Game.Text("back", tx, h - 21 * u - size / 2, size, Color.White);
+        // stable: size 15, centred 21 up; its text renders a little wider than ours (measured at 1080p)
+        float textX = (right - left) / 2.4f + left, size = 15 * u, gap = 0.45f * u, drop = Math.Max(1, u / 3), tx = textX * u - (Game.TextWidth("back", size) + 3 * gap) / 2, ty = h - 21.9f * u - size / 2;
+        Game.Text("back", tx + drop, ty + drop, size, new Color(0, 0, 0, 128), gap); // text and icon cast a drop shadow
+        Game.Text("back", tx, ty, size, Color.White, gap);
         float scale = 1;
         if (beat is { } bt && bt.Length > 0)
             scale = (hover ? 1.5f : 0.9f) + (1 - (hover ? 1.5f : 0.9f)) * (float)Easing.Apply(25, (bt.Since + bt.Length / 4) / (3 * bt.Length));

@@ -342,7 +342,8 @@ static class Game
         if (Arg("--watch") is { } watch && Arg("--play") is { } watchMap)
         {
             var info = Replays.ReadAnyInfo(watch);
-            Screen = new Player(Beatmap.Load(watchMap, mods: info.Mods), songSelect, info.Mods, Replays.Frames(info), info);
+            Screen = args.Contains("--summary") ? Player.Summary(Beatmap.Load(watchMap, mods: info.Mods), songSelect, info) // test hook: the replay's ranking screen
+                : new Player(Beatmap.Load(watchMap, mods: info.Mods), songSelect, info.Mods, Replays.Frames(info), info);
         }
         else Screen = Arg("--play") is { } play ? new Player(Beatmap.Load(play, mods: testMods), songSelect, testMods)
             : Arg("--search") != null ? songSelect : new MainMenu(songSelect, open: args.Contains("--menu-open"), play: args.Contains("--menu-play"));
