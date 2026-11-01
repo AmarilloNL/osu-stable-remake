@@ -62,8 +62,8 @@ static class ModInfo
     {
         var parts = new List<string>();
         void Add(Mods f, string s) { if (m.HasFlag(f)) parts.Add(s); }
-        // stable's order (its score lists): V2, Auto, SO, EZ, NF, HD, NC/DT, HT, HR, RX/AP, PF/SD, FL
-        Add(Mods.ScoreV2, "V2"); Add(Mods.Autoplay, "Auto"); Add(Mods.SpunOut, "SO");
+        // stable's order (its score lists): ScoreV2, Auto, SO, EZ, NF, HD, NC/DT, HT, HR, RX/AP, PF/SD, FL
+        Add(Mods.ScoreV2, "ScoreV2"); Add(Mods.Autoplay, "Auto"); Add(Mods.SpunOut, "SO");
         Add(Mods.Easy, "EZ"); Add(Mods.NoFail, "NF"); Add(Mods.Hidden, "HD");
         if (m.HasFlag(Mods.Nightcore)) parts.Add("NC"); else Add(Mods.DoubleTime, "DT");
         Add(Mods.HalfTime, "HT"); Add(Mods.HardRock, "HR");
