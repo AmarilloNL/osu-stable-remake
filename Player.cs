@@ -298,8 +298,8 @@ sealed partial class Player : Screen
     // stable restarts through black too; a quick retry (held key) is black already
     void Retry(bool quick = false)
     {
-        if (VirtualClock) { Leave(new Player(map, back, mods, playback, watching)); return; }
-        Game.FadeTo(() => new Player(map, back, mods, playback, watching), Dispose, quick);
+        if (VirtualClock) { Leave(new Player(map, back, mods, playback, watching) { Retried = true }); return; }
+        Game.FadeTo(() => new Player(map, back, mods, playback, watching) { Retried = true }, Dispose, quick);
     }
 
     void Fail()
@@ -1617,6 +1617,7 @@ sealed partial class Player : Screen
         DrawBreakOverlays(w, h);
         if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
         DrawHud(w, h);
+        DrawEpilepsyWarning(w, h);
         if (retryHold > 0) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (float)(retryHold / 100)));
         if (paused && resumePending) DrawResume();
         else if (paused) DrawPauseMenu(fail: false);
