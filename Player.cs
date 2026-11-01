@@ -228,6 +228,7 @@ sealed partial class Player : Screen
     {
         music?.Dispose();
         SoundPool.Stop(pauseLoop);
+        SoundPool.Stop(spinLoop);
         if (bg.Id != 0) UnloadTexture(bg);
         video?.Dispose();
         skin.SetMapSkin(null);
@@ -457,6 +458,50 @@ sealed partial class Player : Screen
         }
     }
 
+    // stable's looping sounds: a followed slider loops its sampleset's "sliderslide" (with LayeredHitSounds, or when it
+    // has no whistle) and, for whistle sliders, the addition set's "sliderwhistle"; a turning spinner loops the skin's
+    // "spinnerspin", its frequency 20000 + 40000 x (spins / required) Hz (max 100000) with SpinnerFrequencyModulate.
+    // Both stop when the slider is lost or ends, the spinner stops turning or ends, and on pause / fail / the end.
+    int spinLoop;
+    void UpdateLoopSounds()
+    {
+        bool live = !paused && !failed && !finished;
+        HitObject? slider = null;
+        (HitObject O, ObjState S)? spinner = null;
+        for (int i = firstActive; live && i < objs.Count && objs[i].Time <= time; i++)
+        {
+            var o = objs[i];
+            if (time > o.EndTime || st[i].Done) continue;
+            if (o.Type == ObjType.Slider && st[i].Tracking) slider ??= o;
+            else if (o.Type == ObjType.Spinner) spinner ??= (o, st[i]);
+        }
+        if (slider is { } so)
+        {
+            var tp = map.PointAt(time);
+            int set = so.NormalSet > 0 ? so.NormalSet : tp.SampleSet, addition = so.AdditionSet > 0 ? so.AdditionSet : set;
+            int volume = so.Volume > 0 ? so.Volume : tp.Volume;
+            bool whistle = (so.HitSound & 2) != 0;
+            if (skin.LayeredHitSounds || !whistle) samples.Loop("slide", set, "sliderslide", tp.SampleIndex, volume); else samples.StopLoop("slide");
+            if (whistle) samples.Loop("whistle", addition, "sliderwhistle", tp.SampleIndex, volume); else samples.StopLoop("whistle");
+        }
+        else { samples.StopLoop("slide"); samples.StopLoop("whistle"); }
+
+        if (spinner is { } sp && sp.S.Velocity != 0)
+        {
+            float vol = BeatmapSamples.EffectVolume * map.PointAt(time).Volume / 100f;
+            if (spinLoop == 0 || Bass.BASS_ChannelIsActive(spinLoop) != Bass.ActivePlaying)
+            {
+                if (spinLoop != 0) Bass.BASS_ChannelPlay(spinLoop, false);
+                else spinLoop = skin.Sound("spinnerspin")?.PlayLooped(vol) ?? 0;
+            }
+            Bass.BASS_ChannelSetAttribute(spinLoop, Bass.AttribVol, vol);
+            int req = SpinsRequired(sp.O);
+            if (skin.SpinnerFrequencyModulate && req > 0)
+                Bass.BASS_ChannelSetAttribute(spinLoop, Bass.AttribFreq, Math.Min(100000, 20000 + 40000f * sp.S.SpinsCounted / req));
+        }
+        else if (spinLoop != 0) Bass.BASS_ChannelPause(spinLoop);
+    }
+
     // stable's "break" state: the intro (until the first object's approach starts), every break, and the outro (after
     // the last object's 50 window). Key counts, cursor stars and the background dim follow it.
     bool Resting(double t) => t < objs[0].Time - map.Preempt || t > objs[^1].EndTime + map.Hit50 || InBreak(t);
@@ -613,7 +658,7 @@ sealed partial class Player : Screen
         {
             if (testPauseStep++ == 0) SetPaused(true); else Continue();
         }
-        if (!VirtualClock) { UpdateMapWarning(); UpdateDim(dtMs); UpdateHudFade(dtMs); }
+        if (!VirtualClock) { UpdateMapWarning(); UpdateDim(dtMs); UpdateHudFade(dtMs); UpdateLoopSounds(); }
         if (playback != null && TestSpeedAt.Count > 0 && Game.NowMs / 1000 >= TestSpeedAt[0]) { TestSpeedAt.RemoveAt(0); CycleSpeed(); }
         if (playback != null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; }
         if (auto && playback == null && UpdateReplayOverlay()) { Leave(back); return; } // End Replay

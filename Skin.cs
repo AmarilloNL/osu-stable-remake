@@ -41,7 +41,7 @@ sealed class Skin
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
     public Color SongSelectActiveText = Color.Black, SongSelectInactiveText = Color.White;
     public Color MenuGlow = new(128, 128, 160, 255); // main menu visualizer (stable's built-in default)
-    public bool CursorCentre = true, CursorRotate = true, CursorExpand = true;
+    public bool CursorCentre = true, CursorRotate = true, CursorExpand = true, LayeredHitSounds = true, SpinnerFrequencyModulate = true;
     public Color InputOverlayText = Color.Black;
     public Color SpinnerBackground = new(100, 100, 100, 255); // stable tints spinner-background with this
     public bool SpinnerNoBlink;
@@ -131,6 +131,8 @@ sealed class Skin
                 case "CursorCentre": CursorCentre = v != "0"; break;
                 case "CursorRotate": CursorRotate = v != "0"; break;
                 case "CursorExpand": CursorExpand = v != "0"; break;
+                case "LayeredHitSounds": LayeredHitSounds = v != "0"; break;
+                case "SpinnerFrequencyModulate": SpinnerFrequencyModulate = v != "0"; break;
                 case "InputOverlayText": InputOverlayText = ParseColour(v) ?? InputOverlayText; break;
                 case "SongSelectInactiveText": SongSelectInactiveText = ParseColour(v) ?? SongSelectInactiveText; break;
                 case "AnimationFramerate": float.TryParse(v, CultureInfo.InvariantCulture, out AnimationFramerate); break;
@@ -352,7 +354,7 @@ sealed class BeatmapSamples
 {
     readonly Dictionary<string, SoundPool?> cache = new(StringComparer.OrdinalIgnoreCase);
     static readonly string[] SetNames = ["normal", "normal", "soft", "drum"];
-    static readonly System.Text.RegularExpressions.Regex SampleName = new(@"^(normal|soft|drum)-(hit\w+|slidertick)\d*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    static readonly System.Text.RegularExpressions.Regex SampleName = new(@"^(normal|soft|drum)-(hit\w+|slidertick|sliderslide|sliderwhistle)\d*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     public BeatmapSamples(string folder)
     {
@@ -371,20 +373,36 @@ sealed class BeatmapSamples
     // stable's IgnoreBeatmapSamples (and the per-map Hitsounds toggle): off = always the skin's samples.
     public bool UseMapSamples = !Config.GetBool("IgnoreBeatmapSamples", false);
 
-    public void Play(int set, string name, int index, int volumePercent)
+    public void Play(int set, string name, int index, int volumePercent) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f);
+
+    SoundPool? Resolve(int set, string name, int index)
     {
         string sample = $"{SetNames[Math.Clamp(set, 0, 3)]}-{name}";
-        float vol = EffectVolume * volumePercent / 100f;
-        if (index > 0 && UseMapSamples)
-        {
-            // Everything in the folder was preloaded, so a cache miss means "not in the map": use the skin.
-            if (cache.TryGetValue(index > 1 ? sample + index : sample, out var pool) && pool != null) { pool.Play(vol); return; }
-        }
-        (Config.GetBool("SkinSamples", true) ? Game.Skin.Sound(sample) : Game.Skin.DefaultSound(sample))?.Play(vol);
+        // Everything in the folder was preloaded, so a cache miss means "not in the map": use the skin.
+        if (index > 0 && UseMapSamples && cache.TryGetValue(index > 1 ? sample + index : sample, out var pool) && pool != null) return pool;
+        return Config.GetBool("SkinSamples", true) ? Game.Skin.Sound(sample) : Game.Skin.DefaultSound(sample);
     }
+
+    // Looping samples (slider slide / whistle): one voice per key, restarted when its sample changes, until stopped.
+    readonly Dictionary<string, (int Channel, SoundPool? Pool)> loops = [];
+    public void Loop(string key, int set, string name, int index, int volumePercent)
+    {
+        float vol = EffectVolume * volumePercent / 100f;
+        var pool = Resolve(set, name, index);
+        if (loops.TryGetValue(key, out var l) && l.Pool == pool && Bass.BASS_ChannelIsActive(l.Channel) == Bass.ActivePlaying)
+        {
+            Bass.BASS_ChannelSetAttribute(l.Channel, Bass.AttribVol, vol);
+            return;
+        }
+        SoundPool.Stop(l.Channel);
+        loops[key] = (pool?.PlayLooped(vol) ?? 0, pool);
+    }
+    public void StopLoop(string key) { if (loops.Remove(key, out var l)) SoundPool.Stop(l.Channel); }
 
     public void Unload()
     {
+        foreach (var l in loops.Values) SoundPool.Stop(l.Channel);
+        loops.Clear();
         foreach (var s in cache.Values) s?.Unload();
     }
 }
