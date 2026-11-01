@@ -272,6 +272,7 @@ sealed class SongSelect : Screen
         view.Clear();
         if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
         matchCount = view.Sum(v => v.Diffs.Count);
+        keptSelection = view.Count == 0 ? keepDiff : null;
         expanded = Grouped && groups.Count > 0 ? groupIndex : -1;
         focusGroup = -2;
         int found = keepDiff == null ? -1 : view.FindIndex(v => v.Diffs.Contains(keepDiff));
@@ -285,7 +286,9 @@ sealed class SongSelect : Screen
         SelectionChanged();
     }
 
-    DbBeatmap? Selected => view.Count == 0 ? null : view[setIndex].Diffs[diffIndex];
+    // stable keeps the last selection (its info, scores and music) while a search matches nothing
+    DbBeatmap? keptSelection;
+    DbBeatmap? Selected => view.Count == 0 ? keptSelection : view[setIndex].Diffs[diffIndex];
     readonly Stack<DbBeatmap> randomHistory = [];
 
     // ---- stable's random spin: jump to a random entry, then step one entry on per 60Hz tick once the tick count passes
@@ -1308,7 +1311,7 @@ sealed class SongSelect : Screen
         Game.TextBold("Search:", sx, 54 * u, 13.6f * u, new Color(173, 255, 47, 255)); // GreenYellow
         Game.TextBold(search, sx + Game.BoldWidth("Search: ", 13.6f * u), 54 * u, 13.6f * u, Color.White);
         if (message.Length > 0 || filter.Length > 0)
-            Game.TextBold(message.Length > 0 ? message : matchesText.Of(matchCount), sx, 66.5f * u, 11.35f * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
+            Game.TextBold(message.Length > 0 ? message : matchCount == 0 ? "No matches found. Hit ESC to reset." : matchesText.Of(matchCount), sx, 66.5f * u, 11.35f * u, message.Length > 0 ? new Color(255, 120, 120, 255) : Color.White);
     }
 
     // The user panel (offline, so always the guest): name, "Click to sign in!" and an empty level bar (measured).
