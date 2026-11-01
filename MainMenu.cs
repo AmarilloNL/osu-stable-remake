@@ -219,13 +219,13 @@ sealed class MainMenu : Screen
         double t = now - tipFrom;
         float a = (float)Math.Clamp(Math.Min(t / 1000, 1 - (t - 12000) / 500), 0, 1);
         if (a <= 0) return;
-        float size = 16.7f * u; // stable says 16; its text renders this wide (measured)
+        float size = 16.5f * u; // stable: 16, regular (below 20); its text renders this wide (measured at 1080p)
         if (tipLines == null || tipWrap != (tip, size, w)) // wrapped once per tip/size, not every frame
         {
             var wrapped = new List<string>();
             foreach (var word in tip.Split(' '))
             {
-                if (wrapped.Count > 0 && Game.LightWidth(wrapped[^1] + " " + word, size) <= w) wrapped[^1] += " " + word;
+                if (wrapped.Count > 0 && Game.RegularWidth(wrapped[^1] + " " + word, size) <= w) wrapped[^1] += " " + word;
                 else wrapped.Add(word);
             }
             tipLines = wrapped;
@@ -233,7 +233,7 @@ sealed class MainMenu : Screen
         }
         var lines = tipLines;
         for (int i = 0; i < lines.Count; i++)
-            Game.TextLight(lines[i], (w - Game.LightWidth(lines[i], size)) / 2, h - 52 * u + i * size, size, ColorAlpha(Color.White, a * layer));
+            Game.TextRegular(lines[i], (w - Game.RegularWidth(lines[i], size)) / 2, h - 52 * u + i * size, size, ColorAlpha(Color.White, a * layer));
     }
 
     // stable's menu background: one of its cached seasonal backgrounds (Data\bg) unless SeasonalBackgrounds is
