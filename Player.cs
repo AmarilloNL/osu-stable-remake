@@ -227,6 +227,7 @@ sealed partial class Player : Screen
         // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
         clockOrigin = Math.Min(Math.Min(-map.AudioLeadIn, storyboard?.EarliestEvent ?? 0), objs[0].Time - Math.Max(1800, map.Preempt));
         playStart = clockOrigin;
+        SetupSkip();
         sw.Start();
     }
 
@@ -257,7 +258,18 @@ sealed partial class Player : Screen
     Vector2 ToScreen(Vector2 p) => origin + p * scale;
     Vector2 PosOf(HitObject o) => o.Pos + map.StackOffset(o);
     Vector2 BallOf(HitObject o, double t) => o.PositionAtTime(t) + map.StackOffset(o);
-    bool CanSkip => objs[0].Time - time > 6000;
+    // stable's skip: the target is the first object less 8 beats (4 when a beat is 500ms or longer; 2000ms without a
+    // timing point), offered when it lies more than 1200ms + preempt past the start; usable once, until the target.
+    double skipTarget = double.NaN;
+    bool skipped;
+    bool CanSkip => !skipped && time < skipTarget;
+
+    void SetupSkip()
+    {
+        double beat = map.TimingPoints.Count > 0 ? map.TimingPoints[0].BeatLength : 0;
+        double target = Math.Round(beat > 0 ? objs[0].Time - beat * (beat < 500 ? 8 : 4) : objs[0].Time - 2000);
+        if (target - Math.Min(0, clockOrigin) > 1200 + map.Preempt) skipTarget = target;
+    }
     internal int MapMaxCombo => objs.Sum(o => o.Type == ObjType.Slider ? 1 + o.Checkpoints.Count : 1);
 
     public void Dispose()
@@ -689,7 +701,8 @@ sealed partial class Player : Screen
 
     void Skip()
     {
-        double target = objs[0].Time - 2500;
+        skipped = true;
+        double target = skipTarget + Random.Shared.Next(-80, 90); // stable's jitter
         if (music != null)
         {
             music.Seek(target);
