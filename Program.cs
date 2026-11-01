@@ -27,7 +27,13 @@ static class Game
     static double fadeLevel;
     public static void FadeTo(Screen next, Action? onSwitch = null) => FadeTo(() => next, onSwitch);
     // the screen is made at the switch, after onSwitch (a new play's clock starts there)
-    public static void FadeTo(Func<Screen> make, Action? onSwitch = null) { if (fadeTo == null) (fadeTo, fadeSwitch) = (make, onSwitch); }
+    // black: already black (stable's quick retry), switch on the next frame
+    public static void FadeTo(Func<Screen> make, Action? onSwitch = null, bool black = false)
+    {
+        if (fadeTo != null) return;
+        (fadeTo, fadeSwitch) = (make, onSwitch);
+        if (black) fadeLevel = 100;
+    }
 
     // false while fading out (the current screen gets no update)
     static bool UpdateFade(double dtMs)

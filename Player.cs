@@ -283,7 +283,12 @@ sealed partial class Player : Screen
         Game.Screen = next;
     }
 
-    void Retry() => Leave(new Player(map, back, mods, playback, watching));
+    // stable restarts through black too; a quick retry (held key) is black already
+    void Retry(bool quick = false)
+    {
+        if (VirtualClock) { Leave(new Player(map, back, mods, playback, watching)); return; }
+        Game.FadeTo(() => new Player(map, back, mods, playback, watching), Dispose, quick);
+    }
 
     void Fail()
     {
@@ -749,7 +754,7 @@ sealed partial class Player : Screen
         bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyDown(KeyboardKey.R);
         if (!retryHeld) retryArmed = true; // a retry needs the key let go first (it's usually still held when the new play starts)
         retryHold = retryHeld && retryArmed ? Math.Min(100, retryHold + 10 * dtMs / (1000 / 60.0)) : Math.Max(0, retryHold - 3 * dtMs / (1000 / 60.0));
-        if (retryHold >= 100) { Retry(); return; }
+        if (retryHold >= 100) { Retry(quick: true); return; }
 
         if (playback == null && !auto && (Input.IsKeyPressed(key1) || Input.IsKeyPressed(key2))) SongSelect.Ripple(Input.GetMousePosition()); // keys click too
         if (Input.IsKeyPressed(Config.Key("keyDisableMouseButtons", KeyboardKey.F10))) // stable: toggles the option in play
