@@ -1809,8 +1809,17 @@ sealed class SongSelect : Screen
     static (Vector2 Pos, float PlayScale, byte? Keys)? pendingCursor;
     public static void DrawCursorAt(Vector2 pos) => pendingCursor = (pos, CursorPlayScale, CursorKeys);
 
+    // stable hides the cursor in the main menu after 5s without input: out over 300ms, back in over 100ms.
+    internal static bool CursorIdle;
+    static float cursorAlpha = 1;
+    static double cursorAlphaAt = double.NaN;
+
     internal static void FlushCursor()
     {
+        double now = Game.NowMs, dt = double.IsNaN(cursorAlphaAt) ? 0 : now - cursorAlphaAt;
+        cursorAlphaAt = now;
+        cursorAlpha = CursorIdle ? Math.Max(0, cursorAlpha - (float)(dt / 300)) : Math.Min(1, cursorAlpha + (float)(dt / 100));
+        CursorIdle = false; // set again by the menu every frame it's idle
         if (pendingCursor is not { } c) return;
         pendingCursor = null;
         (float scale, byte? keys) = (CursorPlayScale, CursorKeys);
@@ -1837,7 +1846,7 @@ sealed class SongSelect : Screen
             int kept = 0; // RemoveAll without a per-frame closure
             for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 150) trail[kept++] = trail[i];
             trail.RemoveRange(kept, trail.Count - kept);
-            foreach (var (p, at, ts, tr0) in trail) tr.Draw(p, ts, ColorAlpha(Color.White, 1 - (float)((now - at) / 150)), tr0);
+            foreach (var (p, at, ts, tr0) in trail) tr.Draw(p, ts, ColorAlpha(Color.White, (1 - (float)((now - at) / 150)) * cursorAlpha), tr0);
         }
         else if (skin.Tex("cursortrail") is { Width: >= 5 } smooth)
         {
@@ -1863,12 +1872,12 @@ sealed class SongSelect : Screen
             for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 300) trail[kept++] = trail[i];
             trail.RemoveRange(kept, trail.Count - kept);
             BeginBlendMode(BlendMode.Additive);
-            foreach (var (p, t, _, _) in trail) smooth.Draw(p, s, ColorAlpha(Color.White, MathF.Pow(1 - (float)((now - t) / 300), 1.7f)));
+            foreach (var (p, t, _, _) in trail) smooth.Draw(p, s, ColorAlpha(Color.White, MathF.Pow(1 - (float)((now - t) / 300), 1.7f) * cursorAlpha));
             EndBlendMode();
         }
         Vector2 Anchored(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * e / 2;
-        if (skin.Tex("cursor") is { } c) c.Draw(Anchored(c), e, Color.White, turn);
+        if (skin.Tex("cursor") is { } c) c.Draw(Anchored(c), e, ColorAlpha(Color.White, cursorAlpha), turn);
         else DrawCircleV(pos, 12 * e, new Color(255, 200, 80, 255));
-        if (middle && skin.Tex("cursormiddle") is { } m) m.Draw(Anchored(m), e, Color.White); // the default cursor's blue centre
+        if (middle && skin.Tex("cursormiddle") is { } m) m.Draw(Anchored(m), e, ColorAlpha(Color.White, cursorAlpha)); // the default cursor's blue centre
     }
 }

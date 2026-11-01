@@ -323,6 +323,7 @@ sealed class MainMenu : Screen
         bool moved = Vector2.Distance(mouse, lastMouse) > 5;
         if (moved) lastActivity = Game.NowMs;
         lastMouse = mouse;
+        SongSelect.CursorIdle = Game.NowMs - lastActivity > 5000;
         // stable: the music controls, Now Playing, tip and info layer returns quickly on activity and fades to 1%
         // over ~16s once the mouse has been still for 6s; the info lines also fade in/out (500ms) with the menu.
         double ticks = dtMs / (1000 / 60.0);
