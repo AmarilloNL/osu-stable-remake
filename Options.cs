@@ -97,9 +97,11 @@ sealed class Options : Screen
             T("Fullscreen mode", "Fullscreen", true),
             new(Kind.Warning, "Running without fullscreen mode will increase your input latency!", Visible: () => Game.DisplayMode() != "Fullscreen"),
             T("Minimise on alt-tab during fullscreen", "MinimiseOnAltTabFullscreen", true),
-            T("Render at native resolution", "HighResolution"),
-            new(Kind.Slider, "Horizontal position", "LetterboxPositionX", -100, 100, 0, "0", "%"),
-            new(Kind.Slider, "Vertical position", "LetterboxPositionY", -100, 100, 0, "0", "%"),
+            // stable's letterboxing (its cfg key): fullscreen below the monitor's resolution keeps the monitor's and
+            // places the game in a box. Ours switches the display mode instead, as stable does with it off.
+            T("Render at native resolution", "Letterboxing", true),
+            new(Kind.Slider, "Horizontal position", "LetterboxPositionX", -100, 100, 0, "0", "%", Visible: () => Config.GetBool("Letterboxing", true)),
+            new(Kind.Slider, "Vertical position", "LetterboxPositionY", -100, 100, 0, "0", "%", Visible: () => Config.GetBool("Letterboxing", true)),
             H("DETAIL SETTINGS"),
             T("Snaking sliders", "SnakingSliders", true),
             T("Background video", "Video", true),
@@ -800,7 +802,7 @@ sealed class Options : Screen
         ["ForceFrameFlush"] = "Users which experience regular dropped/stutter frames should try turning this on. May reduce frame rate slightly.",
         ["DetectPerformanceIssues"] = "osu! will actively look for and alert you of issues with your PC which could be hurting your game performance.",
         ["Fullscreen"] = "Switches to dedicated fullscreen mode. Decreases cursor latency in Windows 7+.",
-        ["HighResolution"] = "Always use the full native resolution but display osu! in a smaller centered portion of the screen.\nUseful to get the low latency of full screen with a smaller game resolution.",
+        ["Letterboxing"] = "Always use the full native resolution but display osu! in a smaller centered portion of the screen.\nUseful to get the low latency of full screen with a smaller game resolution.",
         ["SnakingSliders"] = "Sliders gradually snake out from their starting point.\nThis should run fine unless you have a low-end PC.",
         ["Video"] = "Enables background video playback.\nIf you get a large amount of lag on beatmaps with video, try disabling this feature.",
         ["ShowStoryboard"] = "Show storyboards in the background of beatmaps. These usually contain story elements, lyrics or special effects.",

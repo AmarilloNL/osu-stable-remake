@@ -230,12 +230,18 @@ static class Game
         return f;
     }
 
-    // Window size: remake.cfg's Resolution ("WxH"), else stable's Width/Height.
+    // Window size: remake.cfg's Resolution ("WxH"), else stable's: WidthFullscreen/HeightFullscreen in fullscreen,
+    // Width/Height otherwise (9999: the monitor's own; before the window exists that reads 0, which raylib takes as
+    // the monitor's size too).
     public static (int W, int H) Resolution()
     {
         var r = Config.Get("Resolution", "").Split('x');
-        return r.Length == 2 && int.TryParse(r[0], out int w) && int.TryParse(r[1], out int h)
-            ? (w, h) : (Config.GetInt("Width", 1280), Config.GetInt("Height", 720));
+        if (r.Length == 2 && int.TryParse(r[0], out int w) && int.TryParse(r[1], out int h)) return (w, h);
+        bool full = Config.Get("DisplayMode", Config.GetBool("Fullscreen", false) ? "Fullscreen" : "Windowed") == "Fullscreen";
+        w = Config.GetInt(full ? "WidthFullscreen" : "Width", full ? 9999 : 1280);
+        h = Config.GetInt(full ? "HeightFullscreen" : "Height", full ? 9999 : 720);
+        int m = GetCurrentMonitor();
+        return (w == 9999 ? GetMonitorWidth(m) : w, h == 9999 ? GetMonitorHeight(m) : h);
     }
 
     // Display mode: remake.cfg's DisplayMode, else stable's Fullscreen flag, else borderless when the window
