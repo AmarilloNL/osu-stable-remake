@@ -126,6 +126,8 @@ sealed partial class Player : Screen
     bool UpdateStartHold(double dtMs)
     {
         if (fadeOut == null) return false;
+        // stable: Esc (or the pause key) before the start goes back to song select
+        if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape))) { Leave(back); return true; }
         UpdateVisualSettings(dtMs);
         fadeVolume -= 0.02f * (float)(Math.Min(dtMs, 33) / (1000 / 60.0)); // (our first frame carries the load time)
         fadeOut.Volume = Math.Max(0, fadeVolume) * Config.MusicVolume;
