@@ -430,7 +430,9 @@ sealed class Storyboard
             bool flipH = Param(e, t, 'H') ^ sx < 0, flipV = Param(e, t, 'V') ^ sy < 0;
             float dw = tex.Width * Math.Abs(sx) * s, dh = tex.Height * Math.Abs(sy) * s;
             var src = new Rectangle(0, 0, flipH ? -tex.Width : tex.Width, flipV ? -tex.Height : tex.Height);
-            var origin = new Vector2(flipH ? 1 - e.Origin.X : e.Origin.X, flipV ? 1 - e.Origin.Y : e.Origin.Y) * new Vector2(dw, dh);
+            // stable builds the quad from the origin with the scale's size and only mirrors the texture coordinates on a
+            // flip (P H/V or a negative scale): the sprite stays on the same side of its origin.
+            var origin = e.Origin * new Vector2(dw, dh);
             bool additive = Param(e, t, 'A');
             if (additive) BeginBlendMode(BlendMode.Additive);
             DrawTexturePro(tex, src, new Rectangle(ox + x * s, y * s, dw, dh), origin, rot * 180 / MathF.PI, colour);
