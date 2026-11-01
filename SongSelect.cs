@@ -362,6 +362,9 @@ sealed class SongSelect : Screen
     // follows the selection / focus again once that moves.
     float? wheelTarget;
     int lastFocusRow = -1;
+    // free scrolling stops with the last panel at the bottom (its centre ~186 units below the selection line at 220)
+    float MaxFreeScroll => Math.Max(0, RowCount - 1 - 186 * U / RowH);
+    bool rightScroll; // stable: holding the right button over the list scrolls it to the cursor's height
 
     void MoveSet(int delta)
     {
@@ -670,7 +673,16 @@ sealed class SongSelect : Screen
             float from = wheelTarget ?? FocusRow;
             int r0 = Math.Max(0, (int)from);
             float rowUnits = (200 * U + (r0 + 1) * RowH + Extra(r0 + 1) - (200 * U + r0 * RowH + Extra(r0))) / U;
-            wheelTarget = Math.Clamp(from - wheel * 72 / Math.Max(1, rowUnits), 0, Math.Max(0, RowCount - 1));
+            wheelTarget = Math.Clamp(from - wheel * 72 / Math.Max(1, rowUnits), 0, MaxFreeScroll);
+        }
+        {
+            var m = Input.GetMousePosition();
+            if (Input.IsMouseButtonPressed(MouseButton.Right) && m.X >= 200 * U && m.Y > TopH && m.Y < GetScreenHeight() - BottomH
+                && !CheckCollisionPointRec(m, GroupBox(GetScreenWidth())) && !CheckCollisionPointRec(m, SortBox(GetScreenWidth()))) rightScroll = true;
+            if (!Input.IsMouseButtonDown(MouseButton.Right)) rightScroll = false;
+            // (y - 70) / (480 - 150) of the way down the whole list
+            if (rightScroll && !Input.IsMouseButtonDown(MouseButton.Left))
+                wheelTarget = Math.Clamp((m.Y / U - 70) / 330, 0, 1) * MaxFreeScroll;
         }
 
         var mouse = Input.GetMousePosition();
