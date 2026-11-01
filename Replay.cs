@@ -132,7 +132,7 @@ static class Replays
         foreach (var f in frames)
         {
             long t = (long)Math.Round(f.Time);
-            int z = ((f.Keys & 1) != 0 ? 5 : 0) | ((f.Keys & 2) != 0 ? 10 : 0) | ((f.Keys & 4) != 0 ? 1 : 0) | ((f.Keys & 8) != 0 ? 2 : 0);
+            int z = ((f.Keys & 1) != 0 ? 5 : 0) | ((f.Keys & 2) != 0 ? 10 : 0) | ((f.Keys & 4) != 0 ? 1 : 0) | ((f.Keys & 8) != 0 ? 2 : 0) | (f.Keys & 16);
             text.Append(inv, $"{t - last}|{f.X:R}|{f.Y:R}|{z},");
             last = t;
         }
@@ -203,7 +203,7 @@ static class Replays
             int z = int.Parse(p[3], inv);
             // stable: M1=1, M2=2, K1=4 (+M1), K2=8 (+M2). Ours: K1, K2, M1, M2 as bits 0-3.
             byte keys = (byte)(((z & 4) != 0 ? 1 : 0) | ((z & 8) != 0 ? 2 : 0)
-                | ((z & 1) != 0 && (z & 4) == 0 ? 4 : 0) | ((z & 2) != 0 && (z & 8) == 0 ? 8 : 0));
+                | ((z & 1) != 0 && (z & 4) == 0 ? 4 : 0) | ((z & 2) != 0 && (z & 8) == 0 ? 8 : 0) | (z & 16)); // 16: smoke
             frames.Add(new ReplayFrame(t, float.Parse(p[1], inv), float.Parse(p[2], inv), keys));
         }
         return frames.ToArray();

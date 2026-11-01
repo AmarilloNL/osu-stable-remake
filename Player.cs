@@ -164,6 +164,7 @@ sealed partial class Player : Screen
 
         key1 =Config.Key("keyOsuLeft", KeyboardKey.Z);
         key2 = Config.Key("keyOsuRight", KeyboardKey.X);
+        keySmoke = Config.Key("keyOsuSmoke", KeyboardKey.C);
         mouseButtons = !Config.GetBool("MouseDisableButtons", false);
 
         diffMul = map.DifficultyMultiplier;
@@ -829,10 +830,12 @@ sealed partial class Player : Screen
         if (!autopilot) cursor = mouse;
 
         // Record only changes: frames then follow the tablet/mouse report rate, not the render rate.
-        bool changed = keys != inputKeys || mouse != lastRecorded;
+        bool smoke = !Bot && Down(keySmoke);
+        bool changed = keys != inputKeys || mouse != lastRecorded || smoke != smokeHeld;
+        smokeHeld = smoke;
         if (changed)
         {
-            recording.Add(new ReplayFrame(time, mouse.X, mouse.Y, keys));
+            recording.Add(new ReplayFrame(time, mouse.X, mouse.Y, (byte)(keys | (smoke ? SmokeBit : 0))));
             lastRecorded = mouse;
         }
         int newly = keys & ~inputKeys;
@@ -891,8 +894,10 @@ sealed partial class Player : Screen
             AdvanceSpinners(f.Time); // spinners run up to this frame on the previous input
             pbCursor = new Vector2(f.X, f.Y);
             if (!autopilot) cursor = pbCursor;
-            int newly = f.Keys & ~inputKeys;
-            inputKeys = f.Keys;
+            byte fk = (byte)(f.Keys & 15);
+            smokeHeld = (f.Keys & SmokeBit) != 0;
+            int newly = fk & ~inputKeys;
+            inputKeys = fk;
             // the key overlay counts per replay frame (stable's watcher takes one frame per update), so a press that
             // starts and ends within one of our frames still counts
             if (newly != 0 && !Resting(f.Time) && !paused && !failed)
@@ -1543,12 +1548,79 @@ sealed partial class Player : Screen
         DrawVisualSettings(w, h);
         UpdateBreakStars(auto && playback == null ? autoKeys : inputKeys);
         DrawBreakStars();
+        var cursorAt = auto || autopilot || playback != null ? ToScreen(cursor) : Input.GetMousePosition();
+        UpdateSmoke(smokeHeld && !paused && !failed, cursorAt);
+        DrawSmoke();
         SongSelect.CursorPlayScale = Config.GetBool("AutomaticCursorSizing", false) ? 1 - 0.7f * (float)(map.CS - 4) / 5 : 1;
         SongSelect.CursorKeys = auto && playback == null ? autoKeys : inputKeys;
-        if (auto || autopilot || playback != null) SongSelect.DrawCursorAt(ToScreen(cursor));
-        else SongSelect.DrawCursor();
+        SongSelect.DrawCursorAt(cursorAt);
         SongSelect.CursorPlayScale = 1;
         SongSelect.CursorKeys = null;
+    }
+
+    // ---- stable's cursor smoke: while the smoke key is held (in replays its frame bit 16), every 60Hz tick lays
+    // cursor-smoke sprites from the last one towards the cursor, a quarter of the sprite's width (at scale 1) apart, each
+    // added on at half size, alpha 0.6 fading out over 4s, at a random angle turning up to 0.25 rad more over 500ms
+    // (Out). Letting go (or closing a loop: over 50 in the stroke and back within 10px of its start) ends the stroke:
+    // its sprites fade from full alpha over 8s (In), 2ms apart.
+    public const byte SmokeBit = 16;
+    KeyboardKey keySmoke;
+    bool smokeHeld;
+    sealed class SmokePuff { public Vector2 Pos; public double Born, Release = double.NaN; public float Rot0, Rot1; }
+    readonly List<SmokePuff> smoke = [], smokeStroke = [];
+    Vector2? smokeLast;
+    double smokeTick = double.NaN;
+
+    void ReleaseSmoke()
+    {
+        double now = Game.NowMs;
+        for (int i = 0; i < smokeStroke.Count; i++) smokeStroke[i].Release = now + 2 * i;
+        smokeStroke.Clear();
+    }
+
+    void UpdateSmoke(bool held, Vector2 at)
+    {
+        double now = Game.NowMs;
+        if (double.IsNaN(smokeTick)) smokeTick = now;
+        var tex = skin.Tex("cursor-smoke");
+        for (; now - smokeTick >= 1000 / 60.0; smokeTick += 1000 / 60.0)
+        {
+            if (!held || tex is null) { ReleaseSmoke(); smokeLast = null; continue; }
+            float gap = Math.Max(2, tex.Value.Width * 0.625f * GetScreenHeight() / 480f / 4);
+            if (smokeLast is not { } last || last != at)
+            {
+                float dist = smokeLast is { } l ? Vector2.Distance(l, at) : 0;
+                int n = Math.Max(1, (int)(dist / gap));
+                var from = smokeLast is { } p ? p + Vector2.Normalize(at - p) * Math.Min(dist, gap) : at;
+                for (int i = 0; i < n; i++)
+                {
+                    float r = Random.Shared.NextSingle() * 10;
+                    var puff = new SmokePuff { Pos = Vector2.Lerp(from, at, (float)i / n), Born = now, Rot0 = r, Rot1 = r + Random.Shared.NextSingle() * 0.5f - 0.25f };
+                    smoke.Add(puff);
+                    smokeStroke.Add(puff);
+                    smokeLast = puff.Pos;
+                }
+            }
+            if (smokeStroke.Count > 50 && Vector2.Distance(smokeLast!.Value, smokeStroke[0].Pos) < 10) ReleaseSmoke();
+        }
+        smoke.RemoveAll(s => double.IsNaN(s.Release) ? now - s.Born > 4000 : now - s.Release > 8000);
+    }
+
+    void DrawSmoke()
+    {
+        if (smoke.Count == 0 || skin.Tex("cursor-smoke") is not { } tex) return;
+        double now = Game.NowMs;
+        float sd = GetScreenHeight() / 768f;
+        BeginBlendMode(BlendMode.Additive);
+        foreach (var s in smoke)
+        {
+            float a = double.IsNaN(s.Release) ? 0.6f * (1 - (float)((now - s.Born) / 4000))
+                : now < s.Release ? 1 : 1 - (float)Easing.Apply(2, (now - s.Release) / 8000);
+            if (a <= 0) continue;
+            float rot = s.Rot0 + (s.Rot1 - s.Rot0) * (float)Easing.Apply(1, (now - s.Born) / 500);
+            tex.Draw(s.Pos, sd * 0.5f, ColorAlpha(Color.White, a * hudFade), rot * 180 / MathF.PI);
+        }
+        EndBlendMode();
     }
 
     // stable's star2 effects, in 640x480 units moved by a little physics step every 60Hz tick (+gravity to the speed,
