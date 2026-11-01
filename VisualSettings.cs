@@ -101,8 +101,8 @@ sealed partial class Player
         float u = h / 480f, top = h - visualHeight * u;
         DrawRectangleRec(new Rectangle(0, top, w, 3 * u), new Color(0, 78, 155, 255));
         DrawRectangleRec(new Rectangle(0, top + 3 * u, w, h - top), new Color(0, 0, 0, 180));
-        Game.TextBold("Visual", 4 * u, top + 1 * u, 24 * u, new Color(173, 216, 230, 255)); // LightBlue
-        Game.TextBold("Settings", 53 * u, top + 16 * u, 22 * u, Color.White);
+        Game.TextBold("Visual", 4 * u, top + 3 * u, 25 * u, new Color(173, 216, 230, 255)); // LightBlue; measured against stable at 1080p
+        Game.TextBold("Settings", 53 * u, top + 18 * u, 22.7f * u, Color.White);
         if (visualHeight < 60) return;
 
         Game.TextBold("Background dim", 24 * u, top + 48 * u, 10 * u, Color.White);
