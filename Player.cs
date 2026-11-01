@@ -2317,6 +2317,8 @@ sealed partial class Player : Screen
         const float Base = 29;
         var c = U(0, Base + 219);
         var white = ColorAlpha(Color.White, alpha);
+        // stable greys the spinning parts when the spinner spins itself (SpunOut, Autopilot)
+        var spinTint = mods.HasFlag(Mods.SpunOut) || autopilot ? ColorAlpha(Xna.Gray, alpha) : white;
         if (skin.SpinnerFadePlayfield) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, alpha)); // old skins: the playfield fades to black
         int req = SpinsRequired(o);
         float rotDeg = (float)(s.Angle * 180 / Math.PI);
@@ -2342,8 +2344,8 @@ sealed partial class Player : Screen
                 glow.Draw(c, grow, ColorAlpha(glowColour, spun * alpha));
                 EndBlendMode();
             }
-            skin.Tex("spinner-bottom")?.Draw(c, grow, white, top / 3);
-            skin.Tex("spinner-top")?.Draw(c, grow, white, top);
+            skin.Tex("spinner-bottom")?.Draw(c, grow, spinTint, top / 3);
+            skin.Tex("spinner-top")?.Draw(c, grow, spinTint, top);
             skin.Tex("spinner-middle2")?.Draw(c, grow, white, rotDeg);
             skin.Tex("spinner-middle")?.Draw(c, grow, ColorAlpha(ColorLerp(Color.White, Xna.Red, (float)progress), alpha));
         }
@@ -2359,7 +2361,7 @@ sealed partial class Player : Screen
                 DrawTexturePro(m.Tex, new Rectangle(0, 69.2f * (10 - n) * k, m.Tex.Width, 69.2f * n * k),
                     new Rectangle(cx - 320 * u, (Base + 43.25f * (10 - n)) * u, m.Width * sd, 69.2f * n * sd), Vector2.Zero, 0, white);
             }
-            if (skin.Tex("spinner-circle") is { } sc) sc.Draw(c, sd, white, rotDeg);
+            if (skin.Tex("spinner-circle") is { } sc) sc.Draw(c, sd, spinTint, rotDeg);
             else DrawRing(c, 180 * sd, 190 * sd, rotDeg, rotDeg + 300, 64, white);
         }
 
