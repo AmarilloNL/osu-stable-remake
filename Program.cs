@@ -25,8 +25,7 @@ static class Game
     public static bool Fading => fadeTo != null;
 
     // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight (stable hides it to a tray
-    // icon; here it's minimised, which stops the loop until it's restored), pausing a play first. The volume comes back
-    // with the window.
+    // icon; here it's minimised), pausing a play first. The volume comes back with the window.
     static string? bossVolume;
     static void UpdateBossKey(SongSelect songs)
     {
@@ -377,6 +376,9 @@ static class Game
         SetTraceLogLevel(TraceLogLevel.Warning);
         string frameSync = Config.Get("FrameSync", "Unlimited");
         if (frameSync == "VSync") SetConfigFlags(ConfigFlags.VSyncHint);
+        // like stable, keep running while minimised (raylib would otherwise stop the loop until the window comes back,
+        // while the music plays on); the loop throttles itself to 15fps there
+        SetConfigFlags(ConfigFlags.AlwaysRunWindow);
         bool testRun = exitAfter < double.MaxValue;
         if (testRun) { SetConfigFlags(ConfigFlags.UnfocusedWindow); Input.ScriptOnly = true; } // test runs don't take focus or real input
         if (testRun) Config.SetTemp("VolumeUniversal", "2"); // quiet: the user may be at the PC
@@ -444,17 +446,21 @@ static class Game
             if (testDrop != null && now >= 1500) { BeatmapImport.Open([testDrop]); testDrop = null; } // test hook: --drop <file>
             BeatmapImport.Poll();
             VolumeControl.Update(songSelect);
-            if (UpdateFade(dt)) Screen.Update(dt);
+            // minimised (a 0x0 window) only a play keeps running, so its time stays with the music; menus wait
+            if (UpdateFade(dt) && (!IsWindowMinimized() || Screen is Player)) Screen.Update(dt);
 
             BeginDrawing();
             ClearBackground(Color.Black);
-            Screen.Draw();
-            DrawFade();
-            VolumeControl.Draw();
-            Notification.Draw();
-            Toast.Draw();
-            SongSelect.FlushCursor();
-            stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
+            if (!IsWindowMinimized()) // a minimised window is 0x0: nothing to draw (the game itself keeps running, like stable)
+            {
+                Screen.Draw();
+                DrawFade();
+                VolumeControl.Draw();
+                Notification.Draw();
+                Toast.Draw();
+                SongSelect.FlushCursor();
+                stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
+            }
             double secs = now / 1000;
             if (shotIndex < shots.Length && secs >= shots[shotIndex] || shotIndex < songShots.Length && Screen is Player sp && sp.SongTime >= songShots[shotIndex])
             {

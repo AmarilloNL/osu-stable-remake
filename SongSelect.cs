@@ -2296,7 +2296,7 @@ sealed class SongSelect : Screen
                 var d = at - from;
                 float len = d.Length();
                 var dir = len > 0 ? d / len : Vector2.Zero; // one unit step direction for the whole walk
-                while (len >= step)
+                while (step > 0 && len >= step)
                 {
                     from += dir * step;
                     len -= step;

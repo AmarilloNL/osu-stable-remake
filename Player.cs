@@ -631,7 +631,7 @@ sealed partial class Player : Screen
     internal bool ActivePlay => !paused && !failed && !finished && playback == null && !auto
         && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime;
     internal void ApplyMusicVolume() { if (music != null) music.Volume = Config.MusicVolume; }
-    // the Boss key: the window is about to be minimised, where the game loop stops (the music wouldn't)
+    // the Boss key pauses any play in progress (stable's does too)
     internal void BossPause() { if (!paused && !failed && !finished && !VirtualClock) SetPaused(true); }
 
     // stable: a live play can't pause again within a second (of song time) of its last pause
