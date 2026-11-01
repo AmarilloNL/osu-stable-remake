@@ -114,10 +114,15 @@ sealed partial class Player
             Game.Screen = next;
         }
 
+        // stable goes back through black: out at 8 (of 100) a 60Hz tick, then song select comes in at 4 a tick
+        const double BlackOutMs = 100 / 8.0 * (1000 / 60.0);
+        double leavingAt = double.NaN;
+
         void Back()
         {
+            if (!double.IsNaN(leavingAt)) return;
             skin.Sound("menuback")?.Play(BeatmapSamples.EffectVolume);
-            Leave(p.back);
+            leavingAt = Game.NowMs;
         }
 
         void Retry()
@@ -183,6 +188,11 @@ sealed partial class Player
             w = GetScreenWidth(); h = GetScreenHeight();
             u = h / 480f; sd = h / 768f;
             var mouse = Input.GetMousePosition();
+            if (!double.IsNaN(leavingAt))
+            {
+                if (Game.NowMs - leavingAt >= BlackOutMs) { p.back.FadeFromBlack(); Leave(p.back); }
+                return;
+            }
 
             if (Input.IsKeyPressed(KeyboardKey.Escape)) Back();
             else if (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.Grave)) Retry();
@@ -302,6 +312,7 @@ sealed partial class Player
             }
 
             if (tooltipShown) DrawTooltip(mouse);
+            if (!double.IsNaN(leavingAt)) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (float)Math.Min(1, (Game.NowMs - leavingAt) / BlackOutMs)));
             SongSelect.DrawCursor();
         }
 
