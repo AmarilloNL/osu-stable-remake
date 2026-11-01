@@ -114,8 +114,7 @@ sealed partial class Player
             Game.Screen = next;
         }
 
-        // stable goes back through black: out at 8 (of 100) a 60Hz tick, then song select comes in at 4 a tick
-        const double BlackOutMs = 100 / 8.0 * (1000 / 60.0);
+        // stable goes back through black (Player.BlackOutMs), then song select comes in at 4 a tick
         double leavingAt = double.NaN;
 
         void Back()
