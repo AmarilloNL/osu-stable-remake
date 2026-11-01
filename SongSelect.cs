@@ -462,6 +462,7 @@ sealed class SongSelect : Screen
         view.Clear();
         if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
         viewStamp++;
+        spinning = false; // its place in the old list means nothing now
         matchCount = view.Sum(v => v.Diffs.Count);
         keptSelection = view.Count == 0 ? keepDiff : null;
         expanded = Grouped && groups.Count > 0 ? groupIndex : -1;
@@ -490,6 +491,18 @@ sealed class SongSelect : Screen
     int spinTicks;
     double spinTick;
 
+    // ungrouped, stable's spin walks every matching difficulty (so a big set is likelier): a step onto the selected
+    // run selects it, a step elsewhere only moves the focus, and the end selects the difficulty it stopped on
+    int spinAt;
+    void SpinTo(int at, bool end)
+    {
+        spinAt = at;
+        int e = 0;
+        while (at >= view[e].Diffs.Count) at -= view[e++].Diffs.Count;
+        if (end || e == setIndex) { setIndex = e; diffIndex = at; SelectionChanged(); }
+        else focusRow = Layout().Start[e] + (view[e].Set == view[setIndex].Set ? at : 0);
+    }
+
     int FlatCount => Grouped ? groups.Sum(g => g.Entries.Count) : view.Count;
     int FlatIndex()
     {
@@ -517,17 +530,18 @@ sealed class SongSelect : Screen
                 else if (Grouped && groups.FindIndex(g => g.Entries.Any(e => e.Diffs.Contains(prev))) is var gi and >= 0)
                 { SelectEntry(gi, groups[gi].Entries.FindIndex(e => e.Diffs.Contains(prev))); break; }
         }
-        else if (spinning) spinning = false;
+        else if (spinning) StopSpin();
         else
         {
-            int n = FlatCount;
+            int n = Grouped ? FlatCount : matchCount;
             if (n < 2) return;
             if (Selected is { } cur) randomHistory.Push(cur);
             spinning = true;
             spinThreshold = 0.0001f;
             spinTicks = 0;
             spinTick = Game.NowMs;
-            SelectFlat(Random.Shared.Next(n));
+            if (Grouped) SelectFlat(Random.Shared.Next(n));
+            else SpinTo(Random.Shared.Next(n), false);
             Game.Skin.Sound("menuclick")?.Play(BeatmapSamples.EffectVolume);
         }
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
@@ -538,14 +552,21 @@ sealed class SongSelect : Screen
         for (; spinning && Game.NowMs - spinTick >= 1000 / 60.0; spinTick += 1000 / 60.0)
         {
             if (!(spinTicks++ > spinThreshold)) continue;
-            int n = FlatCount;
-            if (n <= 1) { spinning = false; break; }
+            int n = Grouped ? FlatCount : matchCount;
+            if (n <= 1) { StopSpin(); break; }
             Game.Skin.Sound("menuclick")?.Play(BeatmapSamples.EffectVolume * Math.Min(50, spinThreshold + 20) / 50);
             spinTicks = 0;
             spinThreshold *= 1.6f;
-            if (spinThreshold > Random.Shared.Next(20, 50)) { spinning = false; break; }
-            SelectFlat((FlatIndex() + 1) % n);
+            if (spinThreshold > Random.Shared.Next(20, 50)) { StopSpin(); break; }
+            if (Grouped) SelectFlat((FlatIndex() + 1) % n);
+            else SpinTo((spinAt + 1) % n, false);
         }
+    }
+
+    void StopSpin()
+    {
+        spinning = false;
+        if (!Grouped && view.Count > 0) SpinTo(spinAt, true);
     }
 
     void SelectionChanged() { selectionChangedAt = Game.NowMs; wheelTarget = null; focusRow = -1; }
