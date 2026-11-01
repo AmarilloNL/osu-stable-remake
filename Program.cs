@@ -23,6 +23,29 @@ static class Game
     // stable's fading mode change: a black overlay (0-100) rises 8 a 60Hz tick, the screen switches at 100, then it
     // falls 4 a tick from 140 (so it holds black a moment). The old screen sits still meanwhile.
     public static bool Fading => fadeTo != null;
+
+    // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight (stable hides it to a tray
+    // icon; here it's minimised, which stops the loop until it's restored), pausing a play first. The volume comes back
+    // with the window.
+    static string? bossVolume;
+    static void UpdateBossKey(SongSelect songs)
+    {
+        if (bossVolume == null && Input.IsKeyPressed(Config.Key("keyBossKey", KeyboardKey.Insert)))
+        {
+            bossVolume = Config.Get("VolumeUniversal", "100");
+            Config.SetTemp("VolumeUniversal", "0");
+            (Screen as Player)?.BossPause();
+            MinimizeWindow();
+        }
+        else if (bossVolume != null && !IsWindowMinimized() && IsWindowFocused())
+        {
+            Config.SetTemp("VolumeUniversal", bossVolume);
+            bossVolume = null;
+        }
+        else return;
+        songs.ApplyMusicVolume();
+        (Screen as Player)?.ApplyMusicVolume();
+    }
     static Func<Screen>? fadeTo;
     static Action? fadeSwitch;
     static double fadeLevel;
@@ -438,6 +461,7 @@ static class Game
                 Rlgl.DrawRenderBatchActive(); // screenshots read the framebuffer, so flush pending draws first
                 TakeScreenshot($"shot-{shotIndex++}.png");
             }
+            UpdateBossKey(songSelect);
             // F7 (Toggle Framerate Limit): stable's cycle VSync / Power saving -> Optimal -> Unlimited -> Power saving
             if (Input.IsKeyPressed(Config.Key("keyToggleFrameLimiter", KeyboardKey.F7)))
             {
