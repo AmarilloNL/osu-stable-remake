@@ -692,7 +692,12 @@ sealed class SongSelect : Screen
         {
             var m = Input.GetMousePosition();
             if (Input.IsMouseButtonPressed(MouseButton.Right) && m.X >= 200 * U && m.Y > TopH && m.Y < GetScreenHeight() - BottomH
-                && !CheckCollisionPointRec(m, GroupBox(GetScreenWidth())) && !CheckCollisionPointRec(m, SortBox(GetScreenWidth()))) rightScroll = true;
+                && !CheckCollisionPointRec(m, GroupBox(GetScreenWidth())) && !CheckCollisionPointRec(m, SortBox(GetScreenWidth())))
+            {
+                // stable: right-clicking a beatmap panel selects it and opens the beatmap options; elsewhere it scrolls
+                if (m.X >= PanelX(RowAt(m.Y)) && RightClickRow(m.Y)) { OpenBeatmapOptions(); return; }
+                rightScroll = true;
+            }
             if (!Input.IsMouseButtonDown(MouseButton.Right)) rightScroll = false;
             // (y - 70) / (480 - 150) of the way down the whole list
             if (rightScroll && !Input.IsMouseButtonDown(MouseButton.Left))
@@ -793,7 +798,8 @@ sealed class SongSelect : Screen
         }
         if (changed) ApplyFilter();
 
-        scrollRow += ((wheelTarget ?? FocusRow) - scrollRow) * (float)Math.Min(1, dtMs / 80);
+        // right-button scrolling eases like stable's (0.992 a ms), everything else follows within ~80ms
+        scrollRow += ((wheelTarget ?? FocusRow) - scrollRow) * (rightScroll ? 1 - (float)Math.Pow(0.992, dtMs) : (float)Math.Min(1, dtMs / 80));
         UpdateCarousel(dtMs, Input.GetMousePosition());
         UpdateSparkles();
     }
@@ -1191,6 +1197,19 @@ sealed class SongSelect : Screen
         while (RowY(row) > y) row--;
         while (RowY(row + 1) <= y) row++;
         return row;
+    }
+
+    // the panel under a right-click becomes the selection (never plays); false off the panels or on a group header
+    bool RightClickRow(float y)
+    {
+        int row = RowAt(y);
+        if (row < 0 || row >= RowCount) return false;
+        var (set, diff, group) = RowInfo(row);
+        if (group >= 0) return false;
+        if (Grouped) { if (diff < 0) SelectEntry(expanded, set); return true; }
+        if (diff < 0) { if (set != setIndex) MoveSet(set - setIndex); }
+        else if (diff != diffIndex) { diffIndex = diff; SelectionChanged(); }
+        return true;
     }
 
     bool ClickRow(float y)
