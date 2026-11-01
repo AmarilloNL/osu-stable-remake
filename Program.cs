@@ -353,6 +353,13 @@ static class Game
                 string next = Config.Get("FrameSync", "Unlimited") switch { "VSync" or "PowerSaving" => "Optimal", "Optimal" or "Limit120" => "Unlimited", _ => "PowerSaving" };
                 Config.SetOwn("FrameSync", next);
                 ClearWindowState(ConfigFlags.VSyncHint);
+                // stable's notice: "Frame limiter: Power Saving (330fps)", "Optimal (960fps)", "Unlimited (gameplay)"
+                Notification.Show(next switch
+                {
+                    "PowerSaving" => $"Frame limiter: Power Saving ({TargetFps(next, refresh):0}fps)",
+                    "Optimal" => $"Frame limiter: Optimal ({TargetFps(next, refresh):0}fps)",
+                    _ => "Frame limiter: Unlimited (gameplay)",
+                }, 1000);
             }
             // F12 (Save Screenshot): the frame as Screenshots/screenshotN.jpg (or .png, per Screenshot format) next to the remake (never in stable's folder)
             if (Input.IsKeyPressed(Config.Key("keyScreenshot", KeyboardKey.F12)))
