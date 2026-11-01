@@ -14,6 +14,7 @@ sealed class BeatmapSet(List<DbBeatmap> diffs)
 sealed class SongSelect : Screen
 {
     Task<List<BeatmapSet>>? loading;
+    string? reselect; // F5: the selection to find again in the re-read library
     List<BeatmapSet> sets = [];
     readonly List<(BeatmapSet Set, List<DbBeatmap> Diffs)> view = []; // after search filter
     string filter = "", message = "";
@@ -35,7 +36,11 @@ sealed class SongSelect : Screen
     static float BottomH => 80 * S;
 
     // Gameplay's sprites decode in the background while a map is picked (and upload a frame at a time in Update).
-    public override void Entered() => Game.Skin.PrefetchGameplay();
+    public override void Entered()
+    {
+        Game.Skin.PrefetchGameplay();
+        if (Game.Previous is not Options) SlideIn(); // stable's options are an overlay; anything else re-enters song select
+    }
 
     public SongSelect(string filter = "", Mods mods = Mods.None)
     {
@@ -248,10 +253,10 @@ sealed class SongSelect : Screen
         Game.Text(caption, 64.4f * u, 397 * u, 30 * u, new Color(255, 255, 255, 64), 0.5f * u);
     }
 
-    internal void ApplyFilter()
+    internal void ApplyFilter(DbBeatmap? select = null)
     {
-        var keep = view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
-        var keepDiff = Selected;
+        var keep = select != null ? sets.FirstOrDefault(s => s.Diffs.Contains(select)) : view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
+        var keepDiff = select ?? Selected;
         var all = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
         var words = new List<string>();
         var terms = new List<(string, string, double)>();
@@ -601,17 +606,19 @@ sealed class SongSelect : Screen
             if (!loading.IsCompleted) return false;
             sets = loading.Result;
             loading = null;
+            var again = reselect == null ? null : sets.SelectMany(s => s.Diffs).FirstOrDefault(d => d.Md5 == reselect);
             // every non-Latin character the library's names use, into the fallback glyph atlases at once (one build
             // instead of one each time a new title scrolls into view)
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
-            ApplyFilter();
-            if (filter.Length == 0 && view.Count > 0)
+            ApplyFilter(again);
+            if (reselect == null && filter.Length == 0 && view.Count > 0)
             {
                 // stable's menu theme (MenuMusic): circles! from the start when it's in the library, else a random song.
                 int theme = Menu != null && Config.GetBool("MenuMusic", true) ? view.FindIndex(v => v.Set.First.Artist == "nekodex" && v.Set.First.Title == "circles!") : -1;
                 setIndex = theme >= 0 ? theme : Random.Shared.Next(view.Count);
                 themeFromStart = theme >= 0;
             }
+            reselect = null;
         }
         PollScores();
         UpdatePreview(menu);
@@ -676,6 +683,11 @@ sealed class SongSelect : Screen
         if (Pressed(KeyboardKey.PageUp)) MoveSet(-page);
         if (Input.IsKeyPressed(KeyboardKey.Home)) MoveSet(-view.Count);
         if (Input.IsKeyPressed(KeyboardKey.End)) MoveSet(view.Count);
+        // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
+        if (Input.IsKeyPressed(KeyboardKey.F5)) { reselect = Selected?.Md5; loading = Task.Run(LoadLibrary); SlideIn(); return; }
+        // stable: Shift+Delete is the beatmap options' Delete...
+        if (Input.IsKeyPressed(KeyboardKey.Delete) && (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) && Selected != null)
+            Notification.Show(BeatmapOptions[1].Notice!, 3000);
         // F2: random map (stable's spin; F2 again stops it); Shift+F2: back to the one before the last random pick.
         if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
         UpdateSpin(dtMs);
@@ -961,8 +973,15 @@ sealed class SongSelect : Screen
     {
         if (key == GroupMode) return;
         Config.SetOwn("RemakeGroupMode", key);
+        // stable: these groupings bring the matching sort along
+        if (key is "Artist" or "Creator" or "Date" or "Difficulty" or "Length" or "Title" && !key.Equals(SortMode, StringComparison.OrdinalIgnoreCase))
+        {
+            Config.SetOwn("TreeSortMode2", key);
+            sets = Sorted(sets, SortMode);
+        }
         groupIndex = 0;
         ApplyFilter();
+        SlideIn();
         if (Grouped && groups.Count > 0) { expanded = -1; focusGroup = groupIndex; focusEntry = -1; } // stable: all closed
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
     }
@@ -1161,6 +1180,12 @@ sealed class SongSelect : Screen
     int hoveredRow = -1;
     double hoveredAt;
 
+    // stable: a panel coming into view starts as far right of its target as its neighbour is (at most 200 units); with
+    // no panel in view, 200. Rebuilding the list (entering song select, F5, a grouping change) pushes the whole list 500
+    // units right while the panels are placed, which is how they slide in (then 0.95 per 60Hz frame like any panel).
+    float rebuildPush;
+    void SlideIn() { rowEase.Clear(); rebuildPush = 500; }
+
     float TargetX(int row)
     {
         var (_, d, gi) = RowInfo(row);
@@ -1187,8 +1212,14 @@ sealed class SongSelect : Screen
         {
             float spread = hoveredRow < 0 || row == hoveredRow ? 0 : row > hoveredRow ? 10 : -10;
             float tx = TargetX(row);
-            rowEase[row] = rowEase.TryGetValue(row, out var e) ? (tx - (tx - e.X) * fx, spread - (spread - e.Y) * fy) : (tx, spread);
+            if (rowEase.TryGetValue(row, out var e)) rowEase[row] = (tx - (tx - e.X) * fx, spread - (spread - e.Y) * fy);
+            else
+            {
+                float lag = rowEase.TryGetValue(row - 1, out var n) ? n.X - TargetX(row - 1) : rowEase.TryGetValue(row + 1, out n) ? n.X - TargetX(row + 1) : float.PositiveInfinity;
+                rowEase[row] = (tx + Math.Min(lag, 200 + rebuildPush), spread);
+            }
         }
+        rebuildPush = 0;
     }
 
     int RowAt(float y)

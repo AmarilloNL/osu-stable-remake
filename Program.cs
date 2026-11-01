@@ -17,7 +17,8 @@ abstract class Screen
 static class Game
 {
     static Screen screen = null!;
-    public static Screen Screen { get => screen; set { if (value == screen) return; screen = value; value.Entered(); } }
+    public static Screen Screen { get => screen; set { if (value == screen) return; Previous = screen; screen = value; value.Entered(); } }
+    public static Screen? Previous; // the screen before the current one
     public static Skin Skin = null!;
     public static Font Font, Bold, Light, Mono, Icons; // Icons: osu!ui's FontAwesome (options sidebar etc.)
     public static bool Quit;
