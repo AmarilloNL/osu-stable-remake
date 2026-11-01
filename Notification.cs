@@ -87,10 +87,17 @@ static class Toast
     static readonly List<Item> items = [];
     const float Width = 244 * 0.625f, TextWidth = Width * 0.9f, Pad = (Width - TextWidth) / 2, LineH = 8.9f, Size = 8.7f; // text measured against stable at 1080p
 
+    // Without "Show notification popups instantly during gameplay", stable holds them back during an active play
+    // (and hides any showing), then lets them out one per 500ms.
+    static readonly Queue<(string Text, Color? Colour, int Ms)> held = new();
+    static double released;
+    static bool Allowed => Config.GetBool("PopupDuringGameplay", true) || Game.Screen is not Player { ActivePlay: true };
+
     public static void Show(string text, Color? colour = null, int ms = 0)
     {
         double now = Game.NowMs;
         if (items.Count > 0 && items[^1].Text == text && now < items[^1].Shown + items[^1].Duration) return;
+        if (!Allowed) { held.Enqueue((text, colour, ms)); return; }
         var lines = Wrap(text, TextWidth * GetScreenHeight() / 480f);
         float height = Math.Max(26.875f, lines.Length * LineH + 2 * Pad);
         foreach (var it in items) { it.RiseFrom = Rise(it, now); it.Rise += height; it.RiseAt = now; }
@@ -134,8 +141,10 @@ static class Toast
 
     public static void Draw()
     {
-        if (items.Count == 0) return;
         double now = Game.NowMs;
+        if (!Allowed) { foreach (var it in items) if (double.IsNaN(it.Dismissed)) it.Dismissed = now; }
+        else if (held.Count > 0 && now > released + 500) { released = now; var (t, c, ms) = held.Dequeue(); Show(t, c, ms); }
+        if (items.Count == 0) return;
         int w = GetScreenWidth(), h = GetScreenHeight();
         float u = h / 480f;
         var mouse = Input.GetMousePosition();

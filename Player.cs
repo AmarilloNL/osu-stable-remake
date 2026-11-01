@@ -570,6 +570,9 @@ sealed partial class Player : Screen
     }
 
     internal bool Playing => !paused && !finished;
+    // stable's "active play": a live play from the first object's approach to the last object's end, not paused or failed
+    internal bool ActivePlay => !paused && !failed && !finished && playback == null && !auto
+        && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime;
     internal void ApplyMusicVolume() { if (music != null) music.Volume = Config.MusicVolume; }
 
     // stable: a live play can't pause again within a second (of song time) of its last pause
@@ -706,8 +709,7 @@ sealed partial class Player : Screen
                 Notification.Show("Offset can only be changed while game is not paused.", 1000);
         }
         // stable pauses a live play whose window loses focus, from the first object's approach to the last object's end
-        if (!paused && playback == null && !auto && !Input.ScriptOnly && !VirtualClock && !failed && !finished
-            && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime && !IsWindowFocused()) TryPause(quiet: true);
+        if (ActivePlay && !Input.ScriptOnly && !VirtualClock && !IsWindowFocused()) TryPause(quiet: true);
         if (paused) return;
         // stable's quick retry: holding the Quick Retry key (or Ctrl+R) fills 10 a 60Hz tick and retries at 100;
         // letting go drains 3 a tick. The screen fades to black with it.
