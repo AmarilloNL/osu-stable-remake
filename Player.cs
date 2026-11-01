@@ -1846,7 +1846,11 @@ sealed partial class Player : Screen
             float tS = time < pop + popIn ? 0.5f + 0.7f * (float)Math.Clamp((time - pop) / popIn, 0, 1)
                 : 1.2f - 0.2f * (float)Easing.Apply(1, (time - pop - popIn) / settle);
             if (tA <= 0) continue;
-            var p = ToScreen(o.PositionAtTime(cp.Time) + off);
+            // stable draws no tick within a circle radius of the slider's start or end (it still counts)
+            var tickAt = o.PositionAtTime(cp.Time);
+            float r2 = map.Radius * 1.00041f * (map.Radius * 1.00041f);
+            if (Vector2.DistanceSquared(tickAt, o.Pos) < r2 || Vector2.DistanceSquared(tickAt, o.EndPos) < r2) continue;
+            var p = ToScreen(tickAt + off);
             var tc = ColorAlpha(Color.White, tA * playfieldAlpha);
             if (skin.Tex("sliderscorepoint") is { } sp) sp.Draw(p, scale * tS, tc);
             else DrawCircleV(p, 3 * scale * tS, tc);
