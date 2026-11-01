@@ -320,6 +320,10 @@ sealed partial class Player : Screen
     int breakSeen = -1;
     double sectionAt = double.NaN;
     bool sectionPass, sectionSounded;
+    // pass/fail at each section break and at the end (HP at least half): stable's ranking applauds a live play that
+    // passed more often than it failed
+    readonly List<bool> passStates = [];
+    internal bool Applause => playback == null && !auto && passStates.Count(x => x) > passStates.Count(x => !x);
 
     void UpdateBreakSection()
     {
@@ -331,6 +335,7 @@ sealed partial class Player : Screen
             if (time > end || end - start <= 2880 || failed) continue;
             double len = end - start;
             sectionPass = health.Value >= Health.Max / 2;
+            passStates.Add(sectionPass);
             sectionAt = len / 2 > 2880 ? start + len / 2 : end - 2880;
             sectionSounded = false;
         }
@@ -807,6 +812,7 @@ sealed partial class Player : Screen
         if (firstActive >= objs.Count && (musicEnded || music == null || time > objs[^1].EndTime + 3000))
         {
             finished = true;
+            passStates.Add(health.Value >= Health.Max / 2);
             SaveReplay();
             Console.Error.WriteLine($"[{mods.Short()}] audio sync: mean |drift| {driftSum / Math.Max(1, driftCount):0.000}ms, max {driftMax:0.00}ms, snaps {snaps}; score {score} acc {Accuracy:0.00}% 300/100/50/miss {n300}/{n100}/{n50}/{nMiss} maxcombo {maxCombo}/{MapMaxCombo} hp {health.Value:0.0} drop {health.DropRate:0.0000}/ms");
         }
@@ -1669,14 +1675,28 @@ sealed partial class Player : Screen
     int burstIndex, burstLastCombo, burstSeenCombo = -1;
     readonly List<(Sprite Tex, bool Right, double At)> bursts = [];
 
+    // stable's combo burst sounds: with the skin's CustomComboBurstSounds, "comboburst-N" when the combo reaches the
+    // list's Nth entry; otherwise at each burst milestone the skin's "comboburst-0", "-1" ... in turn (back to -0 after
+    // the last), or "comboburst" when it has none. The images follow the Combo bursts option.
+    int burstSound;
+    void PlayBurstSound()
+    {
+        if (skin.Sound($"comboburst-{burstSound}") is { } s) { s.Play(BeatmapSamples.EffectVolume); burstSound++; }
+        else if (burstSound > 0) { skin.Sound("comboburst-0")?.Play(BeatmapSamples.EffectVolume); burstSound = 1; }
+        else skin.Sound("comboburst")?.Play(BeatmapSamples.EffectVolume);
+    }
+
     void UpdateComboBursts()
     {
         if (combo == burstSeenCombo) return;
         burstSeenCombo = combo;
         if (combo == 0) burstLastCombo = 0;
+        if (combo > 0 && skin.ComboSoundBursts.BinarySearch(combo) is int custom and >= 0) skin.Sound($"comboburst-{custom}")?.Play(BeatmapSamples.EffectVolume);
         bool milestone = combo is 30 or 60 || combo > 99 && combo % 50 == 0;
-        if (!milestone || burstLastCombo >= combo || !Config.GetBool("ComboBurst", false) || SpinnerActive()) return;
+        if (!milestone || burstLastCombo >= combo || SpinnerActive()) return;
         burstLastCombo = combo;
+        if (skin.ComboSoundBursts.Count == 0) PlayBurstSound();
+        if (!Config.GetBool("ComboBurst", false)) return;
         if (burstFrames == null)
         {
             var list = new List<Sprite>();

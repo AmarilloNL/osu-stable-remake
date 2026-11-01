@@ -145,6 +145,17 @@ sealed class SoundPool(int sample)
 
     public static void Stop(int channel) { if (channel != 0) Bass.BASS_ChannelStop(channel); }
 
+    // One playback whose channel the caller can stop later.
+    public int PlayChannel(float volume)
+    {
+        if (sample == 0) return 0;
+        int ch = Bass.BASS_SampleGetChannel(sample, 0);
+        if (ch == 0) return 0;
+        Bass.BASS_ChannelSetAttribute(ch, Bass.AttribVol, volume);
+        Bass.BASS_ChannelPlay(ch, false);
+        return ch;
+    }
+
     public static SoundPool Load(byte[] data) => new(Bass.BASS_SampleLoad(1, data, 0, (uint)data.Length, 8, Bass.SampleOverPos));
 
     // A blank/invalid file is a deliberate mute in osu!, so it still counts as found (silent).

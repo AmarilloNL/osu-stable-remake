@@ -27,9 +27,11 @@ sealed partial class Player
         float u, sd; // px per 640x480 unit, px per 768-height sprite pixel
         int w, h;
 
+        int applause; // stable's applause after a live pass, cut when the screen is left
         public Results(Player p)
         {
             this.p = p;
+            if (p.Applause) applause = Game.Skin.Sound("applause")?.PlayChannel(BeatmapSamples.EffectVolume) ?? 0;
             start = Game.NowMs + 300;
             grade = p.Grade();
             gradeTex = $"ranking-{grade}";
@@ -96,6 +98,7 @@ sealed partial class Player
 
         void Leave(Screen next)
         {
+            SoundPool.Stop(applause);
             if (ownsBg) UnloadTexture(bg); // else gameplay's, freed by p.Dispose
             p.Dispose();
             Game.Screen = next;
