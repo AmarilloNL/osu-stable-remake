@@ -35,9 +35,9 @@ static class VolumeControl
         public void Go(float target, double durMs, int easing, double now) { from = Value(now); to = target; at = now; ms = durMs; ease = easing; }
     }
 
-    static readonly Meter Effect = new("VolumeEffect", "Effect", new(115, 75), 0.5f, Vector2.Zero);
-    static readonly Meter Master = new("VolumeUniversal", "Master", new(57, 57), 1, new(5, 20)) { Selected = true, Tint = new(1) };
-    static readonly Meter Music = new("VolumeMusic", "Music", new(87.5f, 110), 0.5f, Vector2.Zero);
+    static readonly Meter Effect = new("VolumeEffect", "effect", new(115, 75), 0.5f, Vector2.Zero);
+    static readonly Meter Master = new("VolumeUniversal", "master", new(57, 57), 1, new(5, 20)) { Selected = true, Tint = new(1) };
+    static readonly Meter Music = new("VolumeMusic", "music", new(87.5f, 110), 0.5f, Vector2.Zero);
     static readonly Meter[] Meters = [Effect, Master, Music];
     static Meter selected = Master;
     static Meter? dragging;
@@ -206,12 +206,9 @@ static class VolumeControl
                 if (m.Glow.Value(now) * a is var g and > 0)
                     Game.Skin.DefaultTex("volume-circle-bg-max")?.Draw(c, s * sd, ColorAlpha(Color.White, g));
 
-                // the arc: track and progress drawn additively, alpha = the meter's alpha^8
-                float arcA = MathF.Pow(a, 8), outer = 50 * s * sd, inner = 42 * s * sd;
-                BeginBlendMode(BlendMode.Additive);
-                DrawRing(c, inner, outer, -90 + 360 * m.Arc, 270, 64, ColorAlpha(new Color(54, 72, 78, 255), arcA));
-                if (m.Arc > 0) DrawRing(c, inner, outer, -90, -90 + 360 * m.Arc, 64, ColorAlpha(new Color(17, 136, 170, 255), arcA));
-                EndBlendMode();
+                // the ring (stable's ring shader): 8 units wide inside radius 50, white progress over a (54,72,78) track,
+                // a (17,136,170) glow 10 units to each side, added on at the meter's alpha^8
+                Ring.Draw(c, 50 * s * sd, 42 * s * sd, 10 * s * sd, m.Arc, MathF.Pow(a, 8));
             }
 
             if (m.Text.Value(now) is var ta and > 0)
@@ -227,5 +224,75 @@ static class VolumeControl
                 Game.Text(m.Label, right - Game.TextWidth(m.Label, size), cy - size / 2, size, ColorAlpha(Color.White, la));
             }
         }
+    }
+}
+
+// stable's ring shader (volume meters): a ring between the inner and outer radius, the progress part (clockwise from
+// the top) in the foreground colour and the rest in the background colour, plus a glow fading out over the glow width
+// on both sides, full along the progress and at 20% elsewhere. Drawn added on (one, one).
+static class Ring
+{
+    const string Fs = """
+        #version 330
+        in vec2 fragTexCoord;
+        out vec4 finalColor;
+        uniform vec4 m_Rect; // x, y, w, h of the quad in screen pixels
+        uniform vec2 m_CenterPos;
+        uniform float m_OuterRadius, m_InnerRadius, m_OuterGlowRadius, m_InnerGlowRadius, m_Alpha, m_Progress;
+        uniform vec4 m_RingForegroundColour, m_RingBackgroundColour, m_GlowColour;
+        const float TWOPI = 6.28318548, PI = 3.14159274, RING_FUDGE_FACTOR = 0.05, GLOW_OVERSHOOT = 0.3;
+        float isRing(float d) { return smoothstep(m_InnerRadius, m_InnerRadius + 1.0, d) * smoothstep(m_OuterRadius, m_OuterRadius - 1.0, d); }
+        float isGlow(float d) { return smoothstep(m_InnerGlowRadius, m_InnerRadius, d) * clamp(1.0 - isRing(d), 0.0, 1.0) * smoothstep(m_OuterGlowRadius, m_OuterRadius, d); }
+        void main()
+        {
+            vec2 p = m_Rect.xy + fragTexCoord * m_Rect.zw;
+            float dist = distance(p, m_CenterPos);
+            float angle = atan(p.x - m_CenterPos.x, p.y - m_CenterPos.y);
+            float startAngle = (0.5 - m_Progress) * TWOPI;
+            float reduction = smoothstep(PI, PI - GLOW_OVERSHOOT, startAngle);
+            float activeRing = smoothstep(startAngle - reduction * RING_FUDGE_FACTOR, startAngle, angle);
+            float activeGlow = max(smoothstep(startAngle - GLOW_OVERSHOOT, startAngle + GLOW_OVERSHOOT, angle),
+                                   smoothstep(-PI + GLOW_OVERSHOOT, -PI - GLOW_OVERSHOOT, angle))
+                               * reduction * smoothstep(PI + GLOW_OVERSHOOT / 2.0, PI - GLOW_OVERSHOOT / 2.0, angle);
+            activeGlow += max(0.0, (1.0 - activeGlow) * smoothstep(0.9, 1.0, m_Progress));
+            vec4 glow = isGlow(dist) * (activeGlow + (1.0 - activeGlow) * 0.2) * m_GlowColour;
+            vec4 ring = isRing(dist) * (activeRing * m_RingForegroundColour + (1.0 - activeRing) * m_RingBackgroundColour);
+            finalColor = (ring + glow) * m_Alpha;
+        }
+        """;
+    static Shader? shader;
+    static int rect, centre, outerR, innerR, outerG, innerG, alpha, progress;
+
+    public static void Draw(Vector2 c, float outer, float inner, float glow, float progressValue, float alphaValue)
+    {
+        if (alphaValue <= 0) return;
+        if (shader is not { } sh)
+        {
+            sh = LoadShaderFromMemory(null, Fs);
+            shader = sh;
+            rect = GetShaderLocation(sh, "m_Rect"); centre = GetShaderLocation(sh, "m_CenterPos");
+            outerR = GetShaderLocation(sh, "m_OuterRadius"); innerR = GetShaderLocation(sh, "m_InnerRadius");
+            outerG = GetShaderLocation(sh, "m_OuterGlowRadius"); innerG = GetShaderLocation(sh, "m_InnerGlowRadius");
+            alpha = GetShaderLocation(sh, "m_Alpha"); progress = GetShaderLocation(sh, "m_Progress");
+            SetShaderValue(sh, GetShaderLocation(sh, "m_RingForegroundColour"), new Vector4(1, 1, 1, 1), ShaderUniformDataType.Vec4);
+            SetShaderValue(sh, GetShaderLocation(sh, "m_RingBackgroundColour"), new Vector4(54, 72, 78, 255) / 255, ShaderUniformDataType.Vec4);
+            SetShaderValue(sh, GetShaderLocation(sh, "m_GlowColour"), new Vector4(17, 136, 170, 255) / 255, ShaderUniformDataType.Vec4);
+        }
+        float r = outer + glow;
+        var quad = new Rectangle(c.X - r, c.Y - r, 2 * r, 2 * r);
+        SetShaderValue(sh, rect, new Vector4(quad.X, quad.Y, quad.Width, quad.Height), ShaderUniformDataType.Vec4);
+        SetShaderValue(sh, centre, c, ShaderUniformDataType.Vec2);
+        SetShaderValue(sh, outerR, outer, ShaderUniformDataType.Float);
+        SetShaderValue(sh, innerR, inner, ShaderUniformDataType.Float);
+        SetShaderValue(sh, outerG, outer + glow, ShaderUniformDataType.Float);
+        SetShaderValue(sh, innerG, inner - glow, ShaderUniformDataType.Float);
+        SetShaderValue(sh, alpha, alphaValue, ShaderUniformDataType.Float);
+        SetShaderValue(sh, progress, progressValue, ShaderUniformDataType.Float);
+        var white = new Texture2D { Id = Rlgl.GetTextureIdDefault(), Width = 1, Height = 1, Mipmaps = 1, Format = PixelFormat.UncompressedR8G8B8A8 };
+        BeginShaderMode(sh);
+        BeginBlendMode(BlendMode.AddColors);
+        DrawTexturePro(white, new Rectangle(0, 0, 1, 1), quad, Vector2.Zero, 0, Color.White);
+        EndBlendMode();
+        EndShaderMode();
     }
 }
