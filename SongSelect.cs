@@ -656,9 +656,25 @@ sealed class SongSelect : Screen
     static string SmallGrade(string grade) => smallGrades.TryGetValue(grade, out var s) ? s : smallGrades[grade] = $"ranking-{grade}-small";
     readonly Dictionary<ReplayInfo, (string Score, string Mods, string Acc)> rowText = [];
     (string Score, string Mods, string Acc) RowText(ReplayInfo r) => rowText.TryGetValue(r, out var t) ? t : rowText[r] =
-        ($"Score: {r.Score:N0} ({r.MaxCombo}x)", r.Mods == Mods.None ? "" : string.Join(",", r.Mods.Short().Split(' ', StringSplitOptions.RemoveEmptyEntries)), $"{r.Accuracy:0.00}%");
+        ($"Score: {r.Score:N0} ({r.MaxCombo}x)", r.Mods == Mods.None ? "" : string.Join(",", r.Mods.Short().Split(' ', StringSplitOptions.RemoveEmptyEntries)),
+         $"{(r.N300 + r.N100 + r.N50 + r.NMiss == 0 ? 100 : r.Accuracy):0.00}%"); // stable: no judgements count as 100%
+
+    // stable's "how long ago" for scores under 96 hours old: days past 47h, else hours, minutes, seconds.
+    readonly Dictionary<ReplayInfo, (long Key, string Text)> agoText = [];
+    string? AgoText(ReplayInfo r)
+    {
+        double hours = (DateTime.Now - r.Date).TotalHours;
+        if (hours >= 96 || hours < 0) return null;
+        (long key, char unit) = hours > 47 ? ((long)(hours / 24), 'd') : hours >= 1 ? ((long)hours, 'h')
+            : hours > 1 / 60.0 ? ((long)(hours * 60), 'm') : ((long)(hours * 3600), 's');
+        key = key * 4 + "dhms".IndexOf(unit);
+        if (agoText.TryGetValue(r, out var t) && t.Key == key) return t.Text;
+        string s = $"{key / 4}{unit}";
+        agoText[r] = (key, s);
+        return s;
+    }
     readonly string[] rowLines = new string[3];
-    readonly NumberText leadText = new(v => $"+{v:N0}"), rankText = new(v => v.ToString());
+    readonly NumberText leadText = new(v => $"+{v:N0}");
     readonly Dictionary<(string, int), string> groupLabels = [];
     string GroupLabel(string name, int maps) => groupLabels.TryGetValue((name, maps), out var s) ? s
         : groupLabels[(name, maps)] = $"{name} ({maps} {(maps == 1 ? "map" : "maps")})";
@@ -1216,16 +1232,12 @@ sealed class SongSelect : Screen
     float ScoreRowH => 33.3f * U;
     int ScoreRowAt(float y) => (int)MathF.Floor((y - ScoreTop) / ScoreRowH);
 
-    void DrawScoreRow(ReplayInfo r, int rank, float y, long? nextScore, bool hover)
+    void DrawScoreRow(ReplayInfo r, float y, long? nextScore, bool hover)
     {
         float u = U;
         var row = new Rectangle(4.3f * u, y, 235.7f * u, ScoreRowH - 2 * u);
-        DrawRectangleRec(row, new Color(0, 0, 0, hover ? 190 : 130));
-        if (rank > 0)
-        {
-            string n = rankText.Of(rank);
-            Game.TextBold(n, 20 * u - Game.BoldWidth(n, 18 * u) / 2, y + row.Height / 2 - 9 * u, 18 * u, ColorAlpha(Color.White, 0.6f));
-        }
+        DrawRectangleRec(row, hover ? new Color(100, 100, 100, 77) : new Color(0, 0, 0, 77)); // stable: black at 0.3, grey (100) on hover (measured 10 -> 7 over a dark background)
+        // (stable numbers a row only with its online rank, so local scores show none)
         if (Game.Skin.Tex(SmallGrade(GradeOf(r))) is { } g) g.Draw(new Vector2(49 * u, y + 14 * u), 21 * u / Math.Max(1, g.Height), Color.White);
         string name = r.FromStable ? (r.Player.Length > 0 ? r.Player : "stable") : Config.Get("Username", "You");
         Game.Text(name, 63 * u, y + 7.7f * u - 8 * u, 16 * u, Color.White);
@@ -1233,9 +1245,15 @@ sealed class SongSelect : Screen
         Game.Text(text.Score, 63 * u, y + 20.5f * u - 6 * u, 12 * u, Color.White);
         float right = 237.7f * u, size = 10 * u;
         string[] lines = rowLines;
-        lines[0] = text.Mods; lines[1] = text.Acc; lines[2] = nextScore is long nx ? leadText.Of(r.Score - nx) : "";
+        lines[0] = text.Mods; lines[1] = text.Acc; lines[2] = nextScore is long nx && r.Score > nx ? leadText.Of(r.Score - nx) : "-";
         for (int i = 0; i < lines.Length; i++)
             if (lines[i].Length > 0) Game.Text(lines[i], right - Game.TextWidth(lines[i], size), y + (5 + 10.3f * i) * u - size / 2, size, Color.White);
+        // recent scores: an up-arrow circle and the age beside the row (measured at 1080p)
+        if (AgoText(r) is { } ago)
+        {
+            Options.DrawIcon(0xf01b, 250 * u, y + 14.05f * u, 15.1f * u, Color.White);
+            Game.Text(ago, 261.3f * u, y + 13.8f * u - 5 * u, 10.8f * u, Color.White);
+        }
     }
 
     // stable's dropdown outline (measured): about half a unit thick with ~1.3-unit rounded corners.
@@ -1258,7 +1276,7 @@ sealed class SongSelect : Screen
         {
             float y = ScoreTop + n * ScoreRowH;
             bool hover = mouse.X < 240 * u && ScoreRowAt(mouse.Y) == n && mouse.Y >= ScoreTop;
-            DrawScoreRow(list[n], n + 1, y, n + 1 < list.Count ? list[n + 1].Score : null, hover);
+            DrawScoreRow(list[n], y, n + 1 < list.Count ? list[n + 1].Score : null, hover);
         }
         // (stable shows its "Personal Best" box only for the online ranking types, never for Local Ranking)
     }

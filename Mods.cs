@@ -62,11 +62,14 @@ static class ModInfo
     {
         var parts = new List<string>();
         void Add(Mods f, string s) { if (m.HasFlag(f)) parts.Add(s); }
-        Add(Mods.Easy, "EZ"); Add(Mods.NoFail, "NF"); Add(Mods.HalfTime, "HT"); Add(Mods.HardRock, "HR");
-        if (m.HasFlag(Mods.Perfect)) parts.Add("PF"); else Add(Mods.SuddenDeath, "SD");
+        // stable's order (its score lists): V2, Auto, SO, EZ, NF, HD, NC/DT, HT, HR, RX/AP, PF/SD, FL
+        Add(Mods.ScoreV2, "V2"); Add(Mods.Autoplay, "Auto"); Add(Mods.SpunOut, "SO");
+        Add(Mods.Easy, "EZ"); Add(Mods.NoFail, "NF"); Add(Mods.Hidden, "HD");
         if (m.HasFlag(Mods.Nightcore)) parts.Add("NC"); else Add(Mods.DoubleTime, "DT");
-        Add(Mods.Hidden, "HD"); Add(Mods.Flashlight, "FL"); Add(Mods.Relax, "RX"); Add(Mods.Autopilot, "AP");
-        Add(Mods.SpunOut, "SO"); Add(Mods.Autoplay, "Auto"); Add(Mods.ScoreV2, "V2");
+        Add(Mods.HalfTime, "HT"); Add(Mods.HardRock, "HR");
+        if (m.HasFlag(Mods.Relax)) parts.Add("RX"); else Add(Mods.Autopilot, "AP");
+        if (m.HasFlag(Mods.Perfect)) parts.Add("PF"); else Add(Mods.SuddenDeath, "SD");
+        Add(Mods.Flashlight, "FL");
         return parts.Count == 0 ? "No mods" : string.Join(" ", parts);
     }
 
