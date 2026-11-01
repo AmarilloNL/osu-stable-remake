@@ -55,6 +55,8 @@ static class Game
     public static void TextRegular(string s, float x, float y, float size, Color c) =>
         Draw(Font, OldStyle(s), x, y, size, 0, c);
 
+    public static float RegularWidth(string s, float size) => Measure(Font, OldStyle(s), size, 0);
+
     public static void TextBold(string s, float x, float y, float size, Color c) =>
         Draw(Bold, OldStyle(s), x, y, size, 0, c);
 

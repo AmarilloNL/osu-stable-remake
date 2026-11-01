@@ -66,8 +66,10 @@ static class Dialog
         }
         else DrawRectangleRec(r, tint);
         string text = $"{index + 1}. {label}";
-        float size = 14 * 40 / 18f * u; // stable's size, in bold (measured)
-        Game.TextBold(text, r.X + r.Width / 2 - Game.BoldWidth(text, size) / 2, r.Y + r.Height / 2 - size / 2 - 1.3f * u, size, ColorAlpha(Color.White, alpha)); // bold
+        // stable: regular Aller (14 x height / 18) with its text shadow, centred
+        float size = 14 * 40 / 18f * 1.028f * u, tx = r.X + r.Width / 2 - Game.RegularWidth(text, size) / 2, ty = r.Y + r.Height / 2 - size / 2 - 1.3f * u;
+        Game.TextRegular(text, tx + 1, ty + 1, size, ColorAlpha(Color.Black, 0.5f * alpha));
+        Game.TextRegular(text, tx, ty, size, ColorAlpha(Color.White, alpha));
         return hover;
     }
 }

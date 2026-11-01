@@ -1047,9 +1047,9 @@ sealed class SongSelect : Screen
         Snow.Draw();
         if (webTip && !modSelect && !beatmapOptions) Options.DrawTooltip("Quick web access for this beatmap", Input.GetMousePosition());
         webTip = false;
-        DrawCursor();
         if (modSelect) DrawModSelect(w, h);
         if (beatmapOptions) DrawBeatmapOptions();
+        DrawCursor(); // over the overlays, like stable
     }
 
     // Group header: stable's group panel colours (open group lighter), "Name (N maps)".
