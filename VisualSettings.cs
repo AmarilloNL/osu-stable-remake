@@ -54,14 +54,19 @@ sealed partial class Player
             : skin.ComboColours;
     }
 
-    bool VisualActive => (paused && !resumePending || failed && !double.IsPositiveInfinity(menuShownAt)) && playback == null;
+    bool VisualActive => (paused && !resumePending || failed && !double.IsPositiveInfinity(menuShownAt) || fadeOut != null) && playback == null;
+    // stable opens the panel on hover only once the cursor has moved 30px since the play was set up
+    Vector2? visualMouseAt;
+    bool visualMoved;
 
     // Called from Update while paused/failed: slides the bar and handles its controls. Returns true if it took the click.
     bool UpdateVisualSettings(double dtMs)
     {
         float u = GetScreenHeight() / 480f;
         var mouse = Input.GetMousePosition();
-        bool hover = VisualActive && mouse.Y > GetScreenHeight() - Math.Max(45, visualHeight) * u;
+        visualMouseAt ??= mouse;
+        if (!visualMoved && Vector2.Distance(mouse, visualMouseAt.Value) > 30) visualMoved = true;
+        bool hover = VisualActive && visualMoved && mouse.Y > GetScreenHeight() - Math.Max(45, visualHeight) * u;
         float target = !VisualActive ? 0 : hover || visualDragging >= 0 ? ExpandedHeight : 45;
         visualHeight += (target - visualHeight) * (float)Math.Min(1, dtMs / 70);
         if (!VisualActive || visualHeight < ExpandedHeight - 2) { visualDragging = -1; return false; }

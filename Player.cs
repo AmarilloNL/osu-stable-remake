@@ -109,6 +109,32 @@ sealed partial class Player : Screen
     Vector2 pbCursor = new(256, 192);
     Vector2 lastRecorded = new(float.NaN);
 
+    // stable: a play started from song select waits for song select's music to fade out (0.02 of full volume a 60Hz
+    // tick) before its clock starts, showing the Visual Settings strip meanwhile; an opened panel holds the start.
+    Track? fadeOut;
+    float fadeVolume;
+    internal Player FadingOut(Track music)
+    {
+        fadeOut = music;
+        fadeVolume = 1;
+        sw.Reset();
+        return this;
+    }
+
+    // true while the start is held
+    bool UpdateStartHold(double dtMs)
+    {
+        if (fadeOut == null) return false;
+        UpdateVisualSettings(dtMs);
+        fadeVolume -= 0.02f * (float)(dtMs / (1000 / 60.0));
+        fadeOut.Volume = Math.Max(0, fadeVolume) * Config.MusicVolume;
+        if (fadeVolume > 0 || visualHeight > 46 || visualDragging >= 0) { UpdateDim(dtMs); return true; }
+        fadeOut.Dispose();
+        fadeOut = null;
+        sw.Start();
+        return false;
+    }
+
     public Player(Beatmap map, SongSelect back, Mods mods, ReplayFrame[]? playback = null, ReplayInfo? watching = null)
     {
         if (!VirtualClock) Beatmap.PlayfieldHeight = GetScreenHeight(); // headless runs keep stable's configured height
@@ -233,6 +259,8 @@ sealed partial class Player : Screen
 
     public void Dispose()
     {
+        fadeOut?.Dispose();
+        fadeOut = null;
         music?.Dispose();
         SoundPool.Stop(pauseLoop);
         SoundPool.Stop(spinLoop);
@@ -668,6 +696,7 @@ sealed partial class Player : Screen
         scale = h / 480f;
         origin = new Vector2((w - 512 * scale) / 2, (h - 384 * scale) / 2 + 8 * scale);
 
+        if (UpdateStartHold(dtMs)) return;
         // The results screen takes over (and disposes us later), so the outro keeps playing like stable.
         if (finished) { Game.Screen = new Results(this); return; }
         bool visualClick = UpdateVisualSettings(dtMs);

@@ -570,9 +570,12 @@ sealed class SongSelect : Screen
         {
             var map = Beatmap.Load(b.FilePath, mods: mods);
             if (map.Objects.Count == 0) { message = "Map has no hit objects"; return; }
-            StopPreview();
             Game.Skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
-            Game.Screen = new Player(map, this, mods);
+            var player = new Player(map, this, mods);
+            // the preview fades out in the player before its clock starts, like stable
+            if (preview != null) { player.FadingOut(preview); preview = null; previewKey = null; }
+            else StopPreview();
+            Game.Screen = player;
         }
         catch (Exception e) when (e is not OutOfMemoryException) // a malformed map mustn't take the game down
         {
