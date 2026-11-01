@@ -1522,8 +1522,15 @@ sealed partial class Player : Screen
         DrawComboBursts(w, h);
         DrawLightings();
         DrawFollowPoints();
-        // stable's depths: particles and particle-style judgements, then spinners (each under its own judgement),
-        // then the hit objects (earlier ones on top), then misses and plain judgements, then the additive flashes.
+        // stable's depths: approach circles at the bottom (a later object's ring goes under earlier objects and under
+        // judgements, measured), then particles and particle-style judgements, then spinners (each under its own
+        // judgement), then the hit objects (earlier ones on top), then misses and plain judgements, then the flashes.
+        for (int k = visible.Count - 1; k >= 0; k--)
+        {
+            if (Falling) PushFall(visible[k]);
+            DrawApproach(visible[k]);
+            if (Falling) Rlgl.PopMatrix();
+        }
         DrawPopups(0);
         DrawPopups(1);
         for (int k = visible.Count - 1; k >= 0; k--)
@@ -1551,12 +1558,6 @@ sealed partial class Player : Screen
         {
             UpdateKiaiFlashes();
             DrawKiaiFlashes();
-        }
-        for (int k = visible.Count - 1; k >= 0; k--)
-        {
-            if (Falling) PushFall(visible[k]);
-            DrawApproach(visible[k]);
-            if (Falling) Rlgl.PopMatrix();
         }
         DrawPopups(3);
         DrawPopups(4);
