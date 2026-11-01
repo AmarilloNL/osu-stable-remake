@@ -457,8 +457,8 @@ sealed class Options : Screen
             return;
         }
         if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.O)) { Close(); return; }
-        for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed()) { search += char.ConvertFromUtf32(ch); scrollTarget = 0; }
-        if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && search.Length > 0) search = search[..^1];
+        for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed()) { search += char.ConvertFromUtf32(ch); scrollTarget = 0; SongSelect.TypingSound("key-press"); }
+        if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && search.Length > 0) { search = search[..^1]; SongSelect.TypingSound("key-delete"); }
 
         BuildLayout();
         if (jumpTo != null) // test hook: start scrolled to a section

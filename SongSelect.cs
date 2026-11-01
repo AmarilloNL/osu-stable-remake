@@ -604,17 +604,27 @@ sealed class SongSelect : Screen
         {
             filter += char.ConvertFromUtf32(ch);
             changed = true;
+            TypingSound("key-press");
         }
         if (Pressed(KeyboardKey.Backspace) && filter.Length > 0)
         {
             filter = Input.IsKeyDown(KeyboardKey.LeftControl) ? "" : filter[..^1];
             changed = true;
+            TypingSound("key-delete");
         }
         if (changed) ApplyFilter();
 
         scrollRow += (SelectedRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
         UpdateCarousel(dtMs, Input.GetMousePosition());
         UpdateSparkles();
+    }
+
+    // stable's text box sounds: a typed character plays key-press-1..4 at random (else key-press), Backspace / Delete
+    // key-delete.
+    internal static void TypingSound(string name)
+    {
+        var s = name == "key-press" ? Game.Skin.Sound($"key-press-{Random.Shared.Next(1, 5)}") ?? Game.Skin.Sound("key-press") : Game.Skin.Sound(name);
+        s?.Play(BeatmapSamples.EffectVolume);
     }
 
     // Rows: one per set, except the selected set, which is replaced by one row per difficulty (like stable).
