@@ -800,7 +800,8 @@ sealed partial class Player : Screen
         int offsetStep = Input.IsKeyDown(KeyboardKey.LeftShift) ? 1 : 5;
         if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
         if (Input.IsKeyPressed(Config.Key("keyDecreaseAudioOffset", KeyboardKey.Minus)) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);
-        if (CanSkip && (Input.IsKeyPressed(Config.Key("keySkip", KeyboardKey.Space)) || Input.IsMouseButtonPressed(MouseButton.Left) && SkipRect() is { } sr && CheckCollisionPointRec(Input.GetMousePosition(), sr)))
+        // stable: the skip key does nothing during Auto (measured; its Skip button still shows)
+        if (CanSkip && (!(auto && playback == null) && Input.IsKeyPressed(Config.Key("keySkip", KeyboardKey.Space)) || Input.IsMouseButtonPressed(MouseButton.Left) && SkipRect() is { } sr && CheckCollisionPointRec(Input.GetMousePosition(), sr)))
         {
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
             Skip();
