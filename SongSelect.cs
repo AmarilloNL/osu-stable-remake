@@ -356,7 +356,12 @@ sealed class SongSelect : Screen
         }
     }
 
-    void SelectionChanged() => selectionChangedAt = Game.NowMs;
+    void SelectionChanged() { selectionChangedAt = Game.NowMs; wheelTarget = null; }
+
+    // stable: the mouse wheel scrolls the list (~1.5 rows a notch, measured) without touching the selection; the list
+    // follows the selection / focus again once that moves.
+    float? wheelTarget;
+    int lastFocusRow = -1;
 
     void MoveSet(int delta)
     {
@@ -658,7 +663,15 @@ sealed class SongSelect : Screen
         if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
         UpdateSpin(dtMs);
         float wheel = VolumeControl.Wheel;
-        if (wheel != 0) MoveSet(-(int)Math.Round(wheel));
+        if (FocusRow != lastFocusRow) { lastFocusRow = FocusRow; wheelTarget = null; }
+        if (wheel != 0)
+        {
+            // ~72 units a notch: in rows at the current spot (difficulty rows carry extra spacing)
+            float from = wheelTarget ?? FocusRow;
+            int r0 = Math.Max(0, (int)from);
+            float rowUnits = (200 * U + (r0 + 1) * RowH + Extra(r0 + 1) - (200 * U + r0 * RowH + Extra(r0))) / U;
+            wheelTarget = Math.Clamp(from - wheel * 72 / Math.Max(1, rowUnits), 0, Math.Max(0, RowCount - 1));
+        }
 
         var mouse = Input.GetMousePosition();
         if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, GroupBox(GetScreenWidth())))
@@ -719,7 +732,7 @@ sealed class SongSelect : Screen
         }
         if (changed) ApplyFilter();
 
-        scrollRow += (FocusRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
+        scrollRow += ((wheelTarget ?? FocusRow) - scrollRow) * (float)Math.Min(1, dtMs / 80);
         UpdateCarousel(dtMs, Input.GetMousePosition());
         UpdateSparkles();
     }
