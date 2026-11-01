@@ -19,6 +19,32 @@ static class Game
     static Screen screen = null!;
     public static Screen Screen { get => screen; set { if (value == screen) return; Previous = screen; screen = value; value.Entered(); } }
     public static Screen? Previous; // the screen before the current one
+
+    // stable's fading mode change: a black overlay (0-100) rises 8 a 60Hz tick, the screen switches at 100, then it
+    // falls 4 a tick from 140 (so it holds black a moment). The old screen sits still meanwhile.
+    static Screen? fadeTo;
+    static Action? fadeSwitch;
+    static double fadeLevel;
+    public static void FadeTo(Screen next, Action? onSwitch = null) { if (fadeTo == null) (fadeTo, fadeSwitch) = (next, onSwitch); }
+
+    // false while fading out (the current screen gets no update)
+    static bool UpdateFade(double dtMs)
+    {
+        double ticks = Math.Min(dtMs, 33) / (1000 / 60.0);
+        if (fadeTo == null) { fadeLevel = Math.Max(0, fadeLevel - 4 * ticks); return true; }
+        fadeLevel = Math.Min(100, fadeLevel + 8 * ticks);
+        if (fadeLevel < 100) return false;
+        var (next, onSwitch) = (fadeTo, fadeSwitch);
+        (fadeTo, fadeSwitch, fadeLevel) = (null, null, 140);
+        onSwitch?.Invoke();
+        Screen = next;
+        return true;
+    }
+
+    static void DrawFade()
+    {
+        if (fadeLevel > 0) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ColorAlpha(Color.Black, (float)Math.Min(100, fadeLevel) / 100));
+    }
     public static Skin Skin = null!;
     public static Font Font, Bold, Light, Mono, Icons; // Icons: osu!ui's FontAwesome (options sidebar etc.)
     public static bool Quit;
@@ -332,11 +358,12 @@ static class Game
             Input.Update(now / 1000);
             if (!testRun) ConfineCursor();
             VolumeControl.Update(songSelect);
-            Screen.Update(dt);
+            if (UpdateFade(dt)) Screen.Update(dt);
 
             BeginDrawing();
             ClearBackground(Color.Black);
             Screen.Draw();
+            DrawFade();
             VolumeControl.Draw();
             Notification.Draw();
             Toast.Draw();

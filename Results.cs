@@ -106,22 +106,23 @@ sealed partial class Player
         static Vector2 Centre(Sprite sp, Vector2 pos, Vector2 origin, float scale) =>
             pos + (new Vector2(0.5f) - origin) * new Vector2(sp.Width, sp.Height) * scale;
 
-        void Leave(Screen next)
+        void Cleanup()
         {
             SoundPool.Stop(applause);
             if (ownsBg) UnloadTexture(bg); // else gameplay's, freed by p.Dispose
             p.Dispose();
+        }
+
+        void Leave(Screen next)
+        {
+            Cleanup();
             Game.Screen = next;
         }
 
-        // stable goes back through black (Player.BlackOutMs), then song select comes in at 4 a tick
-        double leavingAt = double.NaN;
-
         void Back()
         {
-            if (!double.IsNaN(leavingAt)) return;
             skin.Sound("menuback")?.Play(BeatmapSamples.EffectVolume);
-            leavingAt = Game.NowMs;
+            Game.FadeTo(p.back, Cleanup); // stable goes back through black
         }
 
         void Retry()
@@ -187,11 +188,6 @@ sealed partial class Player
             w = GetScreenWidth(); h = GetScreenHeight();
             u = h / 480f; sd = h / 768f;
             var mouse = Input.GetMousePosition();
-            if (!double.IsNaN(leavingAt))
-            {
-                if (Game.NowMs - leavingAt >= BlackOutMs) { p.back.FadeFromBlack(); Leave(p.back); }
-                return;
-            }
 
             if (Input.IsKeyPressed(KeyboardKey.Escape)) Back();
             else if (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.Grave)) Retry();
@@ -311,7 +307,6 @@ sealed partial class Player
             }
 
             if (tooltipShown) DrawTooltip(mouse);
-            if (!double.IsNaN(leavingAt)) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (float)Math.Min(1, (Game.NowMs - leavingAt) / BlackOutMs)));
             SongSelect.DrawCursor();
         }
 

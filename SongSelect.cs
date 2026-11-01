@@ -633,7 +633,7 @@ sealed class SongSelect : Screen
     void Back()
     {
         Game.Skin.Sound("menuback")?.Play(BeatmapSamples.EffectVolume);
-        if (Menu != null) Game.Screen = Menu;
+        if (Menu != null) Game.FadeTo(Menu);
         else Game.Quit = true;
     }
 
@@ -1203,10 +1203,6 @@ sealed class SongSelect : Screen
     // units right (0.95 per 60Hz tick). The player draws this over itself (under its Visual Settings strip).
     float leaveShift, leaveSlide, scoreFade = 1;
 
-    // after stable's fade to black (leaving the ranking screen) song select comes in at 4 (of 100) a 60Hz tick
-    double blackFrom = double.NegativeInfinity;
-    internal void FadeFromBlack() => blackFrom = Game.NowMs;
-
     internal void DrawLeaving(double ms)
     {
         if (ms >= 1000 || loading != null) return;
@@ -1333,8 +1329,6 @@ sealed class SongSelect : Screen
         DrawDropdown();
         if (modSelect) DrawModSelect(w, h);
         if (beatmapOptions) DrawBeatmapOptions();
-        float black = 1 - (float)((Game.NowMs - blackFrom) / (100 / 4.0 * (1000 / 60.0)));
-        if (black > 0) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, black));
         DrawCursor(); // over the overlays, like stable
     }
 

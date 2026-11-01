@@ -291,7 +291,7 @@ sealed class MainMenu : Screen
         switch (name)
         {
             case "play": SetTier(true); break;
-            case "freeplay": Game.Screen = songs; break;
+            case "freeplay": Game.FadeTo(songs); break;
             case "back": SetTier(false); break;
             case "edit": toast = ("The beatmap editor isn't part of this offline remake.", Game.NowMs); break;
             case "multiplayer": toast = ("Multiplayer isn't part of this offline remake.", Game.NowMs); break;

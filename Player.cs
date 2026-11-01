@@ -274,23 +274,11 @@ sealed partial class Player : Screen
         samples.Unload();
     }
 
-    // stable goes back to song select through black: out at 8 (of 100) a 60Hz tick, then song select comes in at 4
-    internal const double BlackOutMs = 100 / 8.0 * (1000 / 60.0);
-    double leavingAt = double.NaN;
-
     void Leave(Screen next)
     {
-        if (next == back && !VirtualClock && double.IsNaN(leavingAt)) { leavingAt = Game.NowMs; return; }
+        if (next == back && !VirtualClock) { Game.FadeTo(back, Dispose); return; } // stable goes back through black
         Dispose();
         Game.Screen = next;
-    }
-
-    // true while fading out to song select
-    bool UpdateLeaving()
-    {
-        if (double.IsNaN(leavingAt)) return false;
-        if (Game.NowMs - leavingAt >= BlackOutMs) { back.FadeFromBlack(); Dispose(); Game.Screen = back; }
-        return true;
     }
 
     void Retry() => Leave(new Player(map, back, mods, playback, watching));
@@ -710,7 +698,7 @@ sealed partial class Player : Screen
         scale = h / 480f;
         origin = new Vector2((w - 512 * scale) / 2, (h - 384 * scale) / 2 + 8 * scale);
 
-        if (UpdateLeaving() || UpdateStartHold(dtMs)) return;
+        if (UpdateStartHold(dtMs)) return;
         // The results screen takes over (and disposes us later), so the outro keeps playing like stable.
         if (finished) { Game.Screen = new Results(this); return; }
         bool visualClick = UpdateVisualSettings(dtMs);
@@ -1635,7 +1623,6 @@ sealed partial class Player : Screen
         SongSelect.DrawCursorAt(cursorAt);
         SongSelect.CursorPlayScale = 1;
         SongSelect.CursorKeys = null;
-        if (!double.IsNaN(leavingAt)) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (float)Math.Min(1, (Game.NowMs - leavingAt) / BlackOutMs)));
     }
 
     // ---- stable's cursor smoke: while the smoke key is held (in replays its frame bit 16), every 60Hz tick lays
