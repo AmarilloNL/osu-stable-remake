@@ -71,6 +71,7 @@ sealed class SongSelect : Screen
         foreach (var (md5, list) in scoresLoading.Result)
             foreach (var info in list) AddScore(info);
         scoresLoading = null;
+        if (GroupMode == "Recent" && sets.Count > 0) ApplyFilter(); // the groups count this client's plays too
     }
 
     public void AddScore(ReplayInfo info)
@@ -760,9 +761,11 @@ sealed class SongSelect : Screen
                 var now = DateTime.UtcNow;
                 ByDiff(d =>
                 {
-                    // stable: under a day, two, a week; "1 month(s) ago" up to 30 days, then one per 30 days to 150
-                    if (d.Unplayed || d.LastPlayed <= 0) return (99, "Never");
-                    double days = (now - new DateTime(d.LastPlayed, DateTimeKind.Utc)).TotalDays;
+                    // stable: under a day, two, a week; "1 month(s) ago" up to 30 days, then one per 30 days to 150.
+                    // Played: stable's last play (osu!.db) or this client's latest saved replay, whichever is newer.
+                    double days = d.Unplayed || d.LastPlayed <= 0 ? double.MaxValue : (now - new DateTime(d.LastPlayed, DateTimeKind.Utc)).TotalDays;
+                    if (scores.TryGetValue(d.Md5, out var local) && local.Count > 0) days = Math.Min(days, (now - local.Max(r => r.Date).ToUniversalTime()).TotalDays);
+                    if (days == double.MaxValue) return (99, "Never");
                     if (days >= 150) return (98, "Over 5 months ago");
                     int months = days < 7 ? 0 : days < 30 ? 1 : (int)(days / 30) + 1;
                     return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last Week") : (2 + months, $"{months} month(s) ago");
