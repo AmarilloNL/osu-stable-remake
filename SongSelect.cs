@@ -229,6 +229,7 @@ sealed class SongSelect : Screen
     internal void ApplyFilter()
     {
         var keep = view.Count > 0 && setIndex < view.Count ? view[setIndex].Set : null;
+        var keepDiff = Selected;
         var all = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
         var words = new List<string>();
         var terms = new List<(string, string, double)>();
@@ -250,14 +251,20 @@ sealed class SongSelect : Screen
             if (diffs.Count > 0) all.Add((set, diffs));
         }
         BuildGroups(all);
-        int g = keep == null ? -1 : groups.FindIndex(gr => gr.Entries.Any(e => e.Set == keep));
+        int g = keepDiff == null ? -1 : groups.FindIndex(gr => gr.Entries.Any(e => e.Diffs.Contains(keepDiff)));
+        if (g < 0 && keep != null) g = groups.FindIndex(gr => gr.Entries.Any(e => e.Set == keep));
         groupIndex = g >= 0 ? g : Math.Clamp(groupIndex, 0, Math.Max(0, groups.Count - 1));
         view.Clear();
         if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
         matchCount = view.Sum(v => v.Diffs.Count);
-        int found = keep == null ? -1 : view.FindIndex(v => v.Set == keep);
-        setIndex = found >= 0 ? found : 0;
-        diffIndex = Math.Clamp(diffIndex, 0, Math.Max(0, (view.Count > 0 ? view[setIndex].Diffs.Count : 1) - 1));
+        int found = keepDiff == null ? -1 : view.FindIndex(v => v.Diffs.Contains(keepDiff));
+        if (found >= 0) { setIndex = found; diffIndex = view[found].Diffs.IndexOf(keepDiff!); }
+        else
+        {
+            found = keep == null ? -1 : view.FindIndex(v => v.Set == keep);
+            setIndex = found >= 0 ? found : 0;
+            diffIndex = Math.Clamp(diffIndex, 0, Math.Max(0, (view.Count > 0 ? view[setIndex].Diffs.Count : 1) - 1));
+        }
         SelectionChanged();
     }
 
@@ -738,25 +745,27 @@ sealed class SongSelect : Screen
                 ByDiff(d =>
                 {
                     char c = d.Artist.Length > 0 ? char.ToUpperInvariant(d.Artist[0]) : '?';
-                    return c is >= 'A' and <= 'Z' ? (c, c.ToString()) : char.IsDigit(c) ? (100, "0-9") : (101, "Other");
+                    return char.IsNumber(c) ? (0, "0-9") : c is >= 'A' and <= 'Z' ? (c, c.ToString()) : (101, "Other");
                 });
                 break;
             case "Difficulty":
                 ByDiff(d =>
                 {
                     float st = d.StarsFor(Mods.None);
-                    int n = Math.Clamp((int)st, 0, 10);
-                    return (n, n == 0 ? "Below 1 star" : n >= 10 ? "Over 10 stars" : n == 1 ? "1 star" : $"{n} stars");
+                    int n = Math.Clamp((int)st, 0, 11);
+                    return (n, n == 0 ? "Below 1 star" : n == 11 ? "Above 10 stars" : n == 1 ? "1 Star" : $"{n} Stars");
                 });
                 break;
             case "Recent":
                 var now = DateTime.UtcNow;
                 ByDiff(d =>
                 {
-                    if (d.Unplayed || d.LastPlayed <= 0) return (9, "Never played");
+                    // stable: under a day, two, a week; "1 month(s) ago" up to 30 days, then one per 30 days to 150
+                    if (d.Unplayed || d.LastPlayed <= 0) return (99, "Never");
                     double days = (now - new DateTime(d.LastPlayed, DateTimeKind.Utc)).TotalDays;
-                    return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last week") : days < 30 ? (3, "This month")
-                        : days < 60 ? (4, "Last month") : days < 365 ? (5, "Earlier this year") : (6, "Over a year ago");
+                    if (days >= 150) return (98, "Over 5 months ago");
+                    int months = days < 7 ? 0 : days < 30 ? 1 : (int)(days / 30) + 1;
+                    return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last Week") : (2 + months, $"{months} month(s) ago");
                 });
                 break;
             case "Collections":
@@ -769,7 +778,14 @@ sealed class SongSelect : Screen
                 break;
             default:
                 groups.Add(("", all));
-                break;
+                return;
+        }
+        // stable lists every difficulty in a group as its own panel, in the sort's order (by stars when sorting by difficulty)
+        for (int i = 0; i < groups.Count; i++)
+        {
+            var flat = groups[i].Entries.SelectMany(e => e.Diffs.Select(d => (e.Set, new List<DbBeatmap> { d })));
+            if (SortMode == "Difficulty") flat = flat.OrderBy(e => e.Item2[0].StarsFor(Mods.None));
+            groups[i] = (groups[i].Name, flat.ToList());
         }
     }
 
@@ -959,27 +975,28 @@ sealed class SongSelect : Screen
         float x = PanelX(row), cy = RowCentre(row), u = U;
         if (gi >= 0) { DrawGroupHeader(row, gi, x, cy, s); return; }
         var set = view[si];
-        var b = d < 0 ? set.Set.First : set.Diffs[d];
+        bool entry = Grouped; // grouped: every panel is one difficulty (pink, the selected one white)
+        var b = d < 0 ? entry ? set.Diffs[0] : set.Set.First : set.Diffs[d];
         bool selected = d == diffIndex && si == setIndex && d >= 0;
-        DrawPanel(row, x, cy, s, selected ? SelectedColour : d >= 0 ? DiffColour : SetColour);
+        DrawPanel(row, x, cy, s, selected ? SelectedColour : d >= 0 && !entry ? DiffColour : SetColour);
 
         // stable's panel text (offsets from the panel's left edge and centre line, in 640x480 units): 75 in (room for
         // the online thumbnail) plus 8, or 25 beside a difficulty's grade icon; title 16 at -16, artist // creator 12
         // at -4, version 12 (bold) at +7 (one further in), stars at +18. The grade icon sits at 79.
-        var grade = d >= 0 && BestGrade(b) is { } gr ? Game.Skin.Tex(SmallGrade(gr)) : null;
+        var grade = (d >= 0 || entry) && BestGrade(b) is { } gr ? Game.Skin.Tex(SmallGrade(gr)) : null;
         var text = selected ? Game.Skin.SongSelectActiveText : Game.Skin.SongSelectInactiveText;
         // stable centres each line on its offset and its text bitmaps carry padding, so the glyphs sit 1.67 units right
         // of a plain top-left layout and a unit higher; its text also runs ~3% wider than ours at the same height
         // (measured on the default skin at 720p).
         float tx = x + (grade != null ? 100 : 83) * u, lx = tx + 1.67f * u, dy = -u;
-        var faded = d >= 0 && !selected ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
+        var faded = d >= 0 && !selected && !entry ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
         Game.Text(b.ShownTitle, lx, cy - 16 * u - 8 * u + dy, 16.55f * u, faded); // stable says 16; renders this wide (measured)
         Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.1f * u, faded);
-        if (d < 0) return;
+        if (d < 0 && !entry) return;
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
-        if (view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
+        if (d >= 0 && view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
         float step = (Game.Skin.Tex("star")?.Width ?? 46) * 0.6f * s;
-        DrawStars(b.StarsFor(mods), tx + step / 2, cy + 18 * u, u, text, Game.NowMs - starsAt);
+        DrawStars(b.StarsFor(mods), tx + step / 2, cy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue);
         if (grade is { } g) g.Draw(new Vector2(x + 79 * u + g.Width * s / 2, cy), s, Color.White);
     }
 
