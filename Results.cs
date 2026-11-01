@@ -6,6 +6,17 @@ namespace OsuStableRemake;
 
 sealed partial class Player
 {
+    // stable: a score clicked on song select's leaderboard opens its ranking screen (the stored judgements, the
+    // replay's HP graph when it has one) with Watch Replay; the song preview keeps playing.
+    bool summary;
+    internal static Screen Summary(Beatmap map, SongSelect back, ReplayInfo info)
+    {
+        var p = new Player(map, back, info.Mods, Replays.Frames(info), info) { summary = true };
+        (p.n300, p.n100, p.n50, p.nMiss, p.nGeki, p.nKatu, p.maxCombo, p.score) =
+            (info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu, info.MaxCombo, info.Score);
+        return new Results(p);
+    }
+
     // stable's ranking screen. Layout is stable's 640x480 coordinate space (x from the left, or from the right
     // edge for the grade/buttons/mods column); skin sprites are sized for 768px height, like everywhere else.
     // Nested in Player so it reads the finished play directly; the Player (and its outro music) is disposed on leave.
@@ -39,7 +50,7 @@ sealed partial class Player
                 .Where(x => p.mods.HasFlag(x.Flag) && !(x.Flag == Mods.DoubleTime && p.mods.HasFlag(Mods.Nightcore)) && !(x.Flag == Mods.SuddenDeath && p.mods.HasFlag(Mods.Perfect)))
                 .Select(x => "selection-mod-" + x.Icon)];
             scoreText = p.score.ToString("00000000");
-            perfect = p.maxCombo == p.MapMaxCombo;
+            perfect = p.summary && p.watching is { } sw ? sw.Perfect : p.maxCombo == p.MapMaxCombo;
 
             int lift = newLayout ? 20 : 8, textDy = newLayout ? -16 : -25;
             var list = new List<(string, Vector2, string?, float, float, Vector2, bool)>();
@@ -120,6 +131,7 @@ sealed partial class Player
             if (AutoPlay && Replay == null) { skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume); Leave(new Player(p.map, p.back, p.mods)); return; } // Auto again: the same replay
             if (Replay is not { } r) return;
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
+            if (p.summary) p.back.StopPreview();
             Leave(new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
         }
 

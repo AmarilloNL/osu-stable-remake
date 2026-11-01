@@ -84,6 +84,20 @@ sealed class SongSelect : Screen
         list.AddRange(sorted);
     }
 
+    void ShowScore(ReplayInfo info)
+    {
+        if (Selected is not { } b) return;
+        try
+        {
+            Game.Skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
+            Game.Screen = Player.Summary(Beatmap.Load(b.FilePath, mods: info.Mods), this, info);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) // a malformed map or replay mustn't take the game down
+        {
+            message = $"Can't show score: {e.Message}";
+        }
+    }
+
     void Watch(ReplayInfo info)
     {
         if (Selected is not { } b) return;
@@ -515,7 +529,7 @@ sealed class SongSelect : Screen
         if (preview != null) preview.Volume = Config.MusicVolume;
     }
 
-    void StopPreview()
+    internal void StopPreview()
     {
         preview?.Dispose();
         preview = null;
@@ -655,7 +669,7 @@ sealed class SongSelect : Screen
             if (mouse.X < GetScreenWidth() * 0.35f)
             {
                 int n = ScoreRowAt(mouse.Y);
-                if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { Watch(SelectedScores[n]); return; }
+                if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { ShowScore(SelectedScores[n]); return; }
             }
             else if (ClickRow(mouse.Y)) return;
         }
