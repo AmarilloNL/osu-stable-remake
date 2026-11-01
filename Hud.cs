@@ -74,6 +74,7 @@ sealed partial class Player
         DrawScore(w, u, sd, frames);
         DrawCombo(u, sd, now);
         DrawMeter(w, u, sd, now);
+        DrawColourMeter(w, u, frames);
         DrawMods(w, u, sd);
         // stable's "UNRANKED" banner (play-unranked) when the mods keep the play off the rankings: scale 1, centred at y 45.1 (measured).
         if (mods.HasFlag(Mods.Autoplay) || mods.HasFlag(Mods.Relax) || mods.HasFlag(Mods.Autopilot))
@@ -209,6 +210,55 @@ sealed partial class Player
     }
 
     double[]? spinnerStarts;
+
+    // stable's "Colour" hit meter: a black bar (alpha 0.6) a third of the screen wide and 9 units tall (+1, both x
+    // ScoreMeterScale) at the bottom centre, holding a row of 9-unit squares 1 unit plus an even gap apart, black at
+    // first. Each judgement colours the next square (300 blue, 100 green, 50 gold, misses and slider breaks red) at full
+    // alpha and fades every other one by 0.08. The meter shows from a judgement until 4s later or a spinner, then
+    // fades 0.04 a 60Hz frame.
+    float[] colourA = [];
+    Color[] colourC = [];
+    int colourNext;
+    float colourShown;
+    double colourUntil = double.MinValue;
+    static bool ColourMeter => Config.Get("ScoreMeter", "Error") == "Colour";
+
+    int ColourSquares(float wu, out float width, out float size, out float gap)
+    {
+        float k = (float)Config.GetDouble("ScoreMeterScale", 1);
+        width = wu / 3 * k; size = 9 * k;
+        int n = (int)(width / (size + 1));
+        gap = n > 1 ? (width - n * size - (n - 1)) / (n - 1) : 0;
+        return n;
+    }
+
+    internal void ColourMeterHit(int result)
+    {
+        if (!ColourMeter) return;
+        int n = ColourSquares(GetScreenWidth() / (GetScreenHeight() / 480f), out _, out _, out _);
+        if (colourA.Length != n) { colourA = Enumerable.Repeat(1f, n).ToArray(); colourC = Enumerable.Repeat(Color.Black, n).ToArray(); colourNext = 0; }
+        if (n == 0) return;
+        colourShown = 1;
+        colourUntil = time + 4000;
+        if (colourNext >= n) colourNext = 0;
+        for (int i = 0; i < n; i++) colourA[i] -= 0.08f;
+        colourC[colourNext] = result switch { 300 => Meter300, 100 => Meter100, 50 => Meter50, _ => new Color(255, 9, 9, 255) };
+        colourA[colourNext++] = 1;
+    }
+
+    void DrawColourMeter(int w, float u, double frames)
+    {
+        if (!ColourMeter) return;
+        if (SpinnerActive() || time > colourUntil || paused || failed) colourShown = Math.Max(0, colourShown - 0.04f * (float)frames);
+        float a = colourShown * hudFade;
+        if (a <= 0 || colourA.Length == 0) return;
+        int n = ColourSquares(w / u, out float width, out float size, out float gap);
+        if (n != colourA.Length) return;
+        float x = (w / u - width) / 2;
+        DrawRectangleRec(new Rectangle(x * u, (480 - size - 1) * u, width * u, (size + 1) * u), ColorAlpha(Color.Black, 0.6f * a));
+        for (int i = 0; i < n; i++, x += size + 1 + gap)
+            if (colourA[i] > 0) DrawRectangleRec(new Rectangle(x * u, (480 - size) * u, size * u, size * u), ColorAlpha(colourC[i], Math.Min(1, colourA[i]) * a));
+    }
 
     void DrawMeter(int w, float u, float sd, double now)
     {

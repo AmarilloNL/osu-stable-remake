@@ -994,7 +994,7 @@ sealed partial class Player : Screen
             s.HeadDone = true;
             if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {o.Time} expired unclicked (cursor {Vector2.Distance(cursor, PosOf(o)) / map.Radius:0.00}r)");
             BreakCombo();
-            health.Apply(HpEvent.SliderBreak);
+            health.Apply(HpEvent.SliderBreak); ColourMeterHit(0);
         }
     }
 
@@ -1065,7 +1065,7 @@ sealed partial class Player : Screen
             s.HeadDone = true; s.TrackButton = pressButton; // clicked too early/late: the head is missed
             if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {o.Time} clicked outside the windows at {time:0}");
             BreakCombo();
-            health.Apply(HpEvent.SliderBreak);
+            health.Apply(HpEvent.SliderBreak); ColourMeterHit(0);
         }
         else
         {
@@ -1097,6 +1097,7 @@ sealed partial class Player : Screen
             V2Hit(result);
             if (o.Type != ObjType.Spinner && Config.GetBool("HitLighting", true)) lightings.Add((popupPos, ColourOf(o), time));
             health.Apply(result switch { 300 => HpEvent.Hit300, 100 => HpEvent.Hit100, _ => HpEvent.Hit50 });
+            ColourMeterHit(result);
             if (result != 300 && mods.HasFlag(Mods.Perfect)) Fail();
         }
         else
@@ -1104,6 +1105,7 @@ sealed partial class Player : Screen
             if (o.Type != ObjType.Slider) BreakCombo(); // a fully missed slider already broke combo at its head
             UpdateV2();
             health.Apply(HpEvent.Miss);
+            ColourMeterHit(0);
             if (mods.HasFlag(Mods.SuddenDeath)) Fail();
         }
         comboWorst = Math.Min(comboWorst, result);
@@ -1136,7 +1138,7 @@ sealed partial class Player : Screen
                     s.HeadMissPending = false;
                     if (VerifyLog) Console.Error.WriteLine($"  slider head #{i} at {o.Time} (slider already judged) expired unclicked");
                     BreakCombo();
-                    health.Apply(HpEvent.SliderBreak);
+                    health.Apply(HpEvent.SliderBreak); ColourMeterHit(0);
                 }
                 continue;
             }
@@ -1208,7 +1210,7 @@ sealed partial class Player : Screen
             {
                 if (VerifyLog) Console.Error.WriteLine($"  checkpoint miss: {cp.Kind} at {cp.Time} on slider {o.Time}-{o.EndTime} (cursor {Vector2.Distance(cursor, BallOf(o, time)) / map.Radius:0.00}r from ball, held={inputKeys != 0})");
                 if (cp.Kind != CheckpointKind.End) BreakCombo(); // a missed slider end costs HP but keeps combo
-                health.Apply(HpEvent.SliderBreak);
+                health.Apply(HpEvent.SliderBreak); ColourMeterHit(0);
             }
         }
 
