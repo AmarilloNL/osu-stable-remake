@@ -11,6 +11,8 @@ static class Config
     static readonly Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
     static readonly Dictionary<string, string> own = new(StringComparer.OrdinalIgnoreCase);
     static string OwnPath => Path.Combine(AppContext.BaseDirectory, "remake.cfg");
+    // stable's songs folder: its BeatmapDirectory (relative to the install or a full path), Songs by default
+    public static string SongsDir => Path.Combine(OsuDir, Get("BeatmapDirectory", "Songs"));
 
     public static void Load()
     {

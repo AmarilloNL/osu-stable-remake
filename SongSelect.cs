@@ -146,7 +146,7 @@ sealed class SongSelect : Screen
     internal static List<DbBeatmap> ScanFolders()
     {
         var list = new List<DbBeatmap>();
-        var songs = Path.Combine(Config.OsuDir, "Songs");
+        var songs = Config.SongsDir;
         if (!Directory.Exists(songs)) return list;
         foreach (var dir in Directory.EnumerateDirectories(songs))
             foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
@@ -331,7 +331,7 @@ sealed class SongSelect : Screen
             StopPreview();
             previewKey = key;
             if (b == null) return;
-            previewLoading = LoadPreview(key, Path.Combine(Config.OsuDir, "Songs", b.Folder, b.AudioFile), mods.Rate(), mods.HasFlag(Mods.Nightcore));
+            previewLoading = LoadPreview(key, Path.Combine(Config.SongsDir, b.Folder, b.AudioFile), mods.Rate(), mods.HasFlag(Mods.Nightcore));
         }
         else if (preview != null && preview.Stopped && b != null)
         {

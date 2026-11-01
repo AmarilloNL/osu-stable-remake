@@ -66,7 +66,7 @@ sealed class DbBeatmap
     }
 
     string? filePath; // checked every frame by song select (background, timing): built once
-    public string FilePath => filePath ??= Path.Combine(Config.OsuDir, "Songs", Folder, OsuFile);
+    public string FilePath => filePath ??= Path.Combine(Config.SongsDir, Folder, OsuFile);
 }
 
 // Reader for stable's osu!.db (layout verified against stable's own reader for v20260924).
