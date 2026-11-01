@@ -367,7 +367,8 @@ sealed class SongSelect : Screen
     bool rightScroll;
     bool leftDown, leftDragging;
     Vector2 leftPressAt;
-    float leftDragFrom; // stable: holding the right button over the list scrolls it to the cursor's height
+    float leftDragFrom, dragLastY;
+    double dragVelocity; // stable: holding the right button over the list scrolls it to the cursor's height
 
     void MoveSet(int delta)
     {
@@ -710,20 +711,40 @@ sealed class SongSelect : Screen
                 int n = ScoreRowAt(mouse.Y);
                 if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { ShowScore(SelectedScores[n]); return; }
             }
-            else { leftDown = true; leftPressAt = mouse; leftDragging = false; leftDragFrom = scrollRow; }
+            else { leftDown = true; leftPressAt = mouse; leftDragging = false; leftDragFrom = scrollRow; dragLastY = mouse.Y; dragVelocity = 0; }
         }
         // stable: a press on the list becomes a drag once the cursor is 80px away (the list follows it); otherwise the
         // panel acts when the button is let go
+        // velocities in 768-high pixels per ms; stable keeps a smoothed drag speed and lets it run on after release,
+        // decaying by max(0.5, 0.996 - 0.002 / |v|) per ms
+        float k768 = 768f / GetScreenHeight();
         if (leftDown)
         {
             if (!leftDragging && Vector2.DistanceSquared(mouse, leftPressAt) > 6400) leftDragging = true;
-            if (leftDragging) wheelTarget = scrollRow = Math.Clamp(leftDragFrom - (mouse.Y - leftPressAt.Y) / RowH, 0, MaxFreeScroll);
+            if (leftDragging)
+            {
+                wheelTarget = scrollRow = Math.Clamp(leftDragFrom - (mouse.Y - leftPressAt.Y) / RowH, 0, MaxFreeScroll);
+                double inst = dtMs > 0 ? (dragLastY - mouse.Y) * k768 / dtMs : 0;
+                double kk = Math.Pow(Math.Sign(inst) == -Math.Sign(dragVelocity) || Math.Abs(inst) > Math.Abs(dragVelocity) ? 0.9 : 0.95, dtMs);
+                dragVelocity = dragVelocity * kk + (1 - kk) * inst;
+            }
+            dragLastY = mouse.Y;
             if (!Input.IsMouseButtonDown(MouseButton.Left))
             {
                 leftDown = false;
                 if (!leftDragging && ClickRow(leftPressAt.Y)) return;
+                if (!leftDragging) dragVelocity = 0;
             }
         }
+        else if (dragVelocity != 0 && wheelTarget is float wt)
+        {
+            double f = Math.Max(0.5, 0.996 - 0.002 / Math.Abs(dragVelocity)), v0 = dragVelocity;
+            dragVelocity *= Math.Pow(f, dtMs);
+            double moved768 = (dragVelocity - v0) / Math.Log(f); // the distance covered while it decayed
+            wheelTarget = scrollRow = Math.Clamp(wt + (float)(moved768 / k768) / RowH, 0, MaxFreeScroll);
+            if (Math.Abs(dragVelocity) < 0.01) dragVelocity = 0;
+        }
+        else dragVelocity = 0;
         // Ctrl+1..9 watches that local score.
         if (Input.IsKeyDown(KeyboardKey.LeftControl))
             for (int n = 0; n < 9; n++)
