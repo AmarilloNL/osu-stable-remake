@@ -265,6 +265,23 @@ static class Game
     static void Main(string[] args)
     {
         if (args.Contains("--check")) { Check(); return; }
+        if (args.Contains("--check-readmap")) // test hook: our .osu reader against what osu!.db recorded for the same maps
+        {
+            Config.Load();
+            int same = 0, diff = 0;
+            foreach (var db in OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")).Where(b => b.Mode == 0))
+            {
+                if (SongSelect.ReadMap(db.FilePath) is not { } m) { Console.WriteLine($"unreadable {db.OsuFile}"); continue; }
+                var a = (db.Circles, db.Sliders, db.Spinners, db.DrainSeconds, db.TotalMs / 1000, Math.Round(db.MinBpm), Math.Round(db.MaxBpm), Math.Round(db.MainBpm), db.SetId);
+                var b = (m.Circles, m.Sliders, m.Spinners, m.DrainSeconds, m.TotalMs / 1000, Math.Round(m.MinBpm), Math.Round(m.MaxBpm), Math.Round(m.MainBpm), m.SetId);
+                if (a == b) same++;
+                else { diff++; Console.WriteLine($"{db.OsuFile}: db {a}, ours {b}"); }
+                if (Environment.GetEnvironmentVariable("READMAP_TIMES") == "1" && Beatmap.Load(db.FilePath) is { Objects.Count: > 0 } full)
+                    Console.WriteLine($"  total {db.TotalMs} drain {db.DrainSeconds}: last {full.Objects[^1].Type} {full.Objects[^1].Time}-{full.Objects[^1].EndTime}, max end {full.Objects.Max(o => o.EndTime)}, first {full.Objects[0].Time}");
+            }
+            Console.WriteLine($"{same} same, {diff} different");
+            return;
+        }
         if (args.Contains("--check-ui"))
         {
             Config.Load();

@@ -189,12 +189,16 @@ sealed class SongSelect : Screen
             var m = Beatmap.Load(file);
             var objs = m.Objects;
             var bpms = m.TimingPoints.Where(t => t.Uninherited && t.BeatLength > 0).OrderBy(t => t.Time).ToList();
-            double end = objs.Count > 0 ? objs[^1].EndTime : 0, mainBpm = 0, longest = -1;
+            // stable: the total time runs to the last object's start (a spinner's end); the main BPM is the one held
+            // longest in all (checked against osu!.db with --check-readmap)
+            double end = objs.Count == 0 ? 0 : objs[^1].Type == ObjType.Spinner ? objs[^1].EndTime : objs[^1].Time, mainBpm = 0;
+            var held = new Dictionary<double, double>();
             for (int i = 0; i < bpms.Count; i++)
             {
                 double from = i == 0 ? 0 : bpms[i].Time, to = i + 1 < bpms.Count ? bpms[i + 1].Time : end;
-                if (to - from > longest) { longest = to - from; mainBpm = 60000 / bpms[i].BeatLength; }
+                held[bpms[i].BeatLength] = held.GetValueOrDefault(bpms[i].BeatLength) + Math.Max(0, to - from);
             }
+            if (held.Count > 0) mainBpm = 60000 / held.MaxBy(kv => kv.Value).Key;
             return new DbBeatmap
             {
                 Artist = m.Artist, ArtistUnicode = m.ArtistUnicode, Title = m.Title, TitleUnicode = m.TitleUnicode, Creator = m.Creator,
