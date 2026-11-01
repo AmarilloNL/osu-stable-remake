@@ -566,6 +566,19 @@ sealed partial class Player : Screen
     internal bool Playing => !paused && !finished;
     internal void ApplyMusicVolume() { if (music != null) music.Volume = Config.MusicVolume; }
 
+    // stable: a live play can't pause again within a second (of song time) of its last pause
+    double lastPauseAt = double.NaN;
+    void TryPause(bool quiet = false)
+    {
+        if (playback == null && !auto && time - lastPauseAt < 1000)
+        {
+            if (!quiet) Notification.Show("Wait at least one second before pausing again.", 1000);
+            return;
+        }
+        lastPauseAt = time;
+        SetPaused(true);
+    }
+
     void SetPaused(bool p)
     {
         paused = p;
@@ -668,9 +681,11 @@ sealed partial class Player : Screen
         if (playback != null && TestSpeedAt.Count > 0 && Game.NowMs / 1000 >= TestSpeedAt[0]) { TestSpeedAt.RemoveAt(0); CycleSpeed(); }
         if (playback != null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; }
         if (auto && playback == null && UpdateReplayOverlay()) { Leave(back); return; } // End Replay
-        if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape)))
+        // stable: a live play also pauses / unpauses with the middle mouse button (not with the mouse wheel disabled in play)
+        bool middle = playback == null && !auto && !Config.GetBool("MouseDisableWheel", false) && Input.IsMouseButtonPressed(MouseButton.Middle);
+        if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape)) || middle)
         {
-            if (!paused) SetPaused(true);
+            if (!paused) TryPause();
             else if (resumePending) resumePending = false; // back to the pause menu
             else Continue();
         }
@@ -681,7 +696,12 @@ sealed partial class Player : Screen
             if (c == "pause-continue") { Continue(); return; } // not into gameplay input this frame
             else if (c == "pause-retry" || Input.IsKeyPressed(KeyboardKey.R)) Retry();
             else if (c == "pause-back" || Input.IsKeyPressed(KeyboardKey.Q)) Leave(back);
+            else if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(Config.Key("keyDecreaseAudioOffset", KeyboardKey.Minus)))
+                Notification.Show("Offset can only be changed while game is not paused.", 1000);
         }
+        // stable pauses a live play whose window loses focus, from the first object's approach to the last object's end
+        if (!paused && playback == null && !auto && !Input.ScriptOnly && !VirtualClock && !failed && !finished
+            && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime && !IsWindowFocused()) TryPause(quiet: true);
         if (paused) return;
         // stable's quick retry: holding the Quick Retry key (or Ctrl+R) fills 10 a 60Hz tick and retries at 100;
         // letting go drains 3 a tick. The screen fades to black with it.
