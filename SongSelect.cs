@@ -571,7 +571,7 @@ sealed class SongSelect : Screen
             var map = Beatmap.Load(b.FilePath, mods: mods);
             if (map.Objects.Count == 0) { message = "Map has no hit objects"; return; }
             Game.Skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
-            var player = new Player(map, this, mods);
+            var player = new Player(map, this, mods) { LeftSongSelectAt = Game.NowMs };
             // the preview fades out in the player before its clock starts, like stable
             if (preview != null) { player.FadingOut(preview); preview = null; previewKey = null; }
             else StopPreview();
@@ -1196,7 +1196,34 @@ sealed class SongSelect : Screen
             + MathF.Min(200, MathF.Abs(RowCentre(row) / GetScreenHeight() - 0.5f) * 75);
     }
 
-    float PanelX(int row) => (GetScreenWidth() / U - 340 + (rowEase.TryGetValue(row, out var e) ? e.X : TargetX(row))) * U;
+    float PanelX(int row) => (GetScreenWidth() / U - 340 + leaveShift + (rowEase.TryGetValue(row, out var e) ? e.X : TargetX(row))) * U;
+
+    // stable keeps song select on screen for a second after a map is started: everything in its upper half slides 110
+    // units up and the lower half 110 down (800ms Out), the leaderboard fades over 500ms and the list is pushed 500
+    // units right (0.95 per 60Hz tick). The player draws this over itself (under its Visual Settings strip).
+    float leaveShift, leaveSlide, scoreFade = 1;
+
+    internal void DrawLeaving(double ms)
+    {
+        if (ms >= 1000 || loading != null) return;
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        float s = S;
+        leaveShift = 500 * (1 - (float)Math.Pow(0.95, ms / (1000 / 60.0)));
+        leaveSlide = 110 * U * (float)Easing.Apply(1, Math.Min(1, ms / 800));
+        scoreFade = 1 - (float)Math.Min(1, ms / 500);
+        int first = Math.Max(0, RowAt(0)), last = Math.Min(RowCount - 1, RowAt(h));
+        for (int row = last; row >= first; row--) DrawRow(row, w, h, s);
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(0, -leaveSlide, 0);
+        DrawTopBar(w, s);
+        Rlgl.PopMatrix();
+        DrawScores(w, h, s);
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(0, leaveSlide, 0);
+        DrawBottomBar(w, h, s);
+        Rlgl.PopMatrix();
+        (leaveShift, leaveSlide, scoreFade) = (0, 0, 1);
+    }
 
     void UpdateCarousel(double dtMs, Vector2 mouse)
     {
@@ -1737,24 +1764,25 @@ sealed class SongSelect : Screen
     void DrawScoreRow(ReplayInfo r, float y, long? nextScore, bool hover)
     {
         float u = U;
+        var white = ColorAlpha(Color.White, scoreFade);
         var row = new Rectangle(4.3f * u, y, 235.7f * u, ScoreRowH - 2 * u);
-        DrawRectangleRec(row, hover ? new Color(100, 100, 100, 77) : new Color(0, 0, 0, 77)); // stable: black at 0.3, grey (100) on hover (measured 10 -> 7 over a dark background)
+        DrawRectangleRec(row, hover ? new Color(100, 100, 100, (int)(77 * scoreFade)) : new Color(0, 0, 0, (int)(77 * scoreFade))); // stable: black at 0.3, grey (100) on hover (measured 10 -> 7 over a dark background)
         // (stable numbers a row only with its online rank, so local scores show none)
-        if (Game.Skin.Tex(SmallGrade(GradeOf(r))) is { } g) g.Draw(new Vector2(49 * u, y + 14 * u), 21 * u / Math.Max(1, g.Height), Color.White);
+        if (Game.Skin.Tex(SmallGrade(GradeOf(r))) is { } g) g.Draw(new Vector2(49 * u, y + 14 * u), 21 * u / Math.Max(1, g.Height), white);
         string name = r.FromStable ? (r.Player.Length > 0 ? r.Player : "stable") : Config.Get("Username", "You");
-        Game.Text(name, 63 * u, y + 7.7f * u - 8 * u, 16 * u, Color.White);
+        Game.Text(name, 63 * u, y + 7.7f * u - 8 * u, 16 * u, white);
         var text = RowText(r);
-        Game.Text(text.Score, 63 * u, y + 20.5f * u - 6 * u, 12 * u, Color.White);
+        Game.Text(text.Score, 63 * u, y + 20.5f * u - 6 * u, 12 * u, white);
         float right = 237.7f * u, size = 10 * u;
         string[] lines = rowLines;
         lines[0] = text.Mods; lines[1] = text.Acc; lines[2] = nextScore is long nx && r.Score > nx ? leadText.Of(r.Score - nx) : "-";
         for (int i = 0; i < lines.Length; i++)
-            if (lines[i].Length > 0) Game.Text(lines[i], right - Game.TextWidth(lines[i], size), y + (5 + 10.3f * i) * u - size / 2, size, Color.White);
+            if (lines[i].Length > 0) Game.Text(lines[i], right - Game.TextWidth(lines[i], size), y + (5 + 10.3f * i) * u - size / 2, size, white);
         // recent scores: an up-arrow circle and the age beside the row (measured at 1080p)
         if (AgoText(r) is { } ago)
         {
-            Options.DrawIcon(0xf01b, 250 * u, y + 14.05f * u, 15.1f * u, Color.White);
-            Game.Text(ago, 261.3f * u, y + 13.8f * u - 5 * u, 10.8f * u, Color.White);
+            Options.DrawIcon(0xf01b, 250 * u, y + 14.05f * u, 15.1f * u, white);
+            Game.Text(ago, 261.3f * u, y + 13.8f * u - 5 * u, 10.8f * u, white);
         }
     }
 
@@ -1787,11 +1815,14 @@ sealed class SongSelect : Screen
     {
         float u = U;
         var box = new Rectangle(5 * u, 73 * u, 191 * u, 15 * u);
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(0, -leaveSlide, 0);
         DrawRectangleRec(box, Color.Black);
         DropdownBorder(box, new Color(22, 130, 179, 255));
         Game.Text("Local Ranking", box.X + 3 * u, box.Y + box.Height / 2 - 7 * u, 14 * u, Color.White);
         Options.DrawIcon(0xf078, box.X + box.Width - 9.8f * u, box.Y + box.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
         DrawWebButton(u);
+        Rlgl.PopMatrix();
 
         var list = SelectedScores;
         // stable: osu!ui's selection-norecords centred at (118, 170) units, fading in and sliding 30 down over 400ms (Out)
@@ -1800,8 +1831,8 @@ sealed class SongSelect : Screen
         {
             float k = (float)Math.Clamp((Game.NowMs - noRecordsAt) / 400, 0, 1);
             var at = new Vector2(118 * u, (170 + 30 * (float)Easing.Apply(1, k)) * u);
-            if (Game.Skin.DefaultTex("selection-norecords") is { } nr) nr.Draw(at, s, ColorAlpha(Color.White, k));
-            else Game.Text("No records set!", at.X - Game.TextWidth("No records set!", 14 * u) / 2, at.Y - 7 * u, 14 * u, ColorAlpha(Color.White, k));
+            if (Game.Skin.DefaultTex("selection-norecords") is { } nr) nr.Draw(at, s, ColorAlpha(Color.White, k * scoreFade));
+            else Game.Text("No records set!", at.X - Game.TextWidth("No records set!", 14 * u) / 2, at.Y - 7 * u, 14 * u, ColorAlpha(Color.White, k * scoreFade));
         }
         var mouse = Input.GetMousePosition();
         for (int n = 0; n < Math.Min(8, list.Count); n++)

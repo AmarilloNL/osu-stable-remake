@@ -113,6 +113,7 @@ sealed partial class Player : Screen
     // tick) before its clock starts, showing the Visual Settings strip meanwhile; an opened panel holds the start.
     Track? fadeOut;
     float fadeVolume;
+    internal double LeftSongSelectAt = double.NaN; // song select lingers for a second over a play started from it
     internal Player FadingOut(Track music)
     {
         fadeOut = music;
@@ -126,7 +127,7 @@ sealed partial class Player : Screen
     {
         if (fadeOut == null) return false;
         UpdateVisualSettings(dtMs);
-        fadeVolume -= 0.02f * (float)(dtMs / (1000 / 60.0));
+        fadeVolume -= 0.02f * (float)(Math.Min(dtMs, 33) / (1000 / 60.0)); // (our first frame carries the load time)
         fadeOut.Volume = Math.Max(0, fadeVolume) * Config.MusicVolume;
         if (fadeVolume > 0 || VisualOpen) { UpdateDim(dtMs); return true; }
         fadeOut.Dispose();
@@ -1609,6 +1610,7 @@ sealed partial class Player : Screen
                 Game.TextBold(hint[i], 12 * u, (10 + 16 * i) * u, 16.6f * u, ColorAlpha(Color.White, a)); // measured against stable
             }
         }
+        if (!double.IsNaN(LeftSongSelectAt)) back.DrawLeaving(Game.NowMs - LeftSongSelectAt);
         DrawVisualSettings(w, h);
         UpdateBreakStars(auto && playback == null ? autoKeys : inputKeys);
         DrawBreakStars();
