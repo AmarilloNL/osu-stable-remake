@@ -258,6 +258,8 @@ sealed class SongSelect : Screen
         view.Clear();
         if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
         matchCount = view.Sum(v => v.Diffs.Count);
+        expanded = Grouped && groups.Count > 0 ? groupIndex : -1;
+        focusGroup = -2;
         int found = keepDiff == null ? -1 : view.FindIndex(v => v.Diffs.Contains(keepDiff));
         if (found >= 0) { setIndex = found; diffIndex = view[found].Diffs.IndexOf(keepDiff!); }
         else
@@ -276,12 +278,8 @@ sealed class SongSelect : Screen
 
     void MoveSet(int delta)
     {
+        if (Grouped) { SelectRelative(delta); return; }
         if (view.Count == 0) return;
-        if (Grouped && Math.Abs(delta) == 1 && (setIndex + delta < 0 && groupIndex > 0 || setIndex + delta >= view.Count && groupIndex < groups.Count - 1))
-        {
-            OpenGroup(groupIndex + delta, last: delta < 0);
-            return;
-        }
         int before = setIndex;
         setIndex = Math.Clamp(setIndex + delta, 0, view.Count - 1);
         diffIndex = 0;
@@ -291,6 +289,7 @@ sealed class SongSelect : Screen
 
     void MoveDiff(int delta)
     {
+        if (Grouped) { SelectRelative(delta); return; }
         if (view.Count == 0) return;
         Game.Skin.Sound("select-difficulty")?.Play(BeatmapSamples.EffectVolume);
         diffIndex += delta;
@@ -547,10 +546,20 @@ sealed class SongSelect : Screen
         if (modSelect) { while (Input.GetCharPressed() != 0) { } return; }
 
         int page = Math.Max(1, (int)((GetScreenHeight() - TopH - BottomH) / RowH) - 2);
-        if (Pressed(KeyboardKey.Down)) MoveDiff(1);
-        if (Pressed(KeyboardKey.Up)) MoveDiff(-1);
-        if (Pressed(KeyboardKey.Right)) MoveSet(1);
-        if (Pressed(KeyboardKey.Left)) MoveSet(-1);
+        if (Grouped)
+        {
+            if (Pressed(KeyboardKey.Down)) MoveFocus(1);
+            if (Pressed(KeyboardKey.Up)) MoveFocus(-1);
+            if (Pressed(KeyboardKey.Right)) Sideways(1);
+            if (Pressed(KeyboardKey.Left)) Sideways(-1);
+        }
+        else
+        {
+            if (Pressed(KeyboardKey.Down)) MoveDiff(1);
+            if (Pressed(KeyboardKey.Up)) MoveDiff(-1);
+            if (Pressed(KeyboardKey.Right)) MoveSet(1);
+            if (Pressed(KeyboardKey.Left)) MoveSet(-1);
+        }
         if (Pressed(KeyboardKey.PageDown)) MoveSet(page);
         if (Pressed(KeyboardKey.PageUp)) MoveSet(-page);
         if (Input.IsKeyPressed(KeyboardKey.Home)) MoveSet(-view.Count);
@@ -596,6 +605,8 @@ sealed class SongSelect : Screen
         // Ctrl+Enter: this one play with Auto, like stable (the selected mods stay as they are).
         if (Input.IsKeyPressed(KeyboardKey.Enter) && !Input.IsKeyDown(KeyboardKey.LeftAlt))
         {
+            if (Grouped && focusGroup >= 0 && focusEntry < 0) { ToggleGroup(focusGroup); return; }
+            if (Grouped && focusGroup >= 0 && (focusGroup != groupIndex || focusEntry != setIndex)) { SelectEntry(focusGroup, focusEntry); return; }
             Play(Input.IsKeyDown(KeyboardKey.LeftControl) ? mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay : mods);
             return;
         }
@@ -622,7 +633,7 @@ sealed class SongSelect : Screen
         }
         if (changed) ApplyFilter();
 
-        scrollRow += (SelectedRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
+        scrollRow += (FocusRow - scrollRow) * (float)Math.Min(1, dtMs / 80);
         UpdateCarousel(dtMs, Input.GetMousePosition());
         UpdateSparkles();
     }
@@ -636,20 +647,32 @@ sealed class SongSelect : Screen
     }
 
     // Rows: one per set, except the selected set, which is replaced by one row per difficulty (like stable).
-    // Grouped: a header row per group, the open group's rows right under its header.
-    int HeaderRowsBefore => Grouped ? groupIndex + 1 : 0;
+    // Grouped (stable's): a header row per group and the expanded group's difficulties under its header; the
+    // selection's group (groupIndex, its entries in view) needn't be the expanded one. Up/Down move a focus over the
+    // rows without selecting; Left/Right (and Enter) open or close a focused header, select a focused difficulty, or
+    // step the selection on through the groups; a tab switch closes every group, focusing the selection's header.
+    int expanded = -1;
+    int focusGroup = -2, focusEntry; // a focused header has entry -1; -2: the focus follows the selection
+    static readonly List<(BeatmapSet Set, List<DbBeatmap> Diffs)> NoEntries = [];
+    List<(BeatmapSet Set, List<DbBeatmap> Diffs)> RowEntries => !Grouped ? view : expanded >= 0 ? groups[expanded].Entries : NoEntries;
+    int ExpandedCount => Grouped && expanded >= 0 ? groups[expanded].Entries.Count : 0;
+    int HeaderRow(int g) => expanded >= 0 && g > expanded ? g + ExpandedCount : g;
     int EntryRows => view.Count == 0 ? 0 : view.Count - 1 + view[setIndex].Diffs.Count;
-    int SelectedRow => HeaderRowsBefore + setIndex + diffIndex;
-    int RowCount => (Grouped ? groups.Count : 0) + EntryRows;
+    int SelectedRow => !Grouped ? setIndex + diffIndex
+        : expanded == groupIndex && view.Count > 0 ? HeaderRow(expanded) + 1 + setIndex : HeaderRow(groupIndex);
+    int FocusRow => !Grouped || focusGroup < -1 ? SelectedRow : focusEntry < 0 ? HeaderRow(focusGroup) : HeaderRow(focusGroup) + 1 + focusEntry;
+    int RowCount => Grouped ? groups.Count + ExpandedCount : EntryRows;
 
-    // Returns (set, diff, group) for a row: group >= 0 for a group header, diff = -1 for a collapsed set row.
+    // Returns (set, diff, group) for a row: group >= 0 for a group header, diff = -1 for a collapsed set row (grouped:
+    // an entry of the expanded group, diff 0 when it's the selected one).
     (int Set, int Diff, int Group) RowInfo(int row)
     {
         if (Grouped)
         {
-            if (row <= groupIndex) return (-1, -1, row);
-            row -= groupIndex + 1;
-            if (row >= EntryRows) return (-1, -1, groupIndex + 1 + row - EntryRows);
+            int n = ExpandedCount;
+            if (expanded < 0 || row <= expanded) return (-1, -1, row);
+            if (row <= expanded + n) { int e = row - expanded - 1; return (e, expanded == groupIndex && e == setIndex ? 0 : -1, -1); }
+            return (-1, -1, row - n);
         }
         if (row < setIndex) return (row, -1, -1);
         int diffs = view[setIndex].Diffs.Count;
@@ -710,19 +733,55 @@ sealed class SongSelect : Screen
         Config.SetOwn("RemakeGroupMode", key);
         groupIndex = 0;
         ApplyFilter();
+        if (Grouped && groups.Count > 0) { expanded = -1; focusGroup = groupIndex; focusEntry = -1; } // stable: all closed
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
     }
 
-    void OpenGroup(int g, bool last = false)
+    void ToggleGroup(int g)
     {
-        if (g < 0 || g >= groups.Count) return;
-        groupIndex = g;
-        view.Clear();
-        view.AddRange(groups[g].Entries);
-        setIndex = last ? Math.Max(0, view.Count - 1) : 0;
-        diffIndex = 0;
+        expanded = expanded == g ? -1 : g;
+        focusGroup = g;
+        focusEntry = -1;
         Game.Skin.Sound("select-expand")?.Play(BeatmapSamples.EffectVolume);
+    }
+
+    void SelectEntry(int g, int e)
+    {
+        bool changed = g != groupIndex || e != setIndex;
+        if (g != groupIndex) { groupIndex = g; view.Clear(); view.AddRange(groups[g].Entries); }
+        setIndex = e;
+        diffIndex = 0;
+        expanded = g;
+        focusGroup = -2;
+        if (!changed) return;
+        Game.Skin.Sound("select-difficulty")?.Play(BeatmapSamples.EffectVolume);
         SelectionChanged();
+    }
+
+    // grouped: the selection delta difficulties on through all the groups, opening the one it lands in
+    void SelectRelative(int delta)
+    {
+        int total = 0, at = 0;
+        for (int g = 0; g < groups.Count; g++) { if (g == groupIndex) at = total + setIndex; total += groups[g].Entries.Count; }
+        if (total == 0) return;
+        int to = Math.Clamp(at + delta, 0, total - 1), gi = 0;
+        while (to >= groups[gi].Entries.Count) { to -= groups[gi].Entries.Count; gi++; }
+        SelectEntry(gi, to);
+    }
+
+    void MoveFocus(int delta)
+    {
+        if (RowCount == 0) return;
+        var (e, _, g) = RowInfo(Math.Clamp(FocusRow + delta, 0, RowCount - 1));
+        if (g >= 0) { focusGroup = g; focusEntry = -1; }
+        else { focusGroup = expanded; focusEntry = e; }
+    }
+
+    void Sideways(int delta)
+    {
+        if (focusGroup >= 0 && focusEntry < 0) { ToggleGroup(focusGroup); return; }
+        if (focusGroup >= 0 && (focusGroup != groupIndex || focusEntry != setIndex)) SelectEntry(focusGroup, focusEntry);
+        else SelectRelative(delta);
     }
 
     void BuildGroups(List<(BeatmapSet Set, List<DbBeatmap> Diffs)> all)
@@ -798,13 +857,18 @@ sealed class SongSelect : Screen
     // above the first row); scrollRow eases toward the selection. Hovering a panel spreads the rows around it by 10.
     float Extra(float row)
     {
+        if (Grouped)
+        {
+            if (expanded < 0) return 0;
+            float e = Math.Clamp(row - expanded - ExpandedCount, 0, 1); // before the header after the entries
+            if (expanded == groupIndex && view.Count > 0) e += Math.Clamp(row - (expanded + 1 + setIndex) + 1, 0, 2); // around the selection
+            return 10 * U * e;
+        }
         if (view.Count == 0) return 0;
         int n = view[setIndex].Diffs.Count;
-        float start = (Grouped ? groupIndex + 1 : 0) + setIndex;
+        float start = setIndex;
         int lead = start > 0 ? 1 : 0; // the gap before the first difficulty needs a panel above it
-        float extra = Math.Clamp(row - start + lead, 0, n + lead);
-        if (Grouped) extra += Math.Clamp(row - (groupIndex + EntryRows), 0, 1);
-        return 10 * U * extra;
+        return 10 * U * Math.Clamp(row - start + lead, 0, n + lead);
     }
 
     float Scroll => MathF.Max(0, scrollRow * RowH + Extra(scrollRow) - 20 * U);
@@ -861,9 +925,11 @@ sealed class SongSelect : Screen
         int row = RowAt(y);
         if (row < 0 || row >= RowCount) return false;
         var (set, diff, group) = RowInfo(row);
-        if (group >= 0)
+        if (group >= 0) { ToggleGroup(group); return true; }
+        if (Grouped)
         {
-            if (group != groupIndex) OpenGroup(group);
+            if (diff >= 0) Play(mods);
+            else SelectEntry(expanded, set);
             return true;
         }
         if (diff < 0)
@@ -964,12 +1030,17 @@ sealed class SongSelect : Screen
         else DrawRectangleRec(new Rectangle(x, cy - 27 * U, 430 * U, 54 * U), colour);
     }
 
+    // stable's header colours (measured): the expanded group yellow when focused, else lime (black text); a focused
+    // header (50,72,205), the selection's (35,90,193), others (35,50,143).
     void DrawGroupHeader(int row, int g, float x, float cy, float s)
     {
-        DrawPanel(row, x, cy, s, g == groupIndex ? new Color(35, 90, 193, 255) : new Color(35, 50, 143, 255));
+        bool focused = focusGroup == g && focusEntry < 0, open = g == expanded;
+        var colour = open ? focused ? new Color(237, 255, 64, 255) : new Color(170, 250, 46, 255)
+            : focused ? new Color(50, 72, 205, 255) : g == groupIndex ? new Color(35, 90, 193, 255) : new Color(35, 50, 143, 255);
+        DrawPanel(row, x, cy, s, colour);
         var (name, entries) = groups[g];
         int maps = entries.Sum(e => e.Diffs.Count);
-        Game.Text(GroupLabel(name, maps), x + 15 * U, cy - 12 * U, 24 * U, Color.White); // stable: 24 at (15, 0), centred
+        Game.Text(GroupLabel(name, maps), x + 15 * U, cy - 12 * U, 24 * U, open ? Color.Black : Color.White); // stable: 24 at (15, 0), centred
     }
 
     void DrawRow(int row, int w, int h, float s)
@@ -977,11 +1048,12 @@ sealed class SongSelect : Screen
         var (si, d, gi) = RowInfo(row);
         float x = PanelX(row), cy = RowCentre(row), u = U;
         if (gi >= 0) { DrawGroupHeader(row, gi, x, cy, s); return; }
-        var set = view[si];
-        bool entry = Grouped; // grouped: every panel is one difficulty (pink, the selected one white)
+        var set = RowEntries[si];
+        bool entry = Grouped; // grouped: every panel is one difficulty (pink, the focused one brighter, the selected one white)
         var b = d < 0 ? entry ? set.Diffs[0] : set.Set.First : set.Diffs[d];
         bool selected = d == diffIndex && si == setIndex && d >= 0;
-        DrawPanel(row, x, cy, s, selected ? SelectedColour : d >= 0 && !entry ? DiffColour : SetColour);
+        bool focused = entry && !selected && focusGroup == expanded && focusEntry == si;
+        DrawPanel(row, x, cy, s, selected ? SelectedColour : focused ? new Color(255, 103, 214, 240) : d >= 0 && !entry ? DiffColour : SetColour);
 
         // stable's panel text (offsets from the panel's left edge and centre line, in 640x480 units): 75 in (room for
         // the online thumbnail) plus 8, or 25 beside a difficulty's grade icon; title 16 at -16, artist // creator 12
@@ -997,7 +1069,7 @@ sealed class SongSelect : Screen
         Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.1f * u, faded);
         if (d < 0 && !entry) return;
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
-        if (d >= 0 && view[si].Set != starsSet) { starsSet = view[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
+        if (d >= 0 && RowEntries[si].Set != starsSet) { starsSet = RowEntries[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
         float step = (Game.Skin.Tex("star")?.Width ?? 46) * 0.6f * s;
         DrawStars(b.StarsFor(mods), tx + step / 2, cy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue);
         if (grade is { } g) g.Draw(new Vector2(x + 79 * u + g.Width * s / 2, cy), s, Color.White);
