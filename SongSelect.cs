@@ -274,6 +274,71 @@ sealed class SongSelect : Screen
     DbBeatmap? Selected => view.Count == 0 ? null : view[setIndex].Diffs[diffIndex];
     readonly Stack<DbBeatmap> randomHistory = [];
 
+    // ---- stable's random spin: jump to a random entry, then step one entry on per 60Hz tick once the tick count passes
+    // a threshold that starts at 0.0001 and grows x1.6 a step (menuclick each step, louder as it slows: min(50,
+    // threshold + 20) / 50), stopping once the threshold passes a random 20-50. F2 while spinning stops it there.
+    bool spinning;
+    float spinThreshold;
+    int spinTicks;
+    double spinTick;
+
+    int FlatCount => Grouped ? groups.Sum(g => g.Entries.Count) : view.Count;
+    int FlatIndex()
+    {
+        if (!Grouped) return setIndex;
+        int at = 0;
+        for (int g = 0; g < groupIndex; g++) at += groups[g].Entries.Count;
+        return at + setIndex;
+    }
+    void SelectFlat(int i)
+    {
+        if (Grouped) { SelectRelative(i - FlatIndex()); return; }
+        setIndex = Math.Clamp(i, 0, view.Count - 1);
+        diffIndex = 0;
+        SelectionChanged();
+    }
+
+    void RandomKey(bool back)
+    {
+        if (back)
+        {
+            spinning = false;
+            while (randomHistory.TryPop(out var prev))
+                if (view.FindIndex(v => v.Diffs.Contains(prev)) is var i and >= 0) { MoveSet(i - setIndex); diffIndex = view[i].Diffs.IndexOf(prev); break; }
+                else if (Grouped && groups.FindIndex(g => g.Entries.Any(e => e.Diffs.Contains(prev))) is var gi and >= 0)
+                { SelectEntry(gi, groups[gi].Entries.FindIndex(e => e.Diffs.Contains(prev))); break; }
+        }
+        else if (spinning) spinning = false;
+        else
+        {
+            int n = FlatCount;
+            if (n < 2) return;
+            if (Selected is { } cur) randomHistory.Push(cur);
+            spinning = true;
+            spinThreshold = 0.0001f;
+            spinTicks = 0;
+            spinTick = Game.NowMs;
+            SelectFlat(Random.Shared.Next(n));
+            Game.Skin.Sound("menuclick")?.Play(BeatmapSamples.EffectVolume);
+        }
+        Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+    }
+
+    void UpdateSpin(double dtMs)
+    {
+        for (; spinning && Game.NowMs - spinTick >= 1000 / 60.0; spinTick += 1000 / 60.0)
+        {
+            if (!(spinTicks++ > spinThreshold)) continue;
+            int n = FlatCount;
+            if (n <= 1) { spinning = false; break; }
+            Game.Skin.Sound("menuclick")?.Play(BeatmapSamples.EffectVolume * Math.Min(50, spinThreshold + 20) / 50);
+            spinTicks = 0;
+            spinThreshold *= 1.6f;
+            if (spinThreshold > Random.Shared.Next(20, 50)) { spinning = false; break; }
+            SelectFlat((FlatIndex() + 1) % n);
+        }
+    }
+
     void SelectionChanged() => selectionChangedAt = Game.NowMs;
 
     void MoveSet(int delta)
@@ -564,13 +629,9 @@ sealed class SongSelect : Screen
         if (Pressed(KeyboardKey.PageUp)) MoveSet(-page);
         if (Input.IsKeyPressed(KeyboardKey.Home)) MoveSet(-view.Count);
         if (Input.IsKeyPressed(KeyboardKey.End)) MoveSet(view.Count);
-        // F2: random map; Shift+F2: back to the one before the last random pick (stable keeps the same history).
-        if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0)
-        {
-            if (!Input.IsKeyDown(KeyboardKey.LeftShift)) { randomHistory.Push(Selected!); MoveSet(Random.Shared.Next(view.Count) - setIndex); }
-            else while (randomHistory.TryPop(out var prev))
-                if (view.FindIndex(v => v.Diffs.Contains(prev)) is var i and >= 0) { MoveSet(i - setIndex); diffIndex = view[i].Diffs.IndexOf(prev); break; }
-        }
+        // F2: random map (stable's spin; F2 again stops it); Shift+F2: back to the one before the last random pick.
+        if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
+        UpdateSpin(dtMs);
         float wheel = VolumeControl.Wheel;
         if (wheel != 0) MoveSet(-(int)Math.Round(wheel));
 
@@ -1323,7 +1384,7 @@ sealed class SongSelect : Screen
             if (!CheckCollisionPointRec(mouse, ButtonRect(name, bx, h, s))) continue;
             Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
             if (name == "selection-mods") OpenModSelect(!modSelect);
-            else if (name == "selection-random" && view.Count > 0) MoveSet(Random.Shared.Next(view.Count) - setIndex);
+            else if (name == "selection-random" && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
             else if (name == "selection-options") OpenBeatmapOptions(); // stable's Beatmap Options dialog
             return true;
         }
