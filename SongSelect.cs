@@ -364,7 +364,10 @@ sealed class SongSelect : Screen
     int lastFocusRow = -1;
     // free scrolling stops with the last panel at the bottom (its centre ~186 units below the selection line at 220)
     float MaxFreeScroll => Math.Max(0, RowCount - 1 - 186 * U / RowH);
-    bool rightScroll; // stable: holding the right button over the list scrolls it to the cursor's height
+    bool rightScroll;
+    bool leftDown, leftDragging;
+    Vector2 leftPressAt;
+    float leftDragFrom; // stable: holding the right button over the list scrolls it to the cursor's height
 
     void MoveSet(int delta)
     {
@@ -707,7 +710,19 @@ sealed class SongSelect : Screen
                 int n = ScoreRowAt(mouse.Y);
                 if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { ShowScore(SelectedScores[n]); return; }
             }
-            else if (ClickRow(mouse.Y)) return;
+            else { leftDown = true; leftPressAt = mouse; leftDragging = false; leftDragFrom = scrollRow; }
+        }
+        // stable: a press on the list becomes a drag once the cursor is 80px away (the list follows it); otherwise the
+        // panel acts when the button is let go
+        if (leftDown)
+        {
+            if (!leftDragging && Vector2.DistanceSquared(mouse, leftPressAt) > 6400) leftDragging = true;
+            if (leftDragging) wheelTarget = scrollRow = Math.Clamp(leftDragFrom - (mouse.Y - leftPressAt.Y) / RowH, 0, MaxFreeScroll);
+            if (!Input.IsMouseButtonDown(MouseButton.Left))
+            {
+                leftDown = false;
+                if (!leftDragging && ClickRow(leftPressAt.Y)) return;
+            }
         }
         // Ctrl+1..9 watches that local score.
         if (Input.IsKeyDown(KeyboardKey.LeftControl))
