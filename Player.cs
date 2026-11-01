@@ -2453,8 +2453,13 @@ sealed partial class Player : Screen
             // Per-popup randomness (stable from frame to frame) from a seeded hash, so nothing is allocated per frame.
             uint seed = (uint)HashCode.Combine(t, pos.X, pos.Y);
             double Rand() { seed = seed * 1664525 + 1013904223; return (seed >> 8) / 16777216.0; }
-            var sp = skin.Tex(name) ?? skin.Tex(name[..^1]);
-            var particle = result > 0 && sp != null ? skin.TexFrom(result switch { 300 => "particle300", 100 => "particle100", _ => "particle50" }, skin.Source(name)) : null;
+            // the skin's animation (hit300-0, -1 ...) plays once at 60fps and holds its last frame; animated
+            // judgements skip the bounce/shrink, a miss's tilt and sinking (the particle flash still bounces)
+            string anim = skin.Animation(name, true).Length > 0 ? name : name[..^1];
+            var frames = skin.Animation(anim, true);
+            var sp = frames.Length == 0 ? (Sprite?)null : frames[Math.Clamp((int)(age / (1000 / 60.0)), 0, frames.Length - 1)];
+            bool single = frames.Length == 1;
+            var particle = result > 0 && sp != null ? skin.TexFrom(result switch { 300 => "particle300", 100 => "particle100", _ => "particle50" }, skin.AnimationSource(anim, true)) : null;
             float Bounce() => age < 120 ? 0.6f + 0.5f * Seg(0, 96) : age < 144 ? 1.1f - 0.2f * Seg(120, 144) : 0.9f + 0.1f * Seg(120, 168);
             if (layer == 0)
             {
@@ -2483,7 +2488,8 @@ sealed partial class Player : Screen
             if (layer != (spin ? 2 : particle != null ? 1 : 3)) continue;
             if (sp is { } s)
             {
-                if (result == 0)
+                if (!single) s.Draw(p, particle != null ? litScale : baseScale, ColorAlpha(Color.White, alpha * Seg(0, particle != null ? 80 : 120)));
+                else if (result == 0)
                 {
                     float r = (float)(Rand() * 0.3 - 0.15);
                     float rot = age < 120 ? r * Seg(0, 120) : r + r * (float)Easing.Apply(2, Seg(120, 1100));

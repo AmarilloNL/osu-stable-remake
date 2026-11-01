@@ -65,6 +65,12 @@ sealed class Skin
         else if (Tex(name) is { } single) list.Add(single);
         return animations[(name, dash)] = [.. list];
     }
+    // the source an animation's sprites come from (0: none)
+    public int AnimationSource(string name, bool dash)
+    {
+        int first = Source(dash ? $"{name}-0" : $"{name}0"), plain = Source(name);
+        return first > 0 && first >= plain ? first : plain;
+    }
     public Sprite? Frame(string prefix, int i) => Animation(prefix, true) is var a && i < a.Length ? a[i] : null;
     public int FrameCount(string prefix) => Animation(prefix, true).Length;
 
