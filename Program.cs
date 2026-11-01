@@ -47,23 +47,101 @@ static class Game
     }
 
     public static void Text(string s, float x, float y, float size, Color c, float spacing = 0) =>
-        DrawTextEx(Ui(size), OldStyle(s), new Vector2(x, y), size, spacing, c);
+        Draw(Ui(size), OldStyle(s), x, y, size, spacing, c);
 
-    public static float TextWidth(string s, float size) => MeasureTextEx(Ui(size), OldStyle(s), size, 0).X;
+    public static float TextWidth(string s, float size) => Measure(Ui(size), OldStyle(s), size, 0);
 
     // Regular Aller at any size (stable picks the weight by its nominal size, not pixels).
     public static void TextRegular(string s, float x, float y, float size, Color c) =>
-        DrawTextEx(Font, OldStyle(s), new Vector2(x, y), size, 0, c);
+        Draw(Font, OldStyle(s), x, y, size, 0, c);
 
     public static void TextBold(string s, float x, float y, float size, Color c) =>
-        DrawTextEx(Bold, OldStyle(s), new Vector2(x, y), size, 0, c);
+        Draw(Bold, OldStyle(s), x, y, size, 0, c);
 
-    public static float BoldWidth(string s, float size) => MeasureTextEx(Bold, OldStyle(s), size, 0).X;
+    public static float BoldWidth(string s, float size) => Measure(Bold, OldStyle(s), size, 0);
 
-    public static float LightWidth(string s, float size) => MeasureTextEx(Light, OldStyle(s), size, 0).X;
+    public static float LightWidth(string s, float size) => Measure(Light, OldStyle(s), size, 0);
 
     public static void TextLight(string s, float x, float y, float size, Color c) =>
-        DrawTextEx(Light, OldStyle(s), new Vector2(x, y), size, 0, c);
+        Draw(Light, OldStyle(s), x, y, size, 0, c);
+
+    // ---- characters outside Aller (Japanese, Chinese, Korean, Cyrillic ...): stable's GDI+ text falls back to a system
+    // font for them, MS UI Gothic here (Malgun Gothic for Hangul). Those glyphs go into extra atlases that are rebuilt
+    // whenever a new character shows up; a string is drawn as runs of Aller and fallback text.
+    static bool InUiFont(int cp) => cp is >= 32 and <= 0x24F or 0x2605 or 0x266A || cp >= '0' + 63500 && cp <= '9' + 63500;
+    static bool Plain(string s) { foreach (char ch in s) if (!InUiFont(ch)) return false; return true; }
+    static bool IsHangul(int cp) => cp is >= 0xAC00 and <= 0xD7AF or >= 0x1100 and <= 0x11FF or >= 0x3130 and <= 0x318F;
+
+    sealed class FallbackFont(string path, int index)
+    {
+        public Font Font;
+        public bool Loaded, Failed;
+        readonly HashSet<int> codepoints = [];
+        byte[]? ttf;
+        public void Add(List<int> cps)
+        {
+            int before = codepoints.Count;
+            codepoints.UnionWith(cps);
+            if (codepoints.Count == before || Failed) return;
+            try { ttf ??= path.EndsWith(".ttc", StringComparison.OrdinalIgnoreCase) ? FontCollection.Extract(File.ReadAllBytes(path), index) : File.ReadAllBytes(path); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Failed = true; return; }
+            if (Loaded) UnloadFont(Font);
+            var cp = codepoints.ToArray();
+            Font = LoadFontFromMemory(".ttf", ttf, 48, cp, cp.Length);
+            var tex = Font.Texture;
+            GenTextureMipmaps(ref tex);
+            Font.Texture = tex;
+            SetTextureFilter(Font.Texture, TextureFilter.Trilinear);
+            Loaded = true;
+        }
+    }
+    static readonly FallbackFont Gothic = new(@"C:\Windows\Fonts\msgothic.ttc", 1), Hangul = new(@"C:\Windows\Fonts\malgun.ttf", 0);
+    // vertical shift of the fallback glyphs against Aller's, in text sizes (measured on stable's song select)
+    const float FallbackDy = 0.13f, FallbackScale = 0.85f;
+
+    // Runs of one font each, cached per string (song select draws the same titles every frame).
+    static readonly Dictionary<string, (string Text, int Font)[]> runs = [];
+    static (string Text, int Font)[] Runs(string s)
+    {
+        if (runs.TryGetValue(s, out var r)) return r;
+        var list = new List<(string, int)>();
+        List<int> gothic = [], hangul = [];
+        int start = 0, current = -1;
+        for (int i = 0; i < s.Length; i += char.IsSurrogatePair(s, i) ? 2 : 1)
+        {
+            int cp = char.IsSurrogatePair(s, i) ? char.ConvertToUtf32(s, i) : s[i];
+            int font = InUiFont(cp) ? 0 : IsHangul(cp) ? 2 : 1;
+            if (font == 1) gothic.Add(cp); else if (font == 2) hangul.Add(cp);
+            if (font != current) { if (current >= 0) list.Add((s[start..i], current)); start = i; current = font; }
+        }
+        if (current >= 0) list.Add((s[start..], current));
+        if (gothic.Count > 0) Gothic.Add(gothic);
+        if (hangul.Count > 0) Hangul.Add(hangul);
+        if (runs.Count > 2048) runs.Clear();
+        return runs[s] = [.. list];
+    }
+
+    static Font FontFor(int i, Font ui) => i == 0 ? ui : i == 2 && Hangul.Loaded ? Hangul.Font : Gothic.Loaded ? Gothic.Font : ui;
+
+    static void Draw(Font f, string s, float x, float y, float size, float spacing, Color c)
+    {
+        if (Plain(s)) { DrawTextEx(f, s, new Vector2(x, y), size, spacing, c); return; }
+        foreach (var (text, i) in Runs(s))
+        {
+            var font = FontFor(i, f);
+            float sz = i == 0 ? size : size * FallbackScale;
+            DrawTextEx(font, text, new Vector2(x, y + (i == 0 ? 0 : FallbackDy * size)), sz, spacing, c);
+            x += MeasureTextEx(font, text, sz, spacing).X + spacing;
+        }
+    }
+
+    static float Measure(Font f, string s, float size, float spacing)
+    {
+        if (Plain(s)) return MeasureTextEx(f, s, size, spacing).X;
+        float w = 0;
+        foreach (var (text, i) in Runs(s)) w += MeasureTextEx(FontFor(i, f), text, i == 0 ? size : size * FallbackScale, spacing).X + spacing;
+        return w - spacing;
+    }
 
     // stable's UI font (Aller) from osu!ui.dll; a system font if that's unavailable.
     static Font LoadUiFont(string name, string fallback, int[] codepoints)
@@ -694,5 +772,31 @@ sealed class FrameStats
         }
         foreach (char c in text) One(Glyph(font, c));
         if (tail != null) One(Ui(tail));
+    }
+}
+
+// One face out of a TrueType collection (.ttc) as a standalone .ttf (raylib loads only single fonts): its table
+// directory with the tables copied after it and the offsets rewritten.
+static class FontCollection
+{
+    public static byte[] Extract(byte[] ttc, int index)
+    {
+        static uint U32(byte[] b, int o) => (uint)(b[o] << 24 | b[o + 1] << 16 | b[o + 2] << 8 | b[o + 3]);
+        static int U16(byte[] b, int o) => b[o] << 8 | b[o + 1];
+        if (ttc.Length < 12 || ttc[0] != 't' || ttc[1] != 't' || ttc[2] != 'c' || ttc[3] != 'f') return ttc;
+        int fontOff = (int)U32(ttc, 12 + 4 * index), tables = U16(ttc, fontOff + 4);
+        int headerLen = 12 + 16 * tables, total = headerLen;
+        for (int t = 0; t < tables; t++) total += ((int)U32(ttc, fontOff + 12 + 16 * t + 12) + 3) & ~3;
+        var ttf = new byte[total];
+        Array.Copy(ttc, fontOff, ttf, 0, headerLen);
+        int at = headerLen;
+        for (int t = 0; t < tables; t++)
+        {
+            int rec = 12 + 16 * t, off = (int)U32(ttc, fontOff + rec + 8), len = (int)U32(ttc, fontOff + rec + 12);
+            Array.Copy(ttc, off, ttf, at, len);
+            ttf[rec + 8] = (byte)(at >> 24); ttf[rec + 9] = (byte)(at >> 16); ttf[rec + 10] = (byte)(at >> 8); ttf[rec + 11] = (byte)at;
+            at += (len + 3) & ~3;
+        }
+        return ttf;
     }
 }

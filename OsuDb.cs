@@ -9,8 +9,23 @@ sealed class DbBeatmap
     // Lowercased text the song select search matches against (built off the main thread by the library loader):
     // the set's text, shared by maps whose fields are the same strings, plus the difficulty name on its own.
     public string? SearchKey, VersionKey;
+    // stable's "Prefer metadata in original language" (ShowUnicode): song select and the main menu use the unicode
+    // title / artist where the map has them (each on its own in the panels; the combined lines only when both exist).
+    // The ranking screen keeps the romanised names.
+    public static bool Unicode => Config.GetBool("ShowUnicode", false); // read live: the option can change at any time
+    public string ShownTitle => Unicode && TitleUnicode.Length > 0 ? TitleUnicode : Title;
+    public string ShownArtist => Unicode && ArtistUnicode.Length > 0 ? ArtistUnicode : Artist;
+    public bool BothUnicode => Unicode && TitleUnicode.Length > 0 && ArtistUnicode.Length > 0;
     string? panelSubtitle;
-    public string PanelSubtitle => panelSubtitle ??= $"{Artist} // {Creator}"; // song select draws it every frame
+    bool subtitleUnicode;
+    public string PanelSubtitle // song select draws it every frame
+    {
+        get
+        {
+            if (panelSubtitle == null || subtitleUnicode != Unicode) { subtitleUnicode = Unicode; panelSubtitle = $"{ShownArtist} // {Creator}"; }
+            return panelSubtitle;
+        }
+    }
     public bool SearchMatches(string word) => SearchKey!.Contains(word) || VersionKey!.Contains(word);
 
     public void BuildSearchKey(DbBeatmap? prev)

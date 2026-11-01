@@ -623,7 +623,7 @@ sealed class MainMenu : Screen
             // stable's "Now Playing" header: the song title 10 units in from the right edge with the menu-np sprite
             // anchored 100 texels left of it, sliding in from 90 units further right and fading in over 1s on each
             // song change; unless PermanentSongInfo is set they leave the same way 6-8s later.
-            if (npFor != b) { npFor = b; npText = $"{b.Artist} - {b.Title}"; }
+            if (npFor != b) { npFor = b; npText = b.BothUnicode ? $"{b.ArtistUnicode} - {b.TitleUnicode}" : $"{b.Artist} - {b.Title}"; }
             string np = npText;
             float npSize = 14 * u, npW = Game.LightWidth(np, npSize);
             double t = now - songChangedAt;

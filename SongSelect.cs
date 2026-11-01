@@ -960,7 +960,7 @@ sealed class SongSelect : Screen
         // (measured on the default skin at 720p).
         float tx = x + (grade != null ? 100 : 83) * u, lx = tx + 1.67f * u, dy = -u;
         var faded = d >= 0 && !selected ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
-        Game.Text(b.Title, lx, cy - 16 * u - 8 * u + dy, 16.55f * u, faded); // stable says 16; renders this wide (measured)
+        Game.Text(b.ShownTitle, lx, cy - 16 * u - 8 * u + dy, 16.55f * u, faded); // stable says 16; renders this wide (measured)
         Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.1f * u, faded);
         if (d < 0) return;
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
@@ -1057,7 +1057,8 @@ sealed class SongSelect : Screen
                 statArrow = rate > 1 ? 1 : rate < 1 ? -1 : 0;
                 lengthColour = rate > 1 ? Harder : rate < 1 ? Easier : Color.White;
                 statsColour = mods.HasFlag(Mods.HardRock) ? Harder : mods.HasFlag(Mods.Easy) ? Easier : Color.White; // speed mods leave it white (HT checked)
-                header = [$"{(b.Source.Length > 0 ? $"{b.Source} ({b.Artist})" : b.Artist)} - {b.Title} [{b.Version}]", // stable: "Source (Artist)" when there is one
+                (string artist, string title) = b.BothUnicode ? (b.ArtistUnicode, b.TitleUnicode) : (b.Artist, b.Title);
+                header = [$"{(b.Source.Length > 0 ? $"{b.Source} ({artist})" : artist)} - {title} [{b.Version}]", // stable: "Source (Artist)" when there is one
                     $"Mapped by {b.Creator}",
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
