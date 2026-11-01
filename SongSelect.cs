@@ -555,7 +555,7 @@ sealed class SongSelect : Screen
         if (Grouped) { SelectRelative(delta); return; }
         if (view.Count == 0) return;
         int before = setIndex;
-        setIndex = Math.Clamp(setIndex + delta, 0, view.Count - 1);
+        setIndex = ((setIndex + delta) % view.Count + view.Count) % view.Count; // stable wraps round the list's ends
         diffIndex = 0;
         if (setIndex != before) Game.Skin.Sound("select-expand")?.Play(BeatmapSamples.EffectVolume);
         SelectionChanged();
@@ -566,16 +566,12 @@ sealed class SongSelect : Screen
         if (Grouped) { SelectRelative(delta); return; }
         if (view.Count == 0) return;
         Game.Skin.Sound("select-difficulty")?.Play(BeatmapSamples.EffectVolume);
-        diffIndex += delta;
-        if (diffIndex < 0)
+        // one panel at a time (a set's difficulties are panels while it's open), wrapping round the list like stable
+        for (int n = Math.Abs(delta), step = Math.Sign(delta); n > 0; n--)
         {
-            if (setIndex == 0) diffIndex = 0;
-            else { setIndex--; diffIndex = view[setIndex].Diffs.Count - 1; }
-        }
-        else if (diffIndex >= view[setIndex].Diffs.Count)
-        {
-            if (setIndex == view.Count - 1) diffIndex = view[setIndex].Diffs.Count - 1;
-            else { setIndex++; diffIndex = 0; }
+            diffIndex += step;
+            if (diffIndex < 0) { setIndex = (setIndex - 1 + view.Count) % view.Count; diffIndex = view[setIndex].Diffs.Count - 1; }
+            else if (diffIndex >= view[setIndex].Diffs.Count) { setIndex = (setIndex + 1) % view.Count; diffIndex = 0; }
         }
         SelectionChanged();
     }
@@ -835,7 +831,6 @@ sealed class SongSelect : Screen
 
         // stable: Ctrl+A toggles Auto outside the mod select too
         if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.A)) { mods = ModInfo.Toggle(mods, KeyboardKey.V); while (Input.GetCharPressed() != 0) { } }
-        int page = Math.Max(1, (int)((GetScreenHeight() - TopH - BottomH) / RowH) - 2);
         if (Grouped)
         {
             if (Pressed(KeyboardKey.Down)) MoveFocus(1);
@@ -850,10 +845,12 @@ sealed class SongSelect : Screen
             if (Pressed(KeyboardKey.Right)) MoveSet(1);
             if (Pressed(KeyboardKey.Left)) MoveSet(-1);
         }
-        if (Pressed(KeyboardKey.PageDown)) MoveSet(page);
-        if (Pressed(KeyboardKey.PageUp)) MoveSet(-page);
-        if (Input.IsKeyPressed(KeyboardKey.Home)) MoveSet(-view.Count);
-        if (Input.IsKeyPressed(KeyboardKey.End)) MoveSet(view.Count);
+        // stable: PageUp / PageDown move 10 panels
+        if (Pressed(KeyboardKey.PageDown)) { if (Grouped) MoveFocus(10); else MoveDiff(10); }
+        if (Pressed(KeyboardKey.PageUp)) { if (Grouped) MoveFocus(-10); else MoveDiff(-10); }
+        // Home / End (the remake's own): the first / last entry
+        if (Input.IsKeyPressed(KeyboardKey.Home)) { if (Grouped) { if (groups.Count > 0) SelectEntry(0, 0); } else MoveSet(-setIndex); }
+        if (Input.IsKeyPressed(KeyboardKey.End)) { if (Grouped) { if (groups.Count > 0) SelectEntry(groups.Count - 1, groups[^1].Entries.Count - 1); } else MoveSet(view.Count - 1 - setIndex); }
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
         if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, []); return; } // stable: its import screen checks for new files
         // stable: Shift+Delete is the beatmap options' Delete...
@@ -1184,7 +1181,7 @@ sealed class SongSelect : Screen
         int total = 0, at = 0;
         for (int g = 0; g < groups.Count; g++) { if (g == groupIndex) at = total + setIndex; total += groups[g].Entries.Count; }
         if (total == 0) return;
-        int to = Math.Clamp(at + delta, 0, total - 1), gi = 0;
+        int to = ((at + delta) % total + total) % total, gi = 0; // wrapping, like stable
         while (to >= groups[gi].Entries.Count) { to -= groups[gi].Entries.Count; gi++; }
         SelectEntry(gi, to);
     }
@@ -1192,7 +1189,7 @@ sealed class SongSelect : Screen
     void MoveFocus(int delta)
     {
         if (RowCount == 0) return;
-        var (e, _, g) = RowInfo(Math.Clamp(FocusRow + delta, 0, RowCount - 1));
+        var (e, _, g) = RowInfo(((FocusRow + delta) % RowCount + RowCount) % RowCount); // wrapping, like stable
         if (g >= 0) { focusGroup = g; focusEntry = -1; }
         else { focusGroup = expanded; focusEntry = e; }
     }
