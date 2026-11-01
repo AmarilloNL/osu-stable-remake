@@ -139,9 +139,9 @@ sealed class SongSelect : Screen
                         if (ReadMap(file) is { } b) all.Add(b);
         TotalBeatmaps = all.Count;
         for (int i = 0; i < all.Count; i++) all[i].BuildSearchKey(i > 0 ? all[i - 1] : null); // here, not on the first keystroke
-        return Sorted(all.Where(b => b.Mode == 0)
+        return [.. all.Where(b => b.Mode == 0)
             .GroupBy(b => b.Folder, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new BeatmapSet(g.OrderBy(b => b.StarsFor(Mods.None)).ToList())), SortMode);
+            .Select(g => new BeatmapSet(g.OrderBy(b => b.StarsFor(Mods.None)).ToList()))];
     }
 
     // stable's sort modes (TreeSortMode2 in its cfg; ours is saved to remake.cfg).
@@ -150,32 +150,41 @@ sealed class SongSelect : Screen
     static string SortMode => Config.Get("TreeSortMode2", "Artist");
     internal static int TotalBeatmaps; // every mode, as stable's menu counts them
 
-    // By Rank Achieved: the set's best local grade (song select fills the lookup in)
+    // By Rank Achieved: the difficulty's best local grade (song select fills the lookup in)
     static Func<DbBeatmap, string?>? gradeLookup;
     static readonly string[] GradeRanks = ["XH", "SH", "X", "S", "A", "B", "C", "D"];
-    static int GradeOrder(BeatmapSet s) => s.Diffs.Select(d => gradeLookup?.Invoke(d) is { } g && Array.IndexOf(GradeRanks, g) is int i and >= 0 ? i : GradeRanks.Length).Min();
+    static int GradeIndex(DbBeatmap d) => gradeLookup?.Invoke(d) is { } g && Array.IndexOf(GradeRanks, g) is int i and >= 0 ? i : GradeRanks.Length;
 
-    static List<BeatmapSet> Sorted(IEnumerable<BeatmapSet> sets, string mode)
+    // stable sorts the difficulties themselves, not sets: by the sort's key, then folder, stars and version. A set's
+    // difficulties stay together unless the key differs between them (stars, length, BPM), when other sets' come between.
+    static Comparison<DbBeatmap> DiffOrder(Mods mods)
     {
-        var cmp = StringComparer.OrdinalIgnoreCase;
-        return (mode.ToLowerInvariant() switch // stable writes BPM, ours Bpm
+        var text = StringComparer.CurrentCulture;
+        Comparison<DbBeatmap> key = SortMode.ToLowerInvariant() switch // stable writes BPM, ours Bpm
         {
-            "title" => sets.OrderBy(s => s.First.Title, cmp),
-            "creator" => sets.OrderBy(s => s.First.Creator, cmp),
-            "bpm" => sets.OrderBy(s => s.First.MainBpm),
-            "length" => sets.OrderBy(s => s.Diffs.Max(d => d.TotalMs)),
-            "rank" => sets.OrderBy(s => GradeOrder(s)), // best local grade first, unplayed last
-            "difficulty" => sets.OrderBy(s => s.First.StarsFor(Mods.None)),
-            "date" => sets.OrderBy(s => s.Diffs.Max(d => d.LastModified)),
-            _ => sets.OrderBy(s => s.First.Artist, cmp),
-        }).ThenBy(s => s.First.Artist, cmp).ThenBy(s => s.First.Title, cmp).ToList();
+            "title" => (a, b) => text.Compare(a.Title, b.Title),
+            "creator" => (a, b) => text.Compare(a.Creator, b.Creator),
+            "bpm" => (a, b) => a.MaxBpm.CompareTo(b.MaxBpm),
+            "length" => (a, b) => (a.TotalMs / 1000).CompareTo(b.TotalMs / 1000),
+            "rank" => (a, b) => GradeIndex(a).CompareTo(GradeIndex(b)), // best local grade first, unplayed last
+            "difficulty" => (a, b) => a.StarsFor(mods).CompareTo(b.StarsFor(mods)),
+            // a set's difficulties added within 10 seconds of each other count as one import
+            "date" => (a, b) => a.Folder != b.Folder || Math.Abs(a.LastModified - b.LastModified) > 10 * TimeSpan.TicksPerSecond ? a.LastModified.CompareTo(b.LastModified) : 0,
+            _ => (a, b) => text.Compare(a.Artist, b.Artist) is var c and not 0 ? c : text.Compare(a.Title, b.Title),
+        };
+        return (a, b) =>
+        {
+            int c = key(a, b);
+            if (c == 0) c = text.Compare(a.Folder, b.Folder);
+            if (c == 0) c = a.StarsFor(mods).CompareTo(b.StarsFor(mods));
+            return c != 0 ? c : text.Compare(a.Version, b.Version);
+        };
     }
 
     void CycleSort(int dir)
     {
         int i = Array.FindIndex(SortModes, m => m.Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase));
         Config.SetOwn("TreeSortMode2", SortModes[((i < 0 ? 0 : i) + dir + SortModes.Length) % SortModes.Length].Key);
-        sets = Sorted(sets, SortMode);
         ApplyFilter();
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
     }
@@ -451,6 +460,7 @@ sealed class SongSelect : Screen
         groupIndex = g >= 0 ? g : Math.Clamp(groupIndex, 0, Math.Max(0, groups.Count - 1));
         view.Clear();
         if (groups.Count > 0) view.AddRange(groups[groupIndex].Entries);
+        viewStamp++;
         matchCount = view.Sum(v => v.Diffs.Count);
         keptSelection = view.Count == 0 ? keepDiff : null;
         expanded = Grouped && groups.Count > 0 ? groupIndex : -1;
@@ -501,7 +511,8 @@ sealed class SongSelect : Screen
         {
             spinning = false;
             while (randomHistory.TryPop(out var prev))
-                if (view.FindIndex(v => v.Diffs.Contains(prev)) is var i and >= 0) { MoveSet(i - setIndex); diffIndex = view[i].Diffs.IndexOf(prev); break; }
+                if (view.FindIndex(v => v.Diffs.Contains(prev)) is var i and >= 0)
+                { if (Grouped) SelectRelative(i - setIndex); else setIndex = i; diffIndex = view[i].Diffs.IndexOf(prev); SelectionChanged(); break; }
                 else if (Grouped && groups.FindIndex(g => g.Entries.Any(e => e.Diffs.Contains(prev))) is var gi and >= 0)
                 { SelectEntry(gi, groups[gi].Entries.FindIndex(e => e.Diffs.Contains(prev))); break; }
         }
@@ -536,7 +547,7 @@ sealed class SongSelect : Screen
         }
     }
 
-    void SelectionChanged() { selectionChangedAt = Game.NowMs; wheelTarget = null; }
+    void SelectionChanged() { selectionChangedAt = Game.NowMs; wheelTarget = null; focusRow = -1; }
 
     // stable: the mouse wheel scrolls the list (~1.5 rows a notch, measured) without touching the selection; the list
     // follows the selection / focus again once that moves.
@@ -550,14 +561,22 @@ sealed class SongSelect : Screen
     float leftDragFrom, dragLastY;
     double dragVelocity; // stable: holding the right button over the list scrolls it to the cursor's height
 
+    // Left / Right: the focused panel's run, else the next run that way (wrapping round the list)
     void MoveSet(int delta)
     {
         if (Grouped) { SelectRelative(delta); return; }
         if (view.Count == 0) return;
-        int before = setIndex;
-        setIndex = ((setIndex + delta) % view.Count + view.Count) % view.Count; // stable wraps round the list's ends
+        SelectRun(focusRow >= 0 ? RowInfo(focusRow).Set : ((setIndex + Math.Sign(delta)) % view.Count + view.Count) % view.Count);
+    }
+
+    // ungrouped: open a run at its easiest difficulty (stable picks the one nearest the player's recommended stars,
+    // which is 0 when nobody's signed in)
+    void SelectRun(int e)
+    {
+        if (e == setIndex && diffIndex == 0) { focusRow = -1; return; }
+        if (view[e].Set != view[setIndex].Set) Game.Skin.Sound("select-expand")?.Play(BeatmapSamples.EffectVolume);
+        setIndex = e;
         diffIndex = 0;
-        if (setIndex != before) Game.Skin.Sound("select-expand")?.Play(BeatmapSamples.EffectVolume);
         SelectionChanged();
     }
 
@@ -566,13 +585,13 @@ sealed class SongSelect : Screen
         if (Grouped) { SelectRelative(delta); return; }
         if (view.Count == 0) return;
         Game.Skin.Sound("select-difficulty")?.Play(BeatmapSamples.EffectVolume);
-        // one panel at a time (a set's difficulties are panels while it's open), wrapping round the list like stable
-        for (int n = Math.Abs(delta), step = Math.Sign(delta); n > 0; n--)
-        {
-            diffIndex += step;
-            if (diffIndex < 0) { setIndex = (setIndex - 1 + view.Count) % view.Count; diffIndex = view[setIndex].Diffs.Count - 1; }
-            else if (diffIndex >= view[setIndex].Diffs.Count) { setIndex = (setIndex + 1) % view.Count; diffIndex = 0; }
-        }
+        // stable: delta panels on from the focus (or the selection), wrapping round the list; a difficulty of the
+        // selected run becomes the selection, any other panel only the focus
+        int rows = RowCount, to = ((FocusRow + delta) % rows + rows) % rows;
+        var (e, d, _) = RowInfo(to);
+        if (e != setIndex) { focusRow = to; return; }
+        setIndex = e;
+        diffIndex = d;
         SelectionChanged();
     }
 
@@ -783,6 +802,7 @@ sealed class SongSelect : Screen
                 // stable's menu theme (MenuMusic): circles! from the start when it's in the library, else a random song.
                 int theme = Menu != null && Config.GetBool("MenuMusic", true) ? view.FindIndex(v => v.Set.First.Artist == "nekodex" && v.Set.First.Title == "circles!") : -1;
                 setIndex = theme >= 0 ? theme : Random.Shared.Next(view.Count);
+                diffIndex = 0;
                 themeFromStart = theme >= 0;
             }
             reselect = null;
@@ -849,8 +869,8 @@ sealed class SongSelect : Screen
         if (Pressed(KeyboardKey.PageDown)) { if (Grouped) MoveFocus(10); else MoveDiff(10); }
         if (Pressed(KeyboardKey.PageUp)) { if (Grouped) MoveFocus(-10); else MoveDiff(-10); }
         // Home / End (the remake's own): the first / last entry
-        if (Input.IsKeyPressed(KeyboardKey.Home)) { if (Grouped) { if (groups.Count > 0) SelectEntry(0, 0); } else MoveSet(-setIndex); }
-        if (Input.IsKeyPressed(KeyboardKey.End)) { if (Grouped) { if (groups.Count > 0) SelectEntry(groups.Count - 1, groups[^1].Entries.Count - 1); } else MoveSet(view.Count - 1 - setIndex); }
+        if (Input.IsKeyPressed(KeyboardKey.Home)) { if (Grouped) { if (groups.Count > 0) SelectEntry(0, 0); } else if (view.Count > 0) SelectRun(0); }
+        if (Input.IsKeyPressed(KeyboardKey.End)) { if (Grouped) { if (groups.Count > 0) SelectEntry(groups.Count - 1, groups[^1].Entries.Count - 1); } else if (view.Count > 0) SelectRun(view.Count - 1); }
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
         if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, []); return; } // stable: its import screen checks for new files
         // stable: Shift+Delete is the beatmap options' Delete...
@@ -952,6 +972,7 @@ sealed class SongSelect : Screen
         {
             if (Grouped && focusGroup >= 0 && focusEntry < 0) { ToggleGroup(focusGroup); return; }
             if (Grouped && focusGroup >= 0 && (focusGroup != groupIndex || focusEntry != setIndex)) { SelectEntry(focusGroup, focusEntry); return; }
+            if (!Grouped && focusRow >= 0) { SelectRun(RowInfo(focusRow).Set); return; }
             Play(Input.IsKeyDown(KeyboardKey.LeftControl) ? mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay : mods);
             return;
         }
@@ -1003,10 +1024,36 @@ sealed class SongSelect : Screen
     List<(BeatmapSet Set, List<DbBeatmap> Diffs)> RowEntries => !Grouped ? view : expanded >= 0 ? groups[expanded].Entries : NoEntries;
     int ExpandedCount => Grouped && expanded >= 0 ? groups[expanded].Entries.Count : 0;
     int HeaderRow(int g) => expanded >= 0 && g > expanded ? g + ExpandedCount : g;
-    int EntryRows => view.Count == 0 ? 0 : view.Count - 1 + view[setIndex].Diffs.Count;
-    int SelectedRow => !Grouped ? setIndex + diffIndex
+    int EntryRows => Layout().Start[^1];
+    int SelectedRow => !Grouped ? (view.Count == 0 ? 0 : Layout().Start[setIndex]) + diffIndex
         : expanded == groupIndex && view.Count > 0 ? HeaderRow(expanded) + 1 + setIndex : HeaderRow(groupIndex);
-    int FocusRow => !Grouped || focusGroup < -1 ? SelectedRow : focusEntry < 0 ? HeaderRow(focusGroup) : HeaderRow(focusGroup) + 1 + focusEntry;
+    int FocusRow => !Grouped ? focusRow >= 0 ? focusRow : SelectedRow
+        : focusGroup < -1 ? SelectedRow : focusEntry < 0 ? HeaderRow(focusGroup) : HeaderRow(focusGroup) + 1 + focusEntry;
+
+    // ungrouped: every run of the selected set is open (a row per difficulty), the other entries a row each. Start:
+    // each entry's first row (then the total); Gaps: stable's 10-unit gaps up to each row, one beside every open panel.
+    // stable's keyboard focus: Up/Down only highlight a panel outside the selected run (even another run of the same
+    // set); Enter or Left/Right then open that panel's run
+    int focusRow = -1;
+    int viewStamp;
+    (BeatmapSet?, int, int) layoutKey;
+    (int[] Start, int[] Gaps) layout = ([0], []);
+    (int[] Start, int[] Gaps) Layout()
+    {
+        var open = view.Count > 0 ? view[setIndex].Set : null;
+        if (layoutKey == (open, view.Count, viewStamp)) return layout;
+        layoutKey = (open, view.Count, viewStamp);
+        var start = new int[view.Count + 1];
+        for (int i = 0; i < view.Count; i++) start[i + 1] = start[i] + (view[i].Set == open ? view[i].Diffs.Count : 1);
+        var gaps = new int[start[^1]];
+        for (int i = 0, r = 0, g = 0; i < view.Count; i++)
+            for (bool o = view[i].Set == open; r < start[i + 1]; r++)
+            {
+                if (r > 0 && (o || r == start[i] && view[i - 1].Set == open)) g++;
+                gaps[r] = g;
+            }
+        return layout = (start, gaps);
+    }
     int RowCount => Grouped ? groups.Count + ExpandedCount : EntryRows;
 
     // Returns (set, diff, group) for a row: group >= 0 for a group header, diff = -1 for a collapsed set row (grouped:
@@ -1020,10 +1067,10 @@ sealed class SongSelect : Screen
             if (row <= expanded + n) { int e = row - expanded - 1; return (e, expanded == groupIndex && e == setIndex ? 0 : -1, -1); }
             return (-1, -1, row - n);
         }
-        if (row < setIndex) return (row, -1, -1);
-        int diffs = view[setIndex].Diffs.Count;
-        if (row < setIndex + diffs) return (setIndex, row - setIndex, -1);
-        return (row - diffs + 1, -1, -1);
+        var start = Layout().Start;
+        int at = Array.BinarySearch(start, row);
+        if (at < 0) at = ~at - 1;
+        return view[at].Set == view[setIndex].Set ? (at, row - start[at], -1) : (at, -1, -1);
     }
 
     // ---- grouping (stable's tabs): Collections, Recently Played, By Artist, By Difficulty, No Grouping.
@@ -1110,7 +1157,7 @@ sealed class SongSelect : Screen
         if (i < 0) return;
         if (which == 3) { if (i > 0) Notification.Show("You need to be logged in to access online rankings!", 1500); }
         else if (which == 1) SetGroupMode(GroupList[i].Key);
-        else if (!SortModes[i].Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase)) { Config.SetOwn("TreeSortMode2", SortModes[i].Key); sets = Sorted(sets, SortMode); ApplyFilter(); Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
+        else if (!SortModes[i].Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase)) { Config.SetOwn("TreeSortMode2", SortModes[i].Key); ApplyFilter(); Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
     }
 
     void DrawDropdown()
@@ -1143,10 +1190,7 @@ sealed class SongSelect : Screen
         Config.SetOwn("RemakeGroupMode", key);
         // stable: these groupings bring the matching sort along
         if (key is "Artist" or "Creator" or "Date" or "Difficulty" or "Length" or "Title" && !key.Equals(SortMode, StringComparison.OrdinalIgnoreCase))
-        {
             Config.SetOwn("TreeSortMode2", key);
-            sets = Sorted(sets, SortMode);
-        }
         groupIndex = 0;
         ApplyFilter();
         SlideIn();
@@ -1165,7 +1209,7 @@ sealed class SongSelect : Screen
     void SelectEntry(int g, int e)
     {
         bool changed = g != groupIndex || e != setIndex;
-        if (g != groupIndex) { groupIndex = g; view.Clear(); view.AddRange(groups[g].Entries); }
+        if (g != groupIndex) { groupIndex = g; view.Clear(); view.AddRange(groups[g].Entries); viewStamp++; }
         setIndex = e;
         diffIndex = 0;
         expanded = g;
@@ -1293,22 +1337,31 @@ sealed class SongSelect : Screen
                 break;
             case "MyMaps": // flat: the maps the player made (stable compares the creator with the signed-in name)
                 string me = Config.Get("Username", "");
-                groups.Add(("", [.. all.Select(e => (e.Set, Diffs: e.Diffs.Where(d => me.Length > 0 && d.Creator.Equals(me, StringComparison.OrdinalIgnoreCase)).ToList())).Where(e => e.Diffs.Count > 0)]));
+                groups.Add(("", Runs(all.Select(e => (e.Set, e.Diffs.Where(d => me.Length > 0 && d.Creator.Equals(me, StringComparison.OrdinalIgnoreCase)).ToList())))));
                 return;
             case "Favourites": // flat: online favourites, none offline
                 groups.Add(("", []));
                 return;
             default:
-                groups.Add(("", all));
+                groups.Add(("", Runs(all)));
                 return;
         }
-        // stable lists every difficulty in a group as its own panel, in the sort's order (by stars when sorting by difficulty)
+        // stable lists every difficulty in a group as its own panel, in the sort's order
+        var order = Comparer<DbBeatmap>.Create(DiffOrder(mods));
         for (int i = 0; i < groups.Count; i++)
-        {
-            var flat = groups[i].Entries.SelectMany(e => e.Diffs.Select(d => (e.Set, new List<DbBeatmap> { d })));
-            if (SortMode.Equals("Difficulty", StringComparison.OrdinalIgnoreCase)) flat = flat.OrderBy(e => e.Item2[0].StarsFor(Mods.None));
-            groups[i] = (groups[i].Name, flat.ToList());
-        }
+            groups[i] = (groups[i].Name, [.. groups[i].Entries.SelectMany(e => e.Diffs.Select(d => (e.Set, new List<DbBeatmap> { d }))).OrderBy(e => e.Item2[0], order)]);
+    }
+
+    // ungrouped: the difficulties in the sort's order, each set's neighbouring ones forming one entry (a run); a set
+    // whose difficulties sort apart (by stars, say) has several
+    List<(BeatmapSet Set, List<DbBeatmap> Diffs)> Runs(IEnumerable<(BeatmapSet Set, List<DbBeatmap> Diffs)> entries)
+    {
+        var order = DiffOrder(mods);
+        var runs = new List<(BeatmapSet Set, List<DbBeatmap> Diffs)>();
+        foreach (var (set, d) in entries.SelectMany(e => e.Diffs.Select(d => (e.Set, d))).OrderBy(x => x.d, Comparer<DbBeatmap>.Create(order)))
+            if (runs.Count > 0 && runs[^1].Set == set) runs[^1].Diffs.Add(d);
+            else runs.Add((set, [d]));
+        return runs;
     }
 
     // stable's carousel (units): rows sit at 200 + 48 per row, and stable adds 10 more around each difficulty of the
@@ -1324,11 +1377,11 @@ sealed class SongSelect : Screen
             if (expanded == groupIndex && view.Count > 0) e += Math.Clamp(row - (expanded + 1 + setIndex) + 1, 0, 2); // around the selection
             return 10 * U * e;
         }
-        if (view.Count == 0) return 0;
-        int n = view[setIndex].Diffs.Count;
-        float start = setIndex;
-        int lead = start > 0 ? 1 : 0; // the gap before the first difficulty needs a panel above it
-        return 10 * U * Math.Clamp(row - start + lead, 0, n + lead);
+        var gaps = Layout().Gaps;
+        if (gaps.Length == 0) return 0;
+        float r = Math.Clamp(row, 0, gaps.Length - 1);
+        int f = (int)r;
+        return 10 * U * (f + 1 < gaps.Length ? gaps[f] + (r - f) * (gaps[f + 1] - gaps[f]) : gaps[f]);
     }
 
     float Scroll => MathF.Max(0, scrollRow * RowH + Extra(scrollRow) - 20 * U);
@@ -1427,8 +1480,8 @@ sealed class SongSelect : Screen
         var (set, diff, group) = RowInfo(row);
         if (group >= 0) return false;
         if (Grouped) { if (diff < 0) SelectEntry(expanded, set); return true; }
-        if (diff < 0) { if (set != setIndex) MoveSet(set - setIndex); }
-        else if (diff != diffIndex) { diffIndex = diff; SelectionChanged(); }
+        if (diff < 0) SelectRun(set);
+        else if (set != setIndex || diff != diffIndex) { setIndex = set; diffIndex = diff; SelectionChanged(); }
         return true;
     }
 
@@ -1444,12 +1497,9 @@ sealed class SongSelect : Screen
             else SelectEntry(expanded, set);
             return true;
         }
-        if (diff < 0)
-        {
-            if (set != setIndex) MoveSet(set - setIndex);
-        }
-        else if (diff == diffIndex) Play(mods);
-        else { diffIndex = diff; SelectionChanged(); }
+        if (diff < 0) SelectRun(set);
+        else if (set == setIndex && diff == diffIndex) Play(mods);
+        else { setIndex = set; diffIndex = diff; SelectionChanged(); }
         return true;
     }
 
@@ -1564,10 +1614,13 @@ sealed class SongSelect : Screen
         if (gi >= 0) { DrawGroupHeader(row, gi, x, cy, s); return; }
         var set = RowEntries[si];
         bool entry = Grouped; // grouped: every panel is one difficulty (pink, the focused one brighter, the selected one white)
-        var b = d < 0 ? entry ? set.Diffs[0] : set.Set.First : set.Diffs[d];
+        var b = d < 0 ? set.Diffs[0] : set.Diffs[d];
         bool selected = d == diffIndex && si == setIndex && d >= 0;
-        bool focused = entry && !selected && focusGroup == expanded && focusEntry == si;
-        DrawPanel(row, x, cy, s, selected ? SelectedColour : focused ? new Color(255, 103, 214, 240) : d >= 0 && !entry ? DiffColour : SetColour);
+        bool focused = !selected && (entry ? focusGroup == expanded && focusEntry == si : row == focusRow);
+        // stable lightens a focused panel's colour by 1.4
+        DrawPanel(row, x, cy, s, selected ? SelectedColour : d >= 0 && !entry ? focused ? new Color(0, 210, 255, 240) : DiffColour
+            : focused ? new Color(255, 103, 214, 240) : SetColour);
+        entry |= d < 0 && set.Diffs.Count == 1; // stable: a lone difficulty's panel shows its version and stars even closed
 
         // stable's panel text (offsets from the panel's left edge and centre line, in 640x480 units): 75 in (room for
         // the online thumbnail) plus 8, or 25 beside a difficulty's grade icon; title 16 at -16, artist // creator 12
