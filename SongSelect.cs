@@ -41,6 +41,7 @@ sealed class SongSelect : Screen
     {
         this.filter = filter;
         this.mods = mods;
+        gradeLookup = BestGrade;
         loading = Task.Run(LoadLibrary);
         scoresLoading = Task.Run(Replays.Index);
     }
@@ -130,9 +131,14 @@ sealed class SongSelect : Screen
 
     // stable's sort modes (TreeSortMode2 in its cfg; ours is saved to remake.cfg).
     static readonly (string Key, string Label)[] SortModes =
-        [("Artist", "By Artist"), ("Bpm", "By BPM"), ("Creator", "By Creator"), ("Date", "By Date Added"), ("Difficulty", "By Difficulty"), ("Length", "By Length"), ("Title", "By Title")];
+        [("Artist", "By Artist"), ("Bpm", "By BPM"), ("Creator", "By Creator"), ("Date", "By Date Added"), ("Difficulty", "By Difficulty"), ("Length", "By Length"), ("Rank", "By Rank Achieved"), ("Title", "By Title")];
     static string SortMode => Config.Get("TreeSortMode2", "Artist");
     internal static int TotalBeatmaps; // every mode, as stable's menu counts them
+
+    // By Rank Achieved: the set's best local grade (song select fills the lookup in)
+    static Func<DbBeatmap, string?>? gradeLookup;
+    static readonly string[] GradeRanks = ["XH", "SH", "X", "S", "A", "B", "C", "D"];
+    static int GradeOrder(BeatmapSet s) => s.Diffs.Select(d => gradeLookup?.Invoke(d) is { } g && Array.IndexOf(GradeRanks, g) is int i and >= 0 ? i : GradeRanks.Length).Min();
 
     static List<BeatmapSet> Sorted(IEnumerable<BeatmapSet> sets, string mode)
     {
@@ -143,6 +149,7 @@ sealed class SongSelect : Screen
             "Creator" => sets.OrderBy(s => s.First.Creator, cmp),
             "Bpm" => sets.OrderBy(s => s.First.MainBpm),
             "Length" => sets.OrderBy(s => s.Diffs.Max(d => d.TotalMs)),
+            "Rank" => sets.OrderBy(s => GradeOrder(s)), // best local grade first, unplayed last
             "Difficulty" => sets.OrderBy(s => s.First.StarsFor(Mods.None)),
             "Date" => sets.OrderBy(s => s.Diffs.Max(d => d.LastModified)),
             _ => sets.OrderBy(s => s.First.Artist, cmp),
@@ -638,6 +645,7 @@ sealed class SongSelect : Screen
             return;
         }
         if (modSelect) { while (Input.GetCharPressed() != 0) { } return; }
+        if (openDrop != 0) { UpdateDropdown(); while (Input.GetCharPressed() != 0) { } return; }
         if (modeMenuAt >= 0) // the mode menu takes every click and Esc while open
         {
             bool click = Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right), esc = Input.IsKeyPressed(KeyboardKey.Escape);
@@ -692,15 +700,17 @@ sealed class SongSelect : Screen
         var mouse = Input.GetMousePosition();
         if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, GroupBox(GetScreenWidth())))
         {
-            int gi = Array.FindIndex(GroupModes, m => m.Key == GroupMode);
-            SetGroupMode(GroupModes[((gi < 0 ? 0 : gi) + (Input.IsMouseButtonPressed(MouseButton.Right) ? -1 : 1) + GroupModes.Length) % GroupModes.Length].Key);
+            if (Input.IsMouseButtonPressed(MouseButton.Left)) { openDrop = openDrop == 1 ? 0 : 1; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); return; }
+            int gi = Array.FindIndex(GroupList, m => m.Key == GroupMode);
+            SetGroupMode(GroupList[((gi < 0 ? 0 : gi) - 1 + GroupList.Length) % GroupList.Length].Key);
             return;
         }
         for (int t = 0; t < GroupModes.Length; t++)
             if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, TabRect(GetScreenWidth(), t))) { SetGroupMode(GroupModes[t].Key); return; }
         if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, SortBox(GetScreenWidth())))
         {
-            CycleSort(Input.IsMouseButtonPressed(MouseButton.Right) ? -1 : 1);
+            if (Input.IsMouseButtonPressed(MouseButton.Left)) { openDrop = openDrop == 2 ? 0 : 2; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
+            else CycleSort(-1);
             return;
         }
         if (Input.IsMouseButtonPressed(MouseButton.Left) && ClickBottomBar(mouse)) return;
@@ -830,6 +840,13 @@ sealed class SongSelect : Screen
     // ---- grouping (stable's tabs): Collections, Recently Played, By Artist, By Difficulty, No Grouping.
     static readonly (string Key, string Label)[] GroupModes =
         [("Collections", "Collections"), ("Recent", "Recently Played"), ("Artist", "By Artist"), ("Difficulty", "By Difficulty"), ("None", "No Grouping")];
+    // stable's Group dropdown (all of them) and its five tabs
+    static readonly (string Key, string Label)[] GroupList =
+    [
+        ("None", "No Grouping"), ("Artist", "By Artist"), ("Bpm", "By BPM"), ("Creator", "By Creator"), ("Date", "By Date Added"),
+        ("Difficulty", "By Difficulty"), ("Length", "By Length"), ("Mode", "By Mode"), ("Rank", "By Rank Achieved"), ("Title", "By Title"),
+        ("Collections", "Collections"), ("Favourites", "Favourites"), ("MyMaps", "My Maps"), ("Status", "Ranked Status"), ("Recent", "Recently Played"),
+    ];
     static readonly string[] GroupTabLabels = [.. GroupModes.Select(m => m.Label)];
     static string GroupMode => Config.Get("RemakeGroupMode", "None");
     // Header text and match count, rebuilt only when they change.
@@ -869,10 +886,57 @@ sealed class SongSelect : Screen
     readonly Dictionary<(string, int), string> groupLabels = [];
     string GroupLabel(string name, int maps) => groupLabels.TryGetValue((name, maps), out var s) ? s
         : groupLabels[(name, maps)] = $"{name} ({maps} {(maps == 1 ? "map" : "maps")})";
-    static bool Grouped => GroupMode != "None";
+    // My Maps and Favourites are flat lists in stable (no headers)
+    static bool Grouped => GroupMode is not ("None" or "MyMaps" or "Favourites");
     readonly List<(string Name, List<(BeatmapSet Set, List<DbBeatmap> Diffs)> Entries)> groups = [];
     int groupIndex;
     static List<(string Name, HashSet<string> Md5s)>? collections;
+
+    // ---- stable's Group / Sort dropdowns: the box fills with its label colour; the options list under it on black at
+    // 94%, 16.44 units a row, the current one bold, the hovered one in the label colour with a chevron. A click picks
+    // (or closes), Esc closes.
+    int openDrop; // 0 none, 1 group, 2 sort
+    const float DropRowH = 16.44f, DropTop = 34.2f;
+    (string Key, string Label)[] DropItems => openDrop == 1 ? GroupList : SortModes;
+    Rectangle DropRow(int i) { float u = U; var box = openDrop == 1 ? GroupBox(GetScreenWidth()) : SortBox(GetScreenWidth()); return new Rectangle(box.X - 1.6f * u, (DropTop + i * DropRowH) * u, box.Width + 1.6f * u, DropRowH * u); }
+    int DropHover() { var m = Input.GetMousePosition(); for (int i = 0; i < DropItems.Length; i++) if (CheckCollisionPointRec(m, DropRow(i))) return i; return -1; }
+
+    void UpdateDropdown()
+    {
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { openDrop = 0; return; }
+        if (!Input.IsMouseButtonPressed(MouseButton.Left) && !Input.IsMouseButtonPressed(MouseButton.Right)) return;
+        int i = DropHover(), which = openDrop;
+        var box = which == 1 ? GroupBox(GetScreenWidth()) : SortBox(GetScreenWidth());
+        if (CheckCollisionPointRec(Input.GetMousePosition(), box)) { openDrop = 0; return; }
+        openDrop = 0;
+        if (i < 0) return;
+        if (which == 1) SetGroupMode(GroupList[i].Key);
+        else if (!SortModes[i].Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase)) { Config.SetOwn("TreeSortMode2", SortModes[i].Key); sets = Sorted(sets, SortMode); ApplyFilter(); Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
+    }
+
+    void DrawDropdown()
+    {
+        if (openDrop == 0) return;
+        float u = U;
+        var items = DropItems;
+        string current = openDrop == 1 ? GroupMode : SortMode;
+        var lit = openDrop == 1 ? new Color(146, 195, 230, 255) : new Color(174, 210, 139, 255);
+        var first = DropRow(0);
+        DrawRectangleRec(new Rectangle(first.X, first.Y, first.Width, items.Length * DropRowH * u), new Color(0, 0, 0, 240));
+        int hover = DropHover();
+        for (int i = 0; i < items.Length; i++)
+        {
+            var r = DropRow(i);
+            if (i == hover)
+            {
+                DrawRectangleRec(r, lit);
+                Options.DrawIcon(0xf054, r.X + 4.2f * u, r.Y + r.Height / 2, 8.5f * u, Color.Black);
+            }
+            float size = 13.4f * u, ty = r.Y + r.Height / 2 - 7.3f * u;
+            if (items[i].Key.Equals(current, StringComparison.OrdinalIgnoreCase)) Game.TextBold(items[i].Label, r.X + 10.2f * u, ty, size, Color.White);
+            else Game.Text(items[i].Label, r.X + 10.2f * u, ty, size, Color.White);
+        }
+    }
 
     void SetGroupMode(string key)
     {
@@ -931,6 +995,17 @@ sealed class SongSelect : Screen
         else SelectRelative(delta);
     }
 
+    // stable's date groups: under a day, two, a week; "1 month(s) ago" up to 30 days, then one per 30 days to 150;
+    // "Over 5 months ago"; Never (none, or before 1999)
+    static (int, string)? Ago(DateTime? at)
+    {
+        if (at is not { } t || t.Year < 1999) return (99, "Never");
+        double days = (DateTime.UtcNow - t).TotalDays;
+        if (days >= 150) return (98, "Over 5 months ago");
+        int months = days < 7 ? 0 : days < 30 ? 1 : (int)(days / 30) + 1;
+        return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last Week") : (2 + months, $"{months} month(s) ago");
+    }
+
     void BuildGroups(List<(BeatmapSet Set, List<DbBeatmap> Diffs)> all)
     {
         groups.Clear();
@@ -948,11 +1023,47 @@ sealed class SongSelect : Screen
         }
         switch (GroupMode)
         {
-            case "Artist":
+            case "Artist" or "Title" or "Creator":
                 ByDiff(d =>
                 {
-                    char c = d.Artist.Length > 0 ? char.ToUpperInvariant(d.Artist[0]) : '?';
+                    string s = GroupMode == "Title" ? d.Title : GroupMode == "Creator" ? d.Creator : d.Artist;
+                    char c = s.Length > 0 ? char.ToUpperInvariant(s[0]) : '?';
                     return char.IsNumber(c) ? (0, "0-9") : c is >= 'A' and <= 'Z' ? (c, c.ToString()) : (101, "Other");
+                });
+                break;
+            case "Bpm": // stable: "Under 60 BPM" ... "Under 300 BPM" in 60s, then "Over 300 BPM"
+                ByDiff(d =>
+                {
+                    double bpm = d.MainBpm;
+                    for (int q = 1; q <= 5; q++) if (bpm < q * 60 && bpm >= (q - 1) * 60) return (q, $"Under {q * 60} BPM");
+                    return bpm > 300 ? (6, "Over 300 BPM") : null;
+                });
+                break;
+            case "Length": // stable: "N minute(s) or less" per minute to 5, then 10, then "Over 10 minutes"
+                ByDiff(d =>
+                {
+                    int ms = d.TotalMs;
+                    for (int q = 1; q <= 5; q++) if (ms < q * 60000 && ms >= (q - 1) * 60000) return (q, $"{q} minute(s) or less");
+                    return ms >= 600000 ? (7, "Over 10 minutes") : ms >= 300000 ? (6, "10 minute(s) or less") : null;
+                });
+                break;
+            case "Date":
+                ByDiff(d => Ago(d.LastModified > 0 ? new DateTime(d.LastModified, DateTimeKind.Utc) : null));
+                break;
+            case "Mode": // only osu!standard maps are listed here
+                ByDiff(d => (0, "osu!"));
+                break;
+            case "Rank": // the local best: stable's silver/gold grades, then "No Rank Achieved"
+                ByDiff(d => BestGrade(d) switch
+                {
+                    "XH" => (0, "Silver SS"), "SH" => (1, "Silver S"), "X" => (2, "SS"), "S" => (3, "S"), "A" => (4, "A"),
+                    "B" => (5, "B"), "C" => (6, "C"), "D" => (7, "D"), _ => (8, "No Rank Achieved"),
+                });
+                break;
+            case "Status": // osu!.db's ranked status
+                ByDiff(d => d.Status switch
+                {
+                    4 or 5 => (0, "Ranked"), 6 => (1, "Qualified"), 2 => (2, "Pending"), 1 => (3, "Not Submitted"), 0 => (4, "Unknown"), 7 => (5, "Loved"), _ => null,
                 });
                 break;
             case "Difficulty":
@@ -964,17 +1075,12 @@ sealed class SongSelect : Screen
                 });
                 break;
             case "Recent":
-                var now = DateTime.UtcNow;
                 ByDiff(d =>
                 {
-                    // stable: under a day, two, a week; "1 month(s) ago" up to 30 days, then one per 30 days to 150.
                     // Played: stable's last play (osu!.db) or this client's latest saved replay, whichever is newer.
-                    double days = d.Unplayed || d.LastPlayed <= 0 ? double.MaxValue : (now - new DateTime(d.LastPlayed, DateTimeKind.Utc)).TotalDays;
-                    if (scores.TryGetValue(d.Md5, out var local) && local.Count > 0) days = Math.Min(days, (now - local.Max(r => r.Date).ToUniversalTime()).TotalDays);
-                    if (days == double.MaxValue) return (99, "Never");
-                    if (days >= 150) return (98, "Over 5 months ago");
-                    int months = days < 7 ? 0 : days < 30 ? 1 : (int)(days / 30) + 1;
-                    return days < 1 ? (0, "Today") : days < 2 ? (1, "Yesterday") : days < 7 ? (2, "Last Week") : (2 + months, $"{months} month(s) ago");
+                    DateTime? at = d.Unplayed || d.LastPlayed <= 0 ? null : new DateTime(d.LastPlayed, DateTimeKind.Utc);
+                    if (scores.TryGetValue(d.Md5, out var local) && local.Count > 0 && local.Max(r => r.Date).ToUniversalTime() is var mine && (at == null || mine > at)) at = mine;
+                    return Ago(at);
                 });
                 break;
             case "Collections":
@@ -985,6 +1091,13 @@ sealed class SongSelect : Screen
                     if (entries.Count > 0) groups.Add((name, entries));
                 }
                 break;
+            case "MyMaps": // flat: the maps the player made (stable compares the creator with the signed-in name)
+                string me = Config.Get("Username", "");
+                groups.Add(("", [.. all.Select(e => (e.Set, Diffs: e.Diffs.Where(d => me.Length > 0 && d.Creator.Equals(me, StringComparison.OrdinalIgnoreCase)).ToList())).Where(e => e.Diffs.Count > 0)]));
+                return;
+            case "Favourites": // flat: online favourites, none offline
+                groups.Add(("", []));
+                return;
             default:
                 groups.Add(("", all));
                 return;
@@ -1120,6 +1233,7 @@ sealed class SongSelect : Screen
         if (webTip && !modSelect && !beatmapOptions) Options.DrawTooltip("Quick web access for this beatmap", Input.GetMousePosition());
         webTip = false;
         DrawModeMenu();
+        DrawDropdown();
         if (modSelect) DrawModSelect(w, h);
         if (beatmapOptions) DrawBeatmapOptions();
         DrawCursor(); // over the overlays, like stable
@@ -1339,19 +1453,19 @@ sealed class SongSelect : Screen
         }
 
         // Group / Sort: label, then a boxed value. Only sorting is functional; grouping shows stable's default.
-        void Box(Rectangle r, string label, Color labelColour, string value)
+        void Box(Rectangle r, string label, Color labelColour, string value, bool open)
         {
             float size = 23 * u; // measured sizes throughout: stable's text renders ~3-7% wider than its nominal size here
             Game.TextLight(label, r.X - 3 * u - Game.LightWidth(label, size), r.Y + r.Height - size * 0.8f + 2 * u, size, labelColour); // Aller Light
-            DrawRectangleRec(r, Color.Black);
+            DrawRectangleRec(r, open ? labelColour : Color.Black);
             DropdownBorder(r, new Color((byte)(labelColour.R * 0.83f), (byte)(labelColour.G * 0.83f), (byte)(labelColour.B * 0.83f), (byte)255)); // label colour at 83% (measured)
             Game.Text(value, r.X + 0.7f * u, r.Y + r.Height / 2 - 7.3f * u, 13.4f * u, Color.White);
             Options.DrawIcon(0xf078, r.X + r.Width - 9.8f * u, r.Y + r.Height / 2 + 0.7f * u, 12.5f * u, Color.White); // stable's chevron (measured)
         }
         var sortBox = SortBox(w);
         string sortLabel = SortModes.FirstOrDefault(m => m.Key.Equals(SortMode, StringComparison.OrdinalIgnoreCase)).Label ?? "By Artist";
-        Box(sortBox, "Sort", new Color(174, 210, 139, 255), sortLabel);
-        Box(GroupBox(w), "Group", new Color(146, 195, 230, 255), GroupModes.FirstOrDefault(m => m.Key == GroupMode).Label ?? "No Grouping");
+        Box(sortBox, "Sort", new Color(174, 210, 139, 255), sortLabel, openDrop == 2);
+        Box(GroupBox(w), "Group", new Color(146, 195, 230, 255), GroupList.FirstOrDefault(m => m.Key == GroupMode).Label ?? "No Grouping", openDrop == 1);
 
         // Group tabs (stable's selection-tab sprite), the current mode active.
         var tabs = GroupTabLabels;
