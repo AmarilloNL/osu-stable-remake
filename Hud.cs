@@ -134,17 +134,25 @@ sealed partial class Player
         skin.Tex("circularmetre")?.Draw(centre, sd, HudWhite); // osu!gameplay.dll
     }
 
-    // stable's grade during breaks (measured at 1080p): ranking-X-small 28 units left of the pie, shown from 350ms
-    // into the break until a second before its end, with an echo behind it growing 0.3 a second and fading from 50%.
+    // stable's grade during breaks: ranking-X-small 28 units left of the pie (measured at 1080p), only for breaks over
+    // 5s with more than 5 judgements so far, at 0.8. It fades in over 400-700ms into the break (Out) and out over 1000-700ms
+    // before its end (In); an added-on echo grows 0.8 -> 1.3 and fades out over 400-1600ms (both Out).
     void DrawBreakGrade(Vector2 at, float sd)
     {
         foreach (var (start, end) in map.Breaks)
         {
-            double t = time - (start + 350);
-            if (t < 0 || time > end - 1000) continue;
-            if (skin.Tex($"ranking-{Grade()}-small") is not { } g) return;
-            if (t < 1000) g.Draw(at, sd * (1 + 0.3f * (float)t / 1000), ColorAlpha(Color.White, 0.5f * (1 - (float)t / 1000) * hudFade));
-            g.Draw(at, sd, HudWhite);
+            if (time < start + 400 || time > end - 700) continue;
+            if (end - start <= 5000 || n300 + n100 + n50 + nMiss <= 5 || skin.Tex($"ranking-{Grade()}-small") is not { } g) return;
+            float a = (float)Easing.Apply(1, (time - start - 400) / 300) * (1 - (float)Easing.Apply(2, (time - (end - 1000)) / 300));
+            g.Draw(at, sd * 0.8f, ColorAlpha(Color.White, a * hudFade));
+            double e = (time - start - 400) / 1200;
+            if (e < 1)
+            {
+                float q = (float)Easing.Apply(1, e);
+                BeginBlendMode(BlendMode.Additive);
+                g.Draw(at, sd * (0.8f + 0.5f * q), ColorAlpha(Color.White, (1 - q) * hudFade));
+                EndBlendMode();
+            }
             return;
         }
     }
