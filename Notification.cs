@@ -64,3 +64,115 @@ static class Notification
         }
     }
 }
+
+// stable's corner notifications: its own notification sprite (tinted by the toast's colour, drawn in three slices
+// of its 56 logical px: top 13, middle 13 stretched to the text, bottom 30) at the right edge, the newest 28 units
+// above the bottom, holding bold text (7 units, wrapped to 90% of the sprite's width). Each slides in 100 units from
+// the right (800ms, elastic) and fades in over 200ms; it fades out over the last 500ms of 200ms + its duration. A new
+// one pushes the others up by its height (800ms, elastic). Hovering one turns it white and holds it; clicking
+// dismisses it (100ms). By default dark red, shown for 100ms per character; the same text again while it's still up
+// is ignored.
+static class Toast
+{
+    sealed class Item
+    {
+        public string[] Lines = [];
+        public Color Colour;
+        public double Shown, Duration, Dismissed = double.NaN, Hovered = double.NaN, Unhovered = double.NaN;
+        public float Height, Rise, RiseFrom; // units
+        public double RiseAt = double.MinValue;
+        public string Text = "";
+    }
+
+    static readonly List<Item> items = [];
+    const float Width = 244 * 0.625f, TextWidth = Width * 0.9f, Pad = (Width - TextWidth) / 2, LineH = 8.9f, Size = 8.7f; // text measured against stable at 1080p
+
+    public static void Show(string text, Color? colour = null, int ms = 0)
+    {
+        double now = Game.NowMs;
+        if (items.Count > 0 && items[^1].Text == text && now < items[^1].Shown + items[^1].Duration) return;
+        var lines = Wrap(text, TextWidth * GetScreenHeight() / 480f);
+        float height = Math.Max(26.875f, lines.Length * LineH + 2 * Pad);
+        foreach (var it in items) { it.RiseFrom = Rise(it, now); it.Rise += height; it.RiseAt = now; }
+        items.Add(new Item { Lines = lines, Colour = colour ?? new Color(139, 0, 0, 255), Shown = now, Duration = ms > 0 ? ms : text.Length * 100, Height = height, Text = text });
+    }
+
+    static float Rise(Item it, double now) => it.RiseFrom + (it.Rise - it.RiseFrom) * (float)Easing.Apply(27, Math.Clamp((now - it.RiseAt) / 800, 0, 1));
+
+    // Word wrap at spaces, long words broken before path separators (like the GDI text stable draws).
+    static string[] Wrap(string text, float maxPx)
+    {
+        float size = Size * GetScreenHeight() / 480f;
+        var lines = new List<string>();
+        foreach (var para in text.Split('\n'))
+        {
+            string line = "";
+            foreach (var word in para.Split(' '))
+            {
+                var parts = new List<string>();
+                string rest = word;
+                while (Game.BoldWidth(rest, size) > maxPx && rest.LastIndexOf('\\', rest.Length - 1) is int cut and > 0)
+                {
+                    int at = cut;
+                    while (at > 0 && Game.BoldWidth(rest[..at], size) > maxPx) at = rest.LastIndexOf('\\', at - 1);
+                    if (at <= 0) break;
+                    parts.Add(rest[..at]);
+                    rest = rest[at..];
+                }
+                parts.Add(rest);
+                foreach (var p in parts)
+                {
+                    string next = line.Length == 0 ? p : line + (p == parts[0] ? " " : "") + p;
+                    if (line.Length > 0 && (p != parts[0] || Game.BoldWidth(next, size) > maxPx)) { lines.Add(line); line = p; }
+                    else line = next;
+                }
+            }
+            lines.Add(line);
+        }
+        return [.. lines];
+    }
+
+    public static void Draw()
+    {
+        if (items.Count == 0) return;
+        double now = Game.NowMs;
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        float u = h / 480f;
+        var mouse = Input.GetMousePosition();
+        var tex = Game.Skin.DefaultTex("notification");
+        for (int i = items.Count - 1; i >= 0; i--)
+        {
+            var it = items[i];
+            double from = double.IsNaN(it.Unhovered) ? it.Shown : it.Unhovered;
+            double end = !double.IsNaN(it.Dismissed) ? it.Dismissed + 100 : !double.IsNaN(it.Hovered) && double.IsNaN(it.Unhovered) ? double.MaxValue : from + 200 + it.Duration;
+            if (now >= end) { items.RemoveAt(i); continue; }
+            float alpha = (float)Math.Min(1, (now - it.Shown) / 200);
+            if (!double.IsNaN(it.Dismissed)) alpha *= (float)(1 - (now - it.Dismissed) / 100);
+            else if (end != double.MaxValue) alpha *= 1 - (float)Easing.Apply(2, Math.Clamp((now - (end - 500)) / 500, 0, 1));
+            float slide = 100 * (1 - (float)Easing.Apply(26, Math.Clamp((now - it.Shown) / 800, 0, 1)));
+            float right = w + slide * u, top = h - (28 + it.Height + Rise(it, now)) * u;
+            var box = new Rectangle(right - Width * u, top, Width * u, it.Height * u);
+            bool over = double.IsNaN(it.Dismissed) && CheckCollisionPointRec(mouse, box);
+            if (over && (double.IsNaN(it.Hovered) || !double.IsNaN(it.Unhovered))) { it.Hovered = now; it.Unhovered = double.NaN; }
+            else if (!over && !double.IsNaN(it.Hovered) && double.IsNaN(it.Unhovered)) it.Unhovered = now;
+            if (over && Input.IsMouseButtonPressed(MouseButton.Left)) it.Dismissed = now;
+            // the tint eases to white on hover and back over 60ms
+            float white = double.IsNaN(it.Hovered) ? 0 : double.IsNaN(it.Unhovered) ? (float)Math.Min(1, (now - it.Hovered) / 60) : 1 - (float)Math.Min(1, (now - it.Unhovered) / 60);
+            var tint = ColorAlpha(ColorLerp(it.Colour, Color.White, white), alpha);
+            if (tex is { } t)
+            {
+                float k = t.Tex.Width / 244f; // texels per logical px
+                float mid = it.Height - 8.125f - 18.75f;
+                void Slice(float srcY, float srcH, float y, float dh) =>
+                    DrawTexturePro(t.Tex, new Rectangle(0, srcY * k, t.Tex.Width, srcH * k), new Rectangle(right - Width * u, y, Width * u, dh * u), Vector2.Zero, 0, tint);
+                Slice(0, 13, top, 8.125f);
+                if (mid > 0) Slice(13, 13, top + 8.125f * u, mid);
+                Slice(26, 30, top + (8.125f + Math.Max(0, mid)) * u, 18.75f);
+            }
+            else DrawRectangleRec(box, ColorAlpha(Color.Black, 0.8f * alpha));
+            float tx = right - (3 + Pad + TextWidth) * u, ty = top + Pad * u;
+            for (int l = 0; l < it.Lines.Length; l++)
+                Game.TextBold(it.Lines[l], tx, ty + l * LineH * u, Size * u, ColorAlpha(Color.White, alpha));
+        }
+    }
+}

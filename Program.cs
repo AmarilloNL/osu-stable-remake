@@ -336,6 +336,7 @@ static class Game
             Screen.Draw();
             VolumeControl.Draw();
             Notification.Draw();
+            Toast.Draw();
             stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
             double secs = now / 1000;
             if (shotIndex < shots.Length && secs >= shots[shotIndex] || shotIndex < songShots.Length && Screen is Player sp && sp.SongTime >= songShots[shotIndex])
@@ -363,7 +364,7 @@ static class Game
                 string file = Path.Combine(dir, $"screenshot{n:000}.{ext}");
                 ExportImage(img, file);
                 UnloadImage(img);
-                Notification.Show($"Saved screenshot to {file}", 3000);
+                Toast.Show($"Saved screenshot to {file}", new Color(138, 43, 226, 255), 6000); // stable: BlueViolet, 6s
             }
             if (secs >= exitAfter) Quit = true;
             if (AllocProfile.Instance is { } ap) ap.On = secs > 8; // gameplay only, after loading

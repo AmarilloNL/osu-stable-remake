@@ -166,6 +166,12 @@ sealed partial class Player : Screen
         key2 = Config.Key("keyOsuRight", KeyboardKey.X);
         keySmoke = Config.Key("keyOsuSmoke", KeyboardKey.C);
         mouseButtons = !Config.GetBool("MouseDisableButtons", false);
+        // stable warns once a session, in a beige corner notice, when a live play starts with the mouse buttons off
+        if (!mouseButtons && playback == null && !auto && !mouseWarned)
+        {
+            mouseWarned = true;
+            Toast.Show($"Mouse buttons are currently disabled. Hit {Config.Get("keyDisableMouseButtons", "F10")} to enable them again.", new Color(245, 245, 220, 255), 10000);
+        }
 
         diffMul = map.DifficultyMultiplier;
         InitScoreV2();
@@ -572,7 +578,7 @@ sealed partial class Player : Screen
     {
         if (playback == null && !auto && time - lastPauseAt < 1000)
         {
-            if (!quiet) Notification.Show("Wait at least one second before pausing again.", 1000);
+            if (!quiet) Toast.Show("Wait at least one second before pausing again.");
             return;
         }
         lastPauseAt = time;
@@ -715,7 +721,7 @@ sealed partial class Player : Screen
         {
             mouseButtons = !mouseButtons;
             Config.SetOwn("MouseDisableButtons", mouseButtons ? "0" : "1");
-            if (!mouseButtons) Notification.Show($"Mouse buttons are currently disabled. Hit {Config.Get("keyDisableMouseButtons", "F10")} to enable them again.", 3000);
+            Notification.Show(mouseButtons ? "Mouse buttons are enabled." : "Mouse buttons are disabled.", 1000);
         }
         int offsetStep = Input.IsKeyDown(KeyboardKey.LeftShift) ? 1 : 5;
         if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
@@ -980,6 +986,7 @@ sealed partial class Player : Screen
             catch (IOException e) { Notification.Show($"Replay not saved: {e.Message}", 3000); }
     }
     bool failSaved;
+    static bool mouseWarned;
 
     // botPath: the test bot's original smoothstep path, kept so replays generated earlier (and stable's recorded
     // results for them) stay reproducible.

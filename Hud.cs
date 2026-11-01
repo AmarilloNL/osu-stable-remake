@@ -63,6 +63,7 @@ sealed partial class Player
     // 0.07 a 60Hz tick; the leaderboard, hit meters and key overlay stay. Saved as ShowInterface, or in a live
     // Relax / Autopilot play as ShowInterfaceDuringRelax (off by default).
     bool ifaceOn;
+    static bool ifaceWarned;
     float ifaceAlpha = -1;
     string IfaceKey => playback == null && !auto && (mods.HasFlag(Mods.Relax) || mods.HasFlag(Mods.Autopilot)) ? "ShowInterfaceDuringRelax" : "ShowInterface";
 
@@ -85,7 +86,17 @@ sealed partial class Player
         bool inBreak = InBreak(time) && time > objs[0].Time;
         if (inBreak != hudBreak) { hudBreak = inBreak; hudBreakAt = now; }
 
-        if (ifaceAlpha < 0) { ifaceOn = Config.GetBool(IfaceKey, IfaceKey == "ShowInterface"); ifaceAlpha = ifaceOn ? 1 : 0; }
+        if (ifaceAlpha < 0)
+        {
+            ifaceOn = Config.GetBool(IfaceKey, IfaceKey == "ShowInterface");
+            ifaceAlpha = ifaceOn ? 1 : 0;
+            // stable reminds once a session (beige corner notice) when a play starts with the interface off
+            if (!ifaceOn && IfaceKey == "ShowInterface" && !ifaceWarned)
+            {
+                ifaceWarned = true;
+                Toast.Show($"The in-game interface is currently disabled.\nYou can toggle this by pressing Shift+{Config.Get("keyToggleScoreboard", "Tab")}.", new Color(245, 245, 220, 255), 10000);
+            }
+        }
         ifaceAlpha = Math.Clamp(ifaceAlpha + (ifaceOn ? 0.07f : -0.07f) * (float)frames, 0, 1);
         float fade = hudFade;
         hudFade = fade * ifaceAlpha;
