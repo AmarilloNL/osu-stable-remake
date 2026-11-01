@@ -77,6 +77,9 @@ sealed partial class Player
     Color HudWhite => ColorAlpha(Color.White, hudFade);
     Color HudA(Color c) => ColorAlpha(c, c.A / 255f * hudFade);
 
+    static readonly string[] rankTexts = [.. Enumerable.Range(0, 64).Select(i => i.ToString())];
+    static string RankText(int r) => r < rankTexts.Length ? rankTexts[r] : r.ToString();
+
     void DrawHud(int w, int h)
     {
         float u = h / 480f, sd = h / 768f;
@@ -501,7 +504,7 @@ sealed partial class Player
                     A(info != null ? new Color(97, 190, 255, 88) : new Color(250, 250, 250, 39))); // stable: local scores (no online rank) light blue (alpha 150), the live player light (100); its fade target and its draw both take the colour's alpha, so it counts twice (probe: 150 x 0.471 drawn for 0.8)
             }
             if (r > 0) // every panel shows its rank (stable hides it only on its online personal-best extra panel)
-                EntryText(r.ToString(), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
+                EntryText(RankText(r), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
             Game.TextLight(PanelName(info?.Player is { Length: > 0 } pl ? pl : info == null ? me : "stable", u), 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
             // The live panel counts along: current score and max combo (stable's shows the max, measured watching a replay).
             long panelScore = info?.Score ?? score; // stable shows nothing for a zero score or combo (measured)

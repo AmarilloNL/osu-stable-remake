@@ -62,6 +62,8 @@ sealed partial class Player
         if (musicStarted && !musicEnded) music?.Seek(Raw); // flush audio buffered at the old tempo
     }
 
+    string? replayBanner; // built once, not every frame
+
     void DrawReplayOverlay(int w, float u, double now)
     {
         if (playback == null && !auto || overlayHidden) return;
@@ -70,8 +72,7 @@ sealed partial class Player
 
         // Banner at y 60: fades in over 4s and crosses from the right edge until fully off the left, each pass
         // lasting 52ms per unit of its width, looping.
-        string who = watching == null ? "osu!" : watching.Player.Length > 0 ? watching.Player : Config.Get("Username", ""); // Auto plays as "osu!"
-        string text = $"REPLAY MODE - Watching {who} play {map.Artist} - {map.Title} [{map.Version}]";
+        string text = replayBanner ??= $"REPLAY MODE - Watching {(watching == null ? "osu!" : watching.Player.Length > 0 ? watching.Player : Config.Get("Username", ""))} play {map.Artist} - {map.Title} [{map.Version}]"; // Auto plays as "osu!"
         float tw = Game.TextWidth(text, 13 * u) / u, wu = w / u;
         double pass = age / (tw * 52) % 1;
         float bannerAlpha = (float)Math.Min(1, age / 4000);

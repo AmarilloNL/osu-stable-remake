@@ -2543,6 +2543,10 @@ sealed partial class Player : Screen
         DrawRing(c, r, far, 0, 360, 96, Color.Black);
     }
 
+    // a judgement's name without its last letter (hit100k -> hit100), kept so drawing doesn't slice it every frame
+    readonly Dictionary<string, string> popupBase = [];
+    string PopupBase(string name) => popupBase.TryGetValue(name, out var b) ? b : popupBase[name] = name[..^1];
+
     // stable's judgement depths, as layers: 0 the particles, at the very bottom; 1 a hit that has particles, under
     // every hit object; 2 a spinner's own judgement, just over its spinner; 3 misses and hits without particles, over
     // the hit objects; 4 the particle hits' additive flashes, over everything. A hit only has particles when the
@@ -2571,7 +2575,7 @@ sealed partial class Player : Screen
             double Rand() { seed = seed * 1664525 + 1013904223; return (seed >> 8) / 16777216.0; }
             // the skin's animation (hit300-0, -1 ...) plays once at 60fps and holds its last frame; animated
             // judgements skip the bounce/shrink, a miss's tilt and sinking (the particle flash still bounces)
-            string anim = skin.Animation(name, true).Length > 0 ? name : name[..^1];
+            string anim = skin.Animation(name, true).Length > 0 ? name : PopupBase(name);
             var frames = skin.Animation(anim, true);
             var sp = frames.Length == 0 ? (Sprite?)null : frames[Math.Clamp((int)(age / (1000 / 60.0)), 0, frames.Length - 1)];
             bool single = frames.Length == 1;

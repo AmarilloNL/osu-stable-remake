@@ -64,11 +64,13 @@ sealed class Skin
         else if (Tex(name) is { } single) list.Add(single);
         return animations[(name, dash)] = [.. list];
     }
-    // the source an animation's sprites come from (0: none)
+    // the source an animation's sprites come from (0: none); cached, since judgements ask every frame
+    readonly Dictionary<(string, bool), int> animationSources = [];
     public int AnimationSource(string name, bool dash)
     {
+        if (animationSources.TryGetValue((name, dash), out int cached)) return cached;
         int first = Source(dash ? $"{name}-0" : $"{name}0"), plain = Source(name);
-        return first > 0 && first >= plain ? first : plain;
+        return animationSources[(name, dash)] = first > 0 && first >= plain ? first : plain;
     }
     // A looping animation's frame (name-0, -1 ... or the plain sprite) `elapsed` ms after it started: stable's pace is
     // the skin's AnimationFramerate, else the whole animation once a second.
@@ -215,7 +217,7 @@ sealed class Skin
         if (folder == mapDir) return;
         foreach (var t in mapTextures.Values) if (t is { } sp) UnloadTexture(sp.Tex);
         mapTextures.Clear();
-        own.Clear(); glyphs.Clear(); animations.Clear(); sources.Clear();
+        own.Clear(); glyphs.Clear(); animations.Clear(); sources.Clear(); animationSources.Clear();
         mapDir = folder;
     }
 
@@ -395,7 +397,7 @@ sealed class Skin
         decoding.Clear();
         foreach (var s in sounds.Values.Concat(defaultSounds.Values)) s?.Unload();
         textures.Clear(); defaultTextures.Clear();
-        glyphs.Clear(); animations.Clear(); sources.Clear(); own.Clear();
+        glyphs.Clear(); animations.Clear(); sources.Clear(); own.Clear(); animationSources.Clear();
         sounds.Clear(); defaultSounds.Clear();
     }
 }
