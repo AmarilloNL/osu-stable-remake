@@ -78,7 +78,8 @@ sealed class Options : Screen
             T("Prefer metadata in original language", "ShowUnicode"),
             T("Use alternative font for chat display", "AlternativeChatFont"),
             H("UPDATES"),
-            new(Kind.Choice, "Release stream:", "_ReleaseStream", Values: ["Stable", "Beta", "CuttingEdge"], Names: ["Stable", "Beta", "Cutting Edge (Experimental)"], DefValue: "Stable"),
+            new(Kind.Text, "An error occurred during the last update attempt."), // stable, offline (its update check fails)
+            new(Kind.Choice, "Release stream:", "_ReleaseStream", Values: ["Stable40", "Beta40", "CuttingEdge"], Names: ["Stable", "Beta", "Cutting Edge (Experimental)"], DefValue: "Stable40"), // stable's cfg values
             B("Try out the new osu!(lazer) client!", Green),
             B("Open osu! folder", Blue, () => Explore(Config.OsuDir)),
 
@@ -232,13 +233,14 @@ sealed class Options : Screen
     // 140, -1 measured at 1080p). Header pieces scroll with the content but stop after StickAt, which leaves the search line
     // pinned at the top. JumpTop: where a jump puts a section's band (stable: element at 70).
     const float StripW = 40, PanelR = 313, ContentTop = 139, StickAt = 90, JumpTop = 65, RowH = 13.333f, LineH = 12, TextSize = 12.3f;
+    const float JumpLand = 112.5f; // a sidebar click scrolls the section band here (measured against stable at 1080p)
 
     // stable: the last section whose element is no more than 70 + a quarter screen (120) below the scroll.
     int CurrentSection()
     {
         int current = 0;
         foreach (var (i, y, _) in layout)
-            if (items[i].Kind == Kind.Section && y - JumpTop - 120 <= scroll) current = Math.Max(0, Array.IndexOf(sections, i));
+            if (items[i].Kind == Kind.Section && y - JumpLand - 120 <= scroll) current = Math.Max(0, Array.IndexOf(sections, i));
         return current;
     }
 
@@ -466,7 +468,7 @@ sealed class Options : Screen
             if (layout.FindIndex(l => items[l.Item].Label == jumpTo) is int at and >= 0) scroll = scrollTarget = layout[at].Y - JumpTop;
             jumpTo = null;
         }
-        scrollTarget = Math.Clamp(scrollTarget - VolumeControl.Wheel * 60, 0, Math.Max(0, ContentHeight - 480));
+        scrollTarget = Math.Clamp(scrollTarget - VolumeControl.Wheel * 100, 0, Math.Max(0, ContentHeight - 480)); // stable: ~100 units a notch (measured)
         scroll += (scrollTarget - scroll) * (float)Math.Min(1, dtMs / 80);
 
         if (pressed && (mouse.X > PanelR * u || CheckCollisionPointRec(mouse, BackButton.Rect(h)))) { Close(); return; }
@@ -483,7 +485,7 @@ sealed class Options : Screen
         if (pressed && slot is int s)
         {
             var at = layout.FindIndex(l => l.Item == sections[s]);
-            if (at >= 0) scrollTarget = layout[at].Y - JumpTop;
+            if (at >= 0) scrollTarget = layout[at].Y - JumpLand;
             return;
         }
 
