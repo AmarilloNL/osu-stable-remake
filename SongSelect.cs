@@ -42,8 +42,11 @@ sealed class SongSelect : Screen
         if (Game.Previous is not Options) SlideIn(); // stable's options are an overlay; anything else re-enters song select
     }
 
+    internal static SongSelect? Instance; // the one song select (dropped files need it from any screen)
+
     public SongSelect(string filter = "", Mods mods = Mods.None)
     {
+        Instance = this;
         this.filter = filter;
         this.mods = mods;
         gradeLookup = BestGrade;
@@ -127,6 +130,13 @@ sealed class SongSelect : Screen
         {
             all = ScanFolders(); // TODO: slow fallback (minutes for big libraries) if osu!.db is missing/unreadable
         }
+        // like stable after an import (or a folder copied in): Songs folders its osu!.db doesn't list yet are read too
+        var known = new HashSet<string>(all.Select(b => b.Folder), StringComparer.OrdinalIgnoreCase);
+        if (Directory.Exists(Config.SongsDir))
+            foreach (var dir in Directory.EnumerateDirectories(Config.SongsDir))
+                if (!known.Contains(Path.GetFileName(dir)))
+                    foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
+                        if (ReadMap(file) is { } b) all.Add(b);
         TotalBeatmaps = all.Count;
         for (int i = 0; i < all.Count; i++) all[i].BuildSearchKey(i > 0 ? all[i - 1] : null); // here, not on the first keystroke
         return Sorted(all.Where(b => b.Mode == 0)
@@ -169,6 +179,51 @@ sealed class SongSelect : Screen
         ApplyFilter();
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
     }
+
+    // A library entry read from the .osu itself, with what stable's database records on import (counts, drain and
+    // total time, BPMs, date added). Star ratings aren't computed (osu!.db has them for maps stable processed).
+    internal static DbBeatmap? ReadMap(string file)
+    {
+        try
+        {
+            var m = Beatmap.Load(file);
+            var objs = m.Objects;
+            var bpms = m.TimingPoints.Where(t => t.Uninherited && t.BeatLength > 0).OrderBy(t => t.Time).ToList();
+            double end = objs.Count > 0 ? objs[^1].EndTime : 0, mainBpm = 0, longest = -1;
+            for (int i = 0; i < bpms.Count; i++)
+            {
+                double from = i == 0 ? 0 : bpms[i].Time, to = i + 1 < bpms.Count ? bpms[i + 1].Time : end;
+                if (to - from > longest) { longest = to - from; mainBpm = 60000 / bpms[i].BeatLength; }
+            }
+            return new DbBeatmap
+            {
+                Artist = m.Artist, ArtistUnicode = m.ArtistUnicode, Title = m.Title, TitleUnicode = m.TitleUnicode, Creator = m.Creator,
+                Version = m.Version, Source = m.Source, Tags = m.Tags, AudioFile = m.AudioFilename,
+                OsuFile = Path.GetFileName(file), Folder = Path.GetFileName(Path.GetDirectoryName(file)) ?? "", Mode = (byte)m.Mode,
+                Md5 = Replays.Md5Of(file), AR = (float)m.AR, CS = (float)m.CS, OD = (float)m.OD, HP = (float)m.HP,
+                PreviewMs = (int)m.PreviewTime, BeatmapId = m.BeatmapId, SetId = m.SetId,
+                Circles = objs.Count(o => o.Type == ObjType.Circle), Sliders = objs.Count(o => o.Type == ObjType.Slider),
+                Spinners = objs.Count(o => o.Type == ObjType.Spinner),
+                DrainSeconds = objs.Count > 0 ? ((int)objs[^1].Time - (int)objs[0].Time - m.Breaks.Sum(b => (int)b.End - (int)b.Start)) / 1000 : 0,
+                TotalMs = (int)end, MinBpm = bpms.Count > 0 ? bpms.Min(t => 60000 / t.BeatLength) : 0,
+                MaxBpm = bpms.Count > 0 ? bpms.Max(t => 60000 / t.BeatLength) : 0, MainBpm = mainBpm,
+                LastModified = DateTime.Now.Ticks, Unplayed = true, Status = (byte)(m.SetId <= 0 ? 1 : 0),
+            };
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return null; }
+    }
+
+    // the library entry with this MD5, if it's loaded
+    internal DbBeatmap? FindMap(string md5) => sets.SelectMany(s => s.Diffs).FirstOrDefault(d => d.Md5 == md5);
+
+    // re-reads the library (osu!.db plus new folders), then selects that map (or keeps the selection)
+    internal void Reload(string? select)
+    {
+        reselect = select ?? Selected?.Md5;
+        loading = Task.Run(LoadLibrary);
+    }
+
+    internal bool LibraryLoading => loading != null;
 
     internal static List<DbBeatmap> ScanFolders()
     {
@@ -687,7 +742,7 @@ sealed class SongSelect : Screen
         if (Input.IsKeyPressed(KeyboardKey.Home)) MoveSet(-view.Count);
         if (Input.IsKeyPressed(KeyboardKey.End)) MoveSet(view.Count);
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
-        if (Input.IsKeyPressed(KeyboardKey.F5)) { reselect = Selected?.Md5; loading = Task.Run(LoadLibrary); SlideIn(); return; }
+        if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, []); return; } // stable: its import screen checks for new files
         // stable: Shift+Delete is the beatmap options' Delete...
         if (Input.IsKeyPressed(KeyboardKey.Delete) && (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) && Selected != null)
             Notification.Show(BeatmapOptions[1].Notice!, 3000);

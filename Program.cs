@@ -22,6 +22,7 @@ static class Game
 
     // stable's fading mode change: a black overlay (0-100) rises 8 a 60Hz tick, the screen switches at 100, then it
     // falls 4 a tick from 140 (so it holds black a moment). The old screen sits still meanwhile.
+    public static bool Fading => fadeTo != null;
     static Func<Screen>? fadeTo;
     static Action? fadeSwitch;
     static double fadeLevel;
@@ -270,7 +271,7 @@ static class Game
             var kinds = DefaultSkin.Names.GroupBy(n => DefaultSkin.Get(n) is { } b && b.Length > 4
                 ? b[0] == 0x89 ? "png" : b[0] == 'R' && b[1] == 'I' ? "wav" : b[0] == 'O' && b[1] == 'g' ? "ogg" : b[0] == 0 && b[1] == 1 ? "ttf" : b[0] == 'I' && b[1] == 'D' || b[0] == 0xFF ? "mp3" : "other"
                 : "empty");
-            foreach (var k in kinds) Console.WriteLine($"{k.Key}: {k.Count()} ({string.Join(", ", k.Key == "ttf" ? k : k.Take(6))})");
+            foreach (var k in kinds) Console.WriteLine($"{k.Key}: {k.Count()} ({string.Join(", ", k.Key == "ttf" || Environment.GetEnvironmentVariable("LIST_UI") == "1" ? k : k.Take(6))})");
             static string Size(byte[]? b) => b is { Length: > 24 } && b[0] == 0x89 ? $"{(b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19]}x{(b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23]}" : "-";
             var skinDir = Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", ""));
             foreach (var n in args.SkipWhile(a => a != "--check-ui").Skip(1))
@@ -292,6 +293,7 @@ static class Game
         double[] shots = Arg("--shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? [];
         double[] songShots = Arg("--song-shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? []; // song ms, during play
         double exitAfter = Arg("--exit-after") is { } ea ? double.Parse(ea, System.Globalization.CultureInfo.InvariantCulture) : double.MaxValue;
+        string? testDrop = Arg("--drop");
         int shotIndex = 0;
         if (Arg("--input") is { } script) Input.Load(script); // test hook: scripted input
         Config.Load();
@@ -366,6 +368,9 @@ static class Game
 
             Input.Update(now / 1000);
             if (!testRun) ConfineCursor();
+            if (IsFileDropped()) BeatmapImport.Open(GetDroppedFiles());
+            if (testDrop != null && now >= 1500) { BeatmapImport.Open([testDrop]); testDrop = null; } // test hook: --drop <file>
+            BeatmapImport.Poll();
             VolumeControl.Update(songSelect);
             if (UpdateFade(dt)) Screen.Update(dt);
 

@@ -113,6 +113,8 @@ sealed class Beatmap
     public string Folder = "", File = "";
     public int FormatVersion = 14, Mode;
     public string AudioFilename = "", Background = "", Title = "", Artist = "", Version = "", Creator = "", Source = "";
+    public string TitleUnicode = "", ArtistUnicode = "", Tags = "";
+    public int BeatmapId, SetId = -1;
     public string VideoFile = ""; // the background video and the map time it starts at
     public double VideoOffset;
     public double AudioLeadIn, PreviewTime, StackLeniency = 0.7;
@@ -231,6 +233,11 @@ sealed class Beatmap
                     case "Version": Version = v; break;
                     case "Creator": Creator = v; break;
                     case "Source": Source = v; break;
+                    case "TitleUnicode": TitleUnicode = v; break;
+                    case "ArtistUnicode": ArtistUnicode = v; break;
+                    case "Tags": Tags = v; break;
+                    case "BeatmapID": BeatmapId = I(v); break;
+                    case "BeatmapSetID": SetId = I(v); break;
                     case "HPDrainRate": HP = D(v); break;
                     case "CircleSize": CS = D(v); break;
                     case "OverallDifficulty": OD = D(v); break;
