@@ -12,6 +12,7 @@ namespace OsuStableRemake;
 sealed class BindingsDialog
 {
     readonly double openedAt = Game.NowMs;
+    internal float Alpha => (float)Math.Clamp((Game.NowMs - openedAt) / 200, 0, 1);
     float scroll, scrollTarget;
     int binding = -1;
     public bool Closed { get; private set; }

@@ -417,6 +417,7 @@ sealed class Options : Screen
 
         if (bindings != null)
         {
+            stripW = Math.Max(40, 40 + (stripW - 40) * (float)Math.Pow(0.8, dtMs / (1000 / 60.0))); // the strip folds back under the dialog
             bindings.Update();
             if (bindings.Closed) bindings = null;
             return;
@@ -558,6 +559,8 @@ sealed class Options : Screen
         float slide = (float)(1 - Math.Pow(1 - t, 3));
         float ox = -PanelR * u * (1 - slide);
         var mouse = Input.GetMousePosition();
+        // stable: the bindings dialog's own black layer (220) sits under the options panel, its usual backdrop over it
+        if (bindings != null) DrawRectangle(0, 0, w, h, new Color(0, 0, 0, (int)(220 * bindings.Alpha)));
 
         DrawRectangleRec(new Rectangle(ox + StripW * u, 0, (PanelR - StripW) * u, h), Panel); // measured: (9,9,9) at 75%
 
