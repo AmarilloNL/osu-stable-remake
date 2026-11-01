@@ -142,6 +142,7 @@ sealed partial class Player : Screen
     {
         if (!VirtualClock) Beatmap.PlayfieldHeight = GetScreenHeight(); // headless runs keep stable's configured height
         this.playback = playback;
+        if (playback is { Length: > 0 }) pbCursor = new(playback[0].X, playback[0].Y); // stable: the first frame's spot until frames start (its lead frames sit off-screen at 256,-500)
         this.watching = watching;
         this.map = map;
         this.back = back;
@@ -740,7 +741,7 @@ sealed partial class Player : Screen
         if (!VirtualClock) { UpdateMapWarning(); UpdateDim(dtMs); UpdateHudFade(dtMs); UpdateLoopSounds(); }
         if (playback != null && TestSpeedAt.Count > 0 && Game.NowMs / 1000 >= TestSpeedAt[0]) { TestSpeedAt.RemoveAt(0); CycleSpeed(); }
         if (playback != null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; }
-        if (auto && playback == null && UpdateReplayOverlay()) { Leave(back); return; } // End Replay
+        if (auto && playback == null && (Input.IsKeyPressed(KeyboardKey.Escape) || UpdateReplayOverlay())) { Leave(back); return; } // stable: Auto is a replay, Esc / End Replay leave
         // stable: a live play also pauses / unpauses with the middle mouse button (not with the mouse wheel disabled in play)
         bool middle = playback == null && !auto && !Config.GetBool("MouseDisableWheel", false) && Input.IsMouseButtonPressed(MouseButton.Middle);
         if (Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(Config.Key("keyPause", KeyboardKey.Escape)) || middle)
@@ -1052,6 +1053,14 @@ sealed partial class Player : Screen
         var centre = SpinCentre;
         Vector2 prevPos = centre;
         double prevEnd = objs[0].Time - map.Preempt;
+        if (!botPath)
+        {
+            // stable's Auto opens below the screen at (256, 500), rises to the centre between 1500 and 1000ms before
+            // the first object, then moves on from there
+            double first = objs[0].Time;
+            if (t < first - 1000) return new Vector2(256, 500 - 308 * (float)Math.Clamp((t - (first - 1500)) / 500, 0, 1));
+            prevEnd = first - 1000;
+        }
         for (int i = Math.Max(0, firstActive - 1); i < objs.Count; i++)
         {
             var o = objs[i];
