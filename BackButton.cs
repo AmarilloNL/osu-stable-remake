@@ -18,7 +18,7 @@ sealed class BackButton
     public static Rectangle Rect(int h)
     {
         float sd = h / 768f, u = h / 480f;
-        if (Game.Skin.Tex("menu-back") is { } b) return new Rectangle(0, h - b.Height * sd, b.Width * sd, b.Height * sd);
+        if (Game.Skin.Frame("menu-back", 0) is { } b) return new Rectangle(0, h - b.Height * sd, b.Width * sd, b.Height * sd);
         return new Rectangle(0, h - 36 * u, 60 * u, 36 * u);
     }
 
@@ -28,7 +28,7 @@ sealed class BackButton
         float sd = h / 768f, u = h / 480f;
         bool over = CheckCollisionPointRec(mouse, Rect(h));
         if (over != hover) { hover = over; changedAt = Game.NowMs; }
-        if (Game.Skin.Tex("menu-back") is { } back)
+        if (Game.Skin.AnimFrame("menu-back", Game.NowMs) is { } back) // a skin's menu-back (-0, -1 ... animated)
         {
             var r = Rect(h);
             back.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), sd, hover ? Color.White : ColorAlpha(Color.White, 0.85f));

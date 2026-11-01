@@ -71,6 +71,15 @@ sealed class Skin
         int first = Source(dash ? $"{name}-0" : $"{name}0"), plain = Source(name);
         return first > 0 && first >= plain ? first : plain;
     }
+    // A looping animation's frame (name-0, -1 ... or the plain sprite) `elapsed` ms after it started: stable's pace is
+    // the skin's AnimationFramerate, else the whole animation once a second.
+    public Sprite? AnimFrame(string name, double elapsed)
+    {
+        var a = Animation(name, true);
+        if (a.Length <= 1) return a.Length == 1 ? a[0] : null;
+        double ms = AnimationFramerate > 0 ? 1000 / AnimationFramerate : 1000.0 / a.Length;
+        return a[(int)(Math.Max(0, elapsed) / ms) % a.Length];
+    }
     public Sprite? Frame(string prefix, int i) => Animation(prefix, true) is var a && i < a.Length ? a[i] : null;
     public int FrameCount(string prefix) => Animation(prefix, true).Length;
 

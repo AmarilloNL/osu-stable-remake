@@ -2108,7 +2108,7 @@ sealed partial class Player : Screen
         if (alpha <= 0) return;
         var at = ToScreen(BallOf(o, Math.Min(t, end)));
         var white = ColorAlpha(Color.White, alpha * playfieldAlpha);
-        if (skin.Tex("sliderfollowcircle") is { } fc) fc.Draw(at, CircleScale * sc, white);
+        if (skin.AnimFrame("sliderfollowcircle", t - o.Time) is { } fc) fc.Draw(at, CircleScale * sc, white);
         else DrawRing(at, map.Radius * scale * 2.3f * sc, map.Radius * scale * 2.4f * sc, 0, 360, 48, white);
     }
 
@@ -2569,7 +2569,7 @@ sealed partial class Player : Screen
     {
         UpdateHealthShown();
         float frac = (float)(hpShown / Health.Max);
-        if (skin.Tex("scorebar-colour") is { } colour)
+        if (skin.AnimFrame("scorebar-colour", Game.NowMs) is { } colour)
         {
             float bq = (float)Math.Clamp((Game.NowMs - hudBreakAt) / 500, 0, 1);
             float ba = hudBreak ? 1 - bq : bq, by = -20 * GetScreenHeight() / 480f * (hudBreak ? bq : 1 - bq);
