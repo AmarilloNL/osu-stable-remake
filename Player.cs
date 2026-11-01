@@ -73,7 +73,7 @@ sealed partial class Player : Screen
     internal readonly List<Vector2> perfGraph = []; // stable's ranking graph (see Final)
     readonly double diffMul;
     readonly List<double> hitErrors = [];
-    readonly List<(Vector2 Pos, double Time, int Result, string Sprite)> popups = [];
+    readonly List<(Vector2 Pos, double Time, int Result, string Sprite, bool Spinner)> popups = [];
     readonly List<int> visible = [];
 
     // the universal offset (options) plus this map's local offset: stable's from osu!.db, or one set here with +/-
@@ -159,7 +159,7 @@ sealed partial class Player : Screen
             }
         }
         followPoints = fps.ToArray();
-        while (skin.Frame("followpoint", fpFrames) != null) fpFrames++;
+        fpFrames = skin.FrameCount("followpoint");
         fpFrameMs = skin.AnimationFramerate > 0 ? 1000 / skin.AnimationFramerate : 1000.0 / Math.Max(1, fpFrames);
 
         key1 =Config.Key("keyOsuLeft", KeyboardKey.Z);
@@ -1176,7 +1176,7 @@ sealed partial class Player : Screen
             else if (comboWorst == 100) nKatu++;
             comboWorst = 300;
         }
-        popups.Add((popupPos, time, result, sprite));
+        popups.Add((popupPos, time, result, sprite, o.Type == ObjType.Spinner));
         // stable's ranking graph: a point per judgement, HP against what a perfect play would have here (capped at 1).
         if (i < health.SimHp.Length && health.SimHp[i] > 0) perfGraph.Add(new((float)time, (float)Math.Min(1, health.Value / health.SimHp[i])));
     }
@@ -1493,6 +1493,18 @@ sealed partial class Player : Screen
         DrawComboBursts(w, h);
         DrawLightings();
         DrawFollowPoints();
+        // stable's depths: particles and particle-style judgements, then spinners (each under its own judgement),
+        // then the hit objects (earlier ones on top), then misses and plain judgements, then the additive flashes.
+        DrawPopups(0);
+        DrawPopups(1);
+        for (int k = visible.Count - 1; k >= 0; k--)
+        {
+            if (objs[visible[k]].Type != ObjType.Spinner) continue;
+            if (Falling) PushFall(visible[k]);
+            DrawSpinner(visible[k]);
+            if (Falling) Rlgl.PopMatrix();
+        }
+        DrawPopups(2);
 
         // Earlier objects on top: draw later ones first.
         for (int k = visible.Count - 1; k >= 0; k--)
@@ -1517,15 +1529,8 @@ sealed partial class Player : Screen
             DrawApproach(visible[k]);
             if (Falling) Rlgl.PopMatrix();
         }
-        // stable: judgements above the hit objects, spinners above the judgements (measured)
-        DrawPopups();
-        for (int k = visible.Count - 1; k >= 0; k--)
-        {
-            if (objs[visible[k]].Type != ObjType.Spinner) continue;
-            if (Falling) PushFall(visible[k]);
-            DrawSpinner(visible[k]);
-            if (Falling) Rlgl.PopMatrix();
-        }
+        DrawPopups(3);
+        DrawPopups(4);
 
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: true);
         DrawBreakOverlays(w, h);
@@ -1885,11 +1890,14 @@ sealed partial class Player : Screen
             DrawCircleV(p, map.Radius * scale * expand, ColorAlpha(Color.White, alpha));
             DrawCircleV(p, map.Radius * scale * expand * 0.88f, ColorAlpha(colour, alpha));
         }
+        // the overlay goes over the number unless the beatmap or skin (HitCircleOverlayAboveNumber: 0) puts it under
+        bool overlayAbove = map.OverlayPosition == 0 ? skin.OverlayAboveNumber : map.OverlayPosition == 2;
+        if (!overlayAbove) overlay?.Draw(p, cs, ColorAlpha(Shade(Color.White, lit), alpha));
         // stable on a hit: the number fades out over 60ms (v2+ skins) or grows 0.8 -> 1.12 with the circle (older).
         if (number > 0 && hitAge < 0) DrawNumber(number, p, CircleScale * 0.8f, alpha);
         else if (number > 0 && skin.Version > 1) DrawNumber(number, p, CircleScale * 0.8f, playfieldAlpha * Math.Max(0, 1 - hitAge / 60));
         else if (number > 0) DrawNumber(number, p, CircleScale * (0.8f + 0.32f * (float)Easing.Apply(1, hitAge / 240)), alpha);
-        overlay?.Draw(p, cs, ColorAlpha(Shade(Color.White, lit), alpha));
+        if (overlayAbove) overlay?.Draw(p, cs, ColorAlpha(Shade(Color.White, lit), alpha));
     }
 
     readonly NumberText comboNumbers = new(v => v.ToString());
@@ -2023,22 +2031,30 @@ sealed partial class Player : Screen
 
         if (active)
         {
-            // stable's ball: sliderb-nd behind in black, a sliderb frame rolling along the path (10 frames a turn of
-            // the ball, turned to face the way it moves; combo-tinted with the option on), sliderb-spec added on top.
+            // stable's ball: the sliderb frames (sliderb0, 1 ...), turned to face the way it moves (on return spans the
+            // way it went out, the frames running backwards and, with SliderBallFlip, mirrored), a frame per 60Hz tick
+            // (slower under 150px/s), upside down when a curved path sets off leftwards. Its own default ball comes in the skin's SliderBall
+            // colour with sliderb-nd (near black) behind and sliderb-spec added on top; combo-coloured with the option,
+            // which a skin's own ball only follows with AllowSliderBallTint.
             var ballOsu = BallOf(o, time);
             var ball = ToScreen(ballOsu);
             var ahead = BallOf(o, Math.Min(o.EndTime, time + 1)) - ballOsu;
             if (ahead == Vector2.Zero) ahead = ballOsu - BallOf(o, time - 1);
-            float rot = MathF.Atan2(ahead.Y, ahead.X) * 180 / MathF.PI;
-            bool tintBall = skin.AllowSliderBallTint || Config.GetBool("ComboColourSliderBall", true);
-            var tint = ColorAlpha(tintBall ? colour : Color.White, playfieldAlpha);
-            skin.Tex("sliderb-nd")?.Draw(ball, CircleScale, ColorAlpha(Color.Black, playfieldAlpha)); // a white disc, tinted black
-            var frames = BallFrames();
-            double rolled = (time - o.Time) / o.SpanDuration * o.Length;
-            var sb = skin.Tex("sliderb") ?? (frames.Length > 0 ? frames[(int)(rolled / (2 * Math.PI * map.Radius / 10)) % frames.Length] : null);
-            if (sb is { } b) b.Draw(ball, CircleScale, tint, rot);
+            float rot = MathF.Atan2(ahead.Y, ahead.X) * 180 / MathF.PI + (span % 2 == 1 ? 180 : 0);
+            var frames = skin.Animation("sliderb", false);
+            int s0 = skin.Source("sliderb0"), s1 = skin.Source("sliderb");
+            bool builtIn = (s0 > 0 && s0 >= s1 ? s0 : s1) == 1;
+            bool comboTint = (builtIn || skin.AllowSliderBallTint) && Config.GetBool("ComboColourSliderBall", true);
+            var tint = ColorAlpha(comboTint ? colour : builtIn ? skin.SliderBall : Color.White, playfieldAlpha);
+            if (builtIn) skin.Tex("sliderb-nd")?.Draw(ball, CircleScale, ColorAlpha(new Color(5, 5, 5, 255), playfieldAlpha));
+            double into = Math.Max(0, time - o.Time);
+            double inSpan = into - span * o.SpanDuration;
+            double frameMs = Math.Max(150 / Math.Max(1, o.StableVelocity), 1) * 1000 / 60;
+            int fi = frames.Length == 0 ? 0 : (int)((span % 2 == 0 ? inSpan : o.SpanDuration - inSpan) / frameMs) % frames.Length;
+            bool flipY = o.Path.Length > 3 && MathF.Abs(MathF.Atan2(o.Path[1].Y - o.Path[0].Y, o.Path[1].X - o.Path[0].X)) > MathF.PI / 2;
+            if (frames.Length > 0) frames[fi].Draw(ball, CircleScale, tint, rot, skin.SliderBallFlip && span % 2 == 1, flipY);
             else DrawCircleV(ball, map.Radius * scale * 0.8f, tint);
-            if (skin.Tex("sliderb-spec") is { } spec)
+            if (builtIn && skin.Tex("sliderb-spec") is { } spec)
             {
                 BeginBlendMode(BlendMode.Additive);
                 spec.Draw(ball, CircleScale, ColorAlpha(Color.White, playfieldAlpha));
@@ -2046,15 +2062,6 @@ sealed partial class Player : Screen
             }
         }
         DrawFollowCircle(o, s);
-    }
-
-    Sprite[]? ballFrames; // sliderb0, sliderb1, ... (none: the single sliderb)
-    Sprite[] BallFrames()
-    {
-        if (ballFrames != null) return ballFrames;
-        var list = new List<Sprite>();
-        while (skin.Tex($"sliderb{list.Count}") is { } f) list.Add(f);
-        return ballFrames = list.ToArray();
     }
 
     // stable's follow circle: on grabbing, fade in over 60ms and grow 0.5 -> 1 over 180ms (Out); each
@@ -2250,9 +2257,7 @@ sealed partial class Player : Screen
             float t = (float)Math.Clamp(age / fade, 0, 1), e = 1 - (1 - t) * (1 - t);
             float a = t * (float)Math.Clamp(1 - (time - fp.Time) / fade, 0, 1) * playfieldAlpha;
             if (a <= 0) continue;
-            Sprite? sprite = fpFrames > 0
-                ? skin.Frame("followpoint", Math.Min(fpFrames - 1, (int)(age / fpFrameMs)))
-                : skin.Tex("followpoint");
+            Sprite? sprite = skin.Frame("followpoint", Math.Min(fpFrames - 1, (int)(age / fpFrameMs)));
             var p = ToScreen(Vector2.Lerp(fp.From, fp.Pos, e));
             float sc = 1.5f - 0.5f * e;
             if (sprite is { } sp) sp.Draw(p, GetScreenHeight() / 768f * sc, ColorAlpha(Color.White, a), fp.Rotation);
@@ -2281,6 +2286,7 @@ sealed partial class Player : Screen
         const float Base = 29;
         var c = U(0, Base + 219);
         var white = ColorAlpha(Color.White, alpha);
+        if (skin.SpinnerFadePlayfield) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, alpha)); // old skins: the playfield fades to black
         int req = SpinsRequired(o);
         float rotDeg = (float)(s.Angle * 180 / Math.PI);
         double progress = Math.Clamp((time - o.Time) / Math.Max(1, o.EndTime - o.Time), 0, 1);
@@ -2421,17 +2427,24 @@ sealed partial class Player : Screen
         DrawRing(c, r, far, 0, 360, 96, Color.Black);
     }
 
-    void DrawPopups()
+    // stable's judgement depths, as layers: 0 the particles, at the very bottom; 1 a hit that has particles, under
+    // every hit object; 2 a spinner's own judgement, just over its spinner; 3 misses and hits without particles, over
+    // the hit objects; 4 the particle hits' additive flashes, over everything. A hit only has particles when the
+    // judgement's own source (beatmap, skin or default) has particleNNN.
+    void DrawPopups(int layer)
     {
         // stable's judgement animations: misses fade in over 120ms shrinking 2 -> 1, tilt a random
         // +-0.15 rad (doubling by 1100ms) and, on v2+ skins, sink 45 units; hits bounce 0.6 -> 1.1 -> 0.9 -> 1, or with
-        // the skin's particleNNN grow 0.9 -> 1.05 with an additive flash and 150 particles flying up to 32 units
+        // particles grow 0.9 -> 1.05 with an additive flash and 150 particles flying up to 32 units
         // (each 400-1200ms, eased out, fading). Everything fades out over 500-1100ms.
-        int kept = 0; // RemoveAll without a per-frame closure
-        for (int i = 0; i < popups.Count; i++) if (time - popups[i].Time <= 1200) popups[kept++] = popups[i];
-        popups.RemoveRange(kept, popups.Count - kept);
+        if (layer == 0)
+        {
+            int kept = 0; // RemoveAll without a per-frame closure
+            for (int i = 0; i < popups.Count; i++) if (time - popups[i].Time <= 1200) popups[kept++] = popups[i];
+            popups.RemoveRange(kept, popups.Count - kept);
+        }
         float baseScale = scale / 2.25f * 1.2f, litScale = baseScale * 1.2f; // particle-style hits measured 1.2x larger at 1080p
-        foreach (var (pos, t, result, name) in popups)
+        foreach (var (pos, t, result, name, spin) in popups)
         {
             double age = time - t;
             float Seg(double a, double b) => (float)Math.Clamp((age - a) / (b - a), 0, 1);
@@ -2440,10 +2453,12 @@ sealed partial class Player : Screen
             // Per-popup randomness (stable from frame to frame) from a seeded hash, so nothing is allocated per frame.
             uint seed = (uint)HashCode.Combine(t, pos.X, pos.Y);
             double Rand() { seed = seed * 1664525 + 1013904223; return (seed >> 8) / 16777216.0; }
-            var particle = result switch { 300 => skin.Tex("particle300"), 100 => skin.Tex("particle100"), 50 => skin.Tex("particle50"), _ => null };
+            var sp = skin.Tex(name) ?? skin.Tex(name[..^1]);
+            var particle = result > 0 && sp != null ? skin.TexFrom(result switch { 300 => "particle300", 100 => "particle100", _ => "particle50" }, skin.Source(name)) : null;
             float Bounce() => age < 120 ? 0.6f + 0.5f * Seg(0, 96) : age < 144 ? 1.1f - 0.2f * Seg(120, 144) : 0.9f + 0.1f * Seg(120, 168);
-            if (particle is { } pt && age >= 0)
+            if (layer == 0)
             {
+                if (particle is not { } pt || age < 0) continue;
                 BeginBlendMode(BlendMode.Additive);
                 for (int k = 0; k < 150; k++)
                 {
@@ -2454,25 +2469,29 @@ sealed partial class Player : Screen
                     pt.Draw(p + new Vector2(MathF.Cos((float)ang), MathF.Sin((float)ang)) * d, baseScale, ColorAlpha(Color.White, (float)(1 - f) * playfieldAlpha));
                 }
                 EndBlendMode();
+                continue;
             }
-            if ((skin.Tex(name) ?? skin.Tex(name[..^1])) is { } sp)
+            if (layer == 4)
+            {
+                if (particle == null || spin || sp is not { } fl) continue;
+                float flash = age < 40 ? 0.5f * (float)Easing.Apply(1, Seg(-16, 40)) : 0.5f * (1 - Seg(40, 340));
+                BeginBlendMode(BlendMode.Additive);
+                fl.Draw(p, litScale * Bounce(), ColorAlpha(Color.White, flash * playfieldAlpha));
+                EndBlendMode();
+                continue;
+            }
+            if (layer != (spin ? 2 : particle != null ? 1 : 3)) continue;
+            if (sp is { } s)
             {
                 if (result == 0)
                 {
                     float r = (float)(Rand() * 0.3 - 0.15);
                     float rot = age < 120 ? r * Seg(0, 120) : r + r * (float)Easing.Apply(2, Seg(120, 1100));
                     float drop = skin.Version > 1 ? (-5 + 45 * (float)Easing.Apply(2, Seg(0, 1100))) * scale : 0;
-                    sp.Draw(p + new Vector2(0, drop), baseScale * (2 - Seg(0, 120)), ColorAlpha(Color.White, alpha * Seg(0, 120)), rot * 180 / MathF.PI);
+                    s.Draw(p + new Vector2(0, drop), baseScale * (2 - Seg(0, 120)), ColorAlpha(Color.White, alpha * Seg(0, 120)), rot * 180 / MathF.PI);
                 }
-                else if (particle != null)
-                {
-                    sp.Draw(p, litScale * (0.9f + 0.15f * Seg(0, 1100)), ColorAlpha(Color.White, alpha * Seg(0, 80)));
-                    float flash = age < 40 ? 0.5f * (float)Easing.Apply(1, Seg(-16, 40)) : 0.5f * (1 - Seg(40, 340));
-                    BeginBlendMode(BlendMode.Additive);
-                    sp.Draw(p, litScale * Bounce(), ColorAlpha(Color.White, flash * playfieldAlpha));
-                    EndBlendMode();
-                }
-                else sp.Draw(p, baseScale * Bounce(), ColorAlpha(Color.White, alpha * Seg(0, 120)));
+                else if (particle != null) s.Draw(p, litScale * (0.9f + 0.15f * Seg(0, 1100)), ColorAlpha(Color.White, alpha * Seg(0, 80)));
+                else s.Draw(p, baseScale * Bounce(), ColorAlpha(Color.White, alpha * Seg(0, 120)));
             }
             else if (result != 300)
             {
@@ -2677,8 +2696,8 @@ sealed partial class Player : Screen
 
     Sprite? SkipSprite()
     {
-        if (skipFrames < 0) { skipFrames = 0; while (skin.Frame("play-skip", skipFrames) != null) skipFrames++; }
-        if (skipFrames == 0) return skin.Tex("play-skip");
+        if (skipFrames < 0) skipFrames = skin.FrameCount("play-skip");
+        if (skipFrames == 0) return null;
         double frameMs = skin.AnimationFramerate > 0 ? 1000 / skin.AnimationFramerate : 1000.0 / skipFrames;
         return skin.Frame("play-skip", (int)(Game.NowMs / frameMs) % skipFrames);
     }

@@ -1504,8 +1504,8 @@ sealed class SongSelect : Screen
     public static void DrawCursor() => DrawCursorAt(Input.GetMousePosition());
 
     // stable's classic cursor trail (skins without cursormiddle): at most every 60Hz frame a copy of cursortrail is
-    // left at the cursor, fading out over 150ms.
-    static readonly List<(Vector2 Pos, double At)> trail = [];
+    // left at the cursor at its size (and its turn, with the skin's CursorTrailRotate), fading out over 150ms.
+    static readonly List<(Vector2 Pos, double At, float Scale, float Rot)> trail = [];
     static double lastTrail = double.MinValue;
     static Vector2? smoothFrom;
 
@@ -1560,13 +1560,15 @@ sealed class SongSelect : Screen
         Vector2 Anchor(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * s / 2;
         double now = Game.NowMs;
         bool middle = skin.Own("cursor") ? skin.Own("cursormiddle") : skin.Tex("cursormiddle") != null;
+        float e = s * CursorExpandScale(now);
+        float turn = skin.CursorRotate ? (float)(now % 10000 / 10000 * 360) : 0; // a turn per 10s
         if (skin.Tex("cursortrail") is { Width: >= 5 } tr && !middle)
         {
-            if (now - lastTrail >= 1000 / 60.0) { trail.Add((Anchor(tr), now)); lastTrail = now; }
+            if (now - lastTrail >= 1000 / 60.0) { trail.Add((Anchor(tr), now, e, skin.CursorTrailRotate ? turn : 0)); lastTrail = now; }
             int kept = 0; // RemoveAll without a per-frame closure
             for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 150) trail[kept++] = trail[i];
             trail.RemoveRange(kept, trail.Count - kept);
-            foreach (var (p, at) in trail) tr.Draw(p, s, ColorAlpha(Color.White, 1 - (float)((now - at) / 150)));
+            foreach (var (p, at, ts, tr0) in trail) tr.Draw(p, ts, ColorAlpha(Color.White, 1 - (float)((now - at) / 150)), tr0);
         }
         else if (skin.Tex("cursortrail") is { Width: >= 5 } smooth)
         {
@@ -1584,7 +1586,7 @@ sealed class SongSelect : Screen
                 {
                     from += dir * step;
                     len -= step;
-                    trail.Add((from, now));
+                    trail.Add((from, now, s, 0));
                 }
                 smoothFrom = from;
             }
@@ -1592,12 +1594,11 @@ sealed class SongSelect : Screen
             for (int i = 0; i < trail.Count; i++) if (now - trail[i].At < 300) trail[kept++] = trail[i];
             trail.RemoveRange(kept, trail.Count - kept);
             BeginBlendMode(BlendMode.Additive);
-            foreach (var (p, t) in trail) smooth.Draw(p, s, ColorAlpha(Color.White, MathF.Pow(1 - (float)((now - t) / 300), 1.7f)));
+            foreach (var (p, t, _, _) in trail) smooth.Draw(p, s, ColorAlpha(Color.White, MathF.Pow(1 - (float)((now - t) / 300), 1.7f)));
             EndBlendMode();
         }
-        float e = s * CursorExpandScale(now);
         Vector2 Anchored(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * e / 2;
-        if (skin.Tex("cursor") is { } c) c.Draw(Anchored(c), e, Color.White, skin.CursorRotate ? (float)(now % 10000 / 10000 * 360) : 0); // a turn per 10s
+        if (skin.Tex("cursor") is { } c) c.Draw(Anchored(c), e, Color.White, turn);
         else DrawCircleV(pos, 12 * e, new Color(255, 200, 80, 255));
         if (middle && skin.Tex("cursormiddle") is { } m) m.Draw(Anchored(m), e, Color.White); // the default cursor's blue centre
     }

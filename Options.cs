@@ -769,7 +769,7 @@ sealed class Options : Screen
         skin.Tex("hitcircleoverlay")?.Draw(centre, cs, Color.White);
         (string Name, float X)[] judgements = [("hit50", 156.7f), ("hit100", 205.6f), ("hit300", 254.9f)];
         foreach (var (name, x) in judgements)
-            if ((skin.Tex(name) ?? skin.Frame(name, 0)) is { } j) j.Draw(new Vector2(ox + x * u, cy), js, Color.White);
+            if (skin.Frame(name, 0) is { } j) j.Draw(new Vector2(ox + x * u, cy), js, Color.White);
     }
 
     // stable's tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint white edge;

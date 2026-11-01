@@ -11,10 +11,10 @@ readonly record struct Sprite(Texture2D Tex, float Scale)
     public float Width => Tex.Width * Scale;
     public float Height => Tex.Height * Scale;
 
-    public void Draw(Vector2 centre, float scale, Color tint, float rotation = 0, bool flipX = false)
+    public void Draw(Vector2 centre, float scale, Color tint, float rotation = 0, bool flipX = false, bool flipY = false)
     {
         float w = Width * scale, h = Height * scale;
-        DrawTexturePro(Tex, new Rectangle(0, 0, flipX ? -Tex.Width : Tex.Width, Tex.Height), new Rectangle(centre.X, centre.Y, w, h),
+        DrawTexturePro(Tex, new Rectangle(0, 0, flipX ? -Tex.Width : Tex.Width, flipY ? -Tex.Height : Tex.Height), new Rectangle(centre.X, centre.Y, w, h),
             new Vector2(w / 2, h / 2), rotation, tint);
     }
 }
@@ -46,10 +46,34 @@ sealed class Skin
     public Color InputOverlayText = Color.Black;
     public Color SpinnerBackground = new(100, 100, 100, 255); // stable tints spinner-background with this
     public bool SpinnerNoBlink;
+    public bool OverlayAboveNumber = true, SliderBallFlip, CursorTrailRotate;
+    public Color SliderBall = new(2, 170, 255, 255); // tints stable's own ball when it isn't combo-coloured
+    public bool SpinnerFadePlayfield; // blacks out the playfield under spinners (stable's default is decided before the skin's Version is read: off)
 
-    // Animation frames ("followpoint-3"), cached by (prefix, index) for the same reason.
-    readonly Dictionary<(string, int), Sprite?> frames = [];
-    public Sprite? Frame(string prefix, int i) => frames.TryGetValue((prefix, i), out var s) ? s : frames[(prefix, i)] = Tex($"{prefix}-{i}");
+    // stable's animated sprites: name0, name1 ... (name-0 ... with dash) when frame 0 comes from a source at least as
+    // preferred as the plain sprite's (beatmap, then skin, then default), every frame from that one source; else the
+    // plain sprite alone. Empty when there's neither.
+    readonly Dictionary<(string, bool), Sprite[]> animations = [];
+    public Sprite[] Animation(string name, bool dash)
+    {
+        if (animations.TryGetValue((name, dash), out var a)) return a;
+        string sep = dash ? "-" : "";
+        int src = Source($"{name}{sep}0");
+        var list = new List<Sprite>();
+        if (src > 0 && src >= Source(name))
+            for (int i = 0; TexFrom($"{name}{sep}{i}", src) is { } f; i++) list.Add(f);
+        else if (Tex(name) is { } single) list.Add(single);
+        return animations[(name, dash)] = [.. list];
+    }
+    public Sprite? Frame(string prefix, int i) => Animation(prefix, true) is var a && i < a.Length ? a[i] : null;
+    public int FrameCount(string prefix) => Animation(prefix, true).Length;
+
+    // Where a sprite comes from: 4 the beatmap, 2 the user's skin, 1 stable's default, 0 nowhere.
+    readonly Dictionary<string, int> sources = new(StringComparer.OrdinalIgnoreCase);
+    public int Source(string name) => sources.TryGetValue(name, out int s) ? s
+        : sources[name] = mapDir != null && MapTex(name) != null ? 4 : UserHas(name) ? 2 : DefaultTex(name) != null ? 1 : 0;
+    bool UserHas(string name) => File.Exists(Path.Combine(dir, name + ".png")) || File.Exists(Path.Combine(dir, name + "@2x.png"));
+    public Sprite? TexFrom(string name, int src) => src switch { 4 => MapTex(name), 2 => UserHas(name) ? Load(name, userSkin: true) : null, 1 => DefaultTex(name), _ => null };
 
     // Number-font glyphs, cached by (prefix, char) so drawing numbers builds no texture-name strings per frame.
     readonly Dictionary<(string, char), Sprite?> glyphs = [];
@@ -123,6 +147,11 @@ sealed class Skin
                 case "HitCirclePrefix": HitCirclePrefix = v.Replace('\\', '/'); break;
                 case "HitCircleOverlap": float.TryParse(v, CultureInfo.InvariantCulture, out HitCircleOverlap); break;
                 case "AllowSliderBallTint": AllowSliderBallTint = v == "1"; break;
+                case "HitCircleOverlayAboveNumber" or "HitCircleOverlayAboveNumer": OverlayAboveNumber = v != "0"; break;
+                case "SliderBallFlip": SliderBallFlip = v == "1"; break;
+                case "CursorTrailRotate": CursorTrailRotate = v == "1"; break;
+                case "SpinnerFadePlayfield": SpinnerFadePlayfield = v == "1"; break;
+                case "SliderBall": SliderBall = ParseColour(v) ?? SliderBall; break;
                 case "ComboBurstRandom": ComboBurstRandom = v == "1"; break;
                 case "CustomComboBurstSounds":
                     ComboSoundBursts = [.. v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => int.TryParse(x, out int c) ? c : -1).Where(c => c > 0).Distinct().Order()];
@@ -168,7 +197,7 @@ sealed class Skin
         if (folder == mapDir) return;
         foreach (var t in mapTextures.Values) if (t is { } sp) UnloadTexture(sp.Tex);
         mapTextures.Clear();
-        own.Clear(); glyphs.Clear(); frames.Clear();
+        own.Clear(); glyphs.Clear(); animations.Clear(); sources.Clear();
         mapDir = folder;
     }
 
@@ -348,7 +377,7 @@ sealed class Skin
         decoding.Clear();
         foreach (var s in sounds.Values.Concat(defaultSounds.Values)) s?.Unload();
         textures.Clear(); defaultTextures.Clear();
-        glyphs.Clear(); frames.Clear();
+        glyphs.Clear(); animations.Clear(); sources.Clear(); own.Clear();
         sounds.Clear(); defaultSounds.Clear();
     }
 }

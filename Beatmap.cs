@@ -116,6 +116,7 @@ sealed class Beatmap
     public string VideoFile = ""; // the background video and the map time it starts at
     public double VideoOffset;
     public double AudioLeadIn, PreviewTime, StackLeniency = 0.7;
+    public int OverlayPosition; // [General]: 0 the skin's choice, 1 hit circle overlays under the numbers, 2 over them
     public int Countdown = 1, CountdownOffset; // 0 none, 1 normal, 2 half speed, 3 double speed
     public double HP = 5, CS = 5, OD = 5, AR = -1, SliderMultiplier = 1.4, SliderTickRate = 1;
     public int DefaultSampleSet = 1;
@@ -217,6 +218,7 @@ sealed class Beatmap
                     case "AudioFilename": AudioFilename = v; break;
                     case "AudioLeadIn": AudioLeadIn = D(v); break;
                     case "Countdown": Countdown = (int)D(v); break;
+                    case "OverlayPosition": OverlayPosition = v switch { "Below" => 1, "Above" => 2, _ => 0 }; break;
                     case "CountdownOffset": CountdownOffset = (int)D(v); break;
                     case "PreviewTime": PreviewTime = D(v); break;
                     case "StackLeniency": StackLeniency = D(v); break;
