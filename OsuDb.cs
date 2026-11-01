@@ -39,6 +39,7 @@ sealed class DbBeatmap
     }
     public int Circles, Sliders, Spinners, DrainSeconds, TotalMs, PreviewMs, BeatmapId, SetId;
     public short LocalOffset; // stable's per-map offset (+/- in play)
+    public short OnlineOffset; // the map's offset from the website
     public bool IgnoreSound, IgnoreSkin, DisableStoryboard, DisableVideo;
     public float AR, CS, HP, OD;
     public long LastModified, LastPlayed;
@@ -196,7 +197,7 @@ static class OsuDb
         r.ReadSingle();                   // stack leniency
         b.Mode = r.ReadByte();
         b.Source = rd.String(6); b.Tags = rd.String(7);
-        r.ReadInt16();                    // online offset
+        b.OnlineOffset = r.ReadInt16();   // online offset
         rd.Skip();                        // title font
         b.Unplayed = r.ReadBoolean();
         b.LastPlayed = r.ReadInt64();     // DateTime ticks (UTC)

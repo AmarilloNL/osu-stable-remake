@@ -17,6 +17,9 @@ static class Config
     public static void Load()
     {
         Read(OwnPath, own);
+        // ours kept its universal offset as RemakeOffset, the opposite way round; it's stable's Offset now
+        if (own.Remove("RemakeOffset", out var old) && !own.ContainsKey("Offset") && double.TryParse(old, System.Globalization.CultureInfo.InvariantCulture, out double ms))
+            own["Offset"] = (0 - ms).ToString(System.Globalization.CultureInfo.InvariantCulture);
         string defaultDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "osu!");
         OsuDir = own.TryGetValue("OsuDir", out var dir) ? dir : File.Exists(Path.Combine(defaultDir, "osu!.exe")) ? defaultDir : @"F:\osu!";
         Read(Path.Combine(OsuDir, "osu!.cfg"), values);

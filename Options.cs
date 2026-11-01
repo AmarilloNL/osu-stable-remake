@@ -148,7 +148,7 @@ sealed class Options : Screen
             new(Kind.Slider, "Effect:", "VolumeEffect", 0, 100, 80, "0", "%"),
             T("Ignore beatmap hitsounds", "IgnoreBeatmapSamples"),
             H("OFFSET ADJUSTMENT"),
-            new(Kind.Slider, "Universal offset:", "RemakeOffset", -300, 300, 0, "0", "ms"),
+            new(Kind.Slider, "Universal offset:", "Offset", -300, 300, 0, "0", "ms"),
             B("Offset wizard", Grey),
 
             S("SKIN", 0xf1fc),

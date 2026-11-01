@@ -414,6 +414,7 @@ sealed class SongSelect : Screen
 
     // stable's local offset for this difficulty (0 before osu!.db has loaded)
     internal short LocalOffsetOf(string md5) => DbEntry(md5)?.LocalOffset ?? 0;
+    internal short OnlineOffsetOf(string md5) => DbEntry(md5)?.OnlineOffset ?? 0;
 
     // stable's mod caption: the selected mods' names (in its order, "," between) in size 30 at (64.4, 397), 0.5 apart, white at
     // quarter alpha, under the panels

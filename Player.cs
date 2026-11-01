@@ -76,9 +76,11 @@ sealed partial class Player : Screen
     readonly List<(Vector2 Pos, double Time, int Result, string Sprite, bool Spinner)> popups = [];
     readonly List<int> visible = [];
 
-    // the universal offset (options) plus this map's local offset: stable's from osu!.db, or one set here with +/-
-    double Offset => Config.GetDouble("RemakeOffset", 0) + localOffset;
-    int localOffset;
+    // stable's audio-to-game shift: this map's local offset (stable's from osu!.db, or one set here with +/-), its
+    // online offset and 24ms more on maps before file format v5, less the universal offset (options), which runs at the
+    // play's speed (x1.5 with DT).
+    double Offset => mapOffset + localOffset - Config.GetDouble("Offset", 0) * rate;
+    int localOffset, mapOffset;
     double retryHold;
     bool retryArmed;
     double localOffsetChangedAt = double.MinValue;
@@ -221,6 +223,7 @@ sealed partial class Player : Screen
         {
             mapMd5 ??= Replays.Md5Of(map.File);
             localOffset = Config.GetInt($"LocalOffset_{mapMd5}", back.LocalOffsetOf(mapMd5));
+            mapOffset = (map.FormatVersion < 5 ? 24 : 0) + back.OnlineOffsetOf(mapMd5);
             if (localOffset != 0) Notification.Show($"Using local beatmap offset ({localOffset}ms)", 1000);
         }
         SetupCountdown();
