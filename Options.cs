@@ -138,7 +138,7 @@ sealed class Options : Screen
 
             S("AUDIO", 0xf026),
             H("DEVICES"),
-            new(Kind.Choice, "Output device:", "AudioDevice", Values: ["Default"], DefValue: "Default"),
+            new(Kind.Choice, "Output device:", "AudioDevice", Values: [""], Names: ["Default"], DefValue: ""), // stable keeps "" for the default device
             T("Audio compatibility mode", "AudioCompatibility"),
             H("VOLUME"),
             new(Kind.Slider, "Master:", "VolumeUniversal", 0, 100, 100, "0", "%"),
