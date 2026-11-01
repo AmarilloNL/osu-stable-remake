@@ -339,6 +339,7 @@ static class Game
             VolumeControl.Draw();
             Notification.Draw();
             Toast.Draw();
+            SongSelect.FlushCursor();
             stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
             double secs = now / 1000;
             if (shotIndex < shots.Length && secs >= shots[shotIndex] || shotIndex < songShots.Length && Screen is Player sp && sp.SongTime >= songShots[shotIndex])
