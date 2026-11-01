@@ -190,7 +190,12 @@ sealed class Skin
                 case "ComboOverlap": float.TryParse(v, CultureInfo.InvariantCulture, out ComboOverlap); break;
             }
         }
-        if (combos.Count > 0) ComboColours = combos.Values.ToArray();
+        if (combos.Count > 0)
+        {
+            // stable keeps its default Combo1-4 under a skin's colours unless the skin sets Combo1
+            if (!combos.ContainsKey(1)) for (int k = 1; k <= 4; k++) combos.TryAdd(k, ComboColours[k - 1]);
+            ComboColours = combos.Values.ToArray();
+        }
     }
 
     static Color? ParseColour(string v)
