@@ -265,6 +265,27 @@ static class Game
     static void Main(string[] args)
     {
         if (args.Contains("--check")) { Check(); return; }
+        if (args.Contains("--check-stars")) // test hook: our star ratings against the ones stable stored in osu!.db
+        {
+            Config.Load();
+            Beatmap.PlayfieldHeight = 1080;
+            var combos = new[] { Mods.None, Mods.HardRock, Mods.Easy, Mods.DoubleTime, Mods.HalfTime, Mods.HardRock | Mods.DoubleTime, Mods.Easy | Mods.DoubleTime, Mods.HardRock | Mods.HalfTime, Mods.Easy | Mods.HalfTime };
+            int n = 0, close = 0;
+            double worst = 0;
+            foreach (var db in OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")).Where(b => b.Mode == 0))
+                foreach (var m in combos)
+                {
+                    if (db.StoredStars(m) is not { } stored) continue;
+                    double ours = StarRating.Compute(Beatmap.Load(db.FilePath, mods: m), m);
+                    double diff = Math.Abs(ours - stored);
+                    n++;
+                    if (diff < 0.005) close++;
+                    worst = Math.Max(worst, diff);
+                    if (diff >= 0.005 || args.Contains("--verbose")) Console.WriteLine($"{(m == Mods.None ? "NM" : m.Short()),-6} stored {stored:0.0000} ours {ours:0.0000}  {db.OsuFile}");
+                }
+            Console.WriteLine($"{close}/{n} within 0.005 stars; worst {worst:0.0000}");
+            return;
+        }
         if (args.Contains("--check-readmap")) // test hook: our .osu reader against what osu!.db recorded for the same maps
         {
             Config.Load();

@@ -181,7 +181,10 @@ sealed class SongSelect : Screen
     }
 
     // A library entry read from the .osu itself, with what stable's database records on import (counts, drain and
-    // total time, BPMs, date added). Star ratings aren't computed (osu!.db has them for maps stable processed).
+    // total time, BPMs, date added, and the star ratings for every EZ/HR/DT/HT combination, from StarRating).
+    static readonly Mods[] RatedMods = [Mods.None, Mods.HardRock, Mods.Easy, Mods.DoubleTime, Mods.HalfTime,
+        Mods.HardRock | Mods.DoubleTime, Mods.Easy | Mods.DoubleTime, Mods.HardRock | Mods.HalfTime, Mods.Easy | Mods.HalfTime];
+
     internal static DbBeatmap? ReadMap(string file)
     {
         try
@@ -199,7 +202,7 @@ sealed class SongSelect : Screen
                 held[bpms[i].BeatLength] = held.GetValueOrDefault(bpms[i].BeatLength) + Math.Max(0, to - from);
             }
             if (held.Count > 0) mainBpm = 60000 / held.MaxBy(kv => kv.Value).Key;
-            return new DbBeatmap
+            var entry = new DbBeatmap
             {
                 Artist = m.Artist, ArtistUnicode = m.ArtistUnicode, Title = m.Title, TitleUnicode = m.TitleUnicode, Creator = m.Creator,
                 Version = m.Version, Source = m.Source, Tags = m.Tags, AudioFile = m.AudioFilename,
@@ -213,6 +216,10 @@ sealed class SongSelect : Screen
                 MaxBpm = bpms.Count > 0 ? bpms.Max(t => 60000 / t.BeatLength) : 0, MainBpm = mainBpm,
                 LastModified = DateTime.Now.Ticks, Unplayed = true, Status = (byte)(m.SetId <= 0 ? 1 : 0),
             };
+            if (m.Mode == 0)
+                foreach (var mods in RatedMods)
+                    entry.SetStars((int)mods, (float)StarRating.Compute(mods == Mods.None ? m : Beatmap.Load(file, mods: mods), mods));
+            return entry;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return null; }
     }

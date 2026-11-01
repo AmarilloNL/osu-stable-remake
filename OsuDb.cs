@@ -59,6 +59,9 @@ sealed class DbBeatmap
         stars[StarSlot(mods)] = value;
     }
 
+    // the rating stable stored for exactly this combination (EZ/HR/DT/HT), if any
+    public float? StoredStars(Mods m) => stars != null && !float.IsNaN(stars[StarSlot((int)m)]) ? stars[StarSlot((int)m)] : null;
+
     public float StarsFor(Mods m)
     {
         if (stars == null) return 0;
