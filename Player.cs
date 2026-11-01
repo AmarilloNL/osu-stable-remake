@@ -842,6 +842,10 @@ sealed partial class Player : Screen
             if (!autopilot) cursor = pbCursor;
             int newly = f.Keys & ~inputKeys;
             inputKeys = f.Keys;
+            // the key overlay counts per replay frame (stable's watcher takes one frame per update), so a press that
+            // starts and ends within one of our frames still counts
+            if (newly != 0 && !Resting(f.Time) && !paused && !failed)
+                for (int b = 0; b < 4; b++) if ((newly >> b & 1) != 0) keyCounts[b]++;
             if (StableReplay) foreach (var (so, ss) in ActiveSpinners(f.Time)) SpinnerInput(so, ss, f.Time);
             // stable runs an update per replay frame: frames sharing a time are judged one at a time, so stop here
             // and let the stepping loop run another (zero-length) update at this time for the next one.

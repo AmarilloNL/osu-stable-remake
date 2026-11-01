@@ -256,7 +256,7 @@ sealed partial class Player
                 keysShown ^= 1 << i;
                 keyChangedAt[i] = now;
                 if (down && (keysEverPressed & (1 << i)) == 0) { keysEverPressed |= 1 << i; firstPressAt[i] = now; }
-                if (down && counting && (autoPressed & (1 << i)) == 0) keyCounts[i]++;
+                if (down && counting && playback == null && (autoPressed & (1 << i)) == 0) keyCounts[i]++; // replays count in PlaybackInput
             }
             if ((autoPressed & (1 << i)) != 0 && counting) keyCounts[i]++; // each Auto press, even one shorter than a frame
             autoPressed &= (byte)~(1 << i);
