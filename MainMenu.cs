@@ -398,9 +398,12 @@ sealed class MainMenu : Screen
 
     // stable's cookie pulse: eases (x0.5 per 60Hz tick) toward 1 - (beat phase + 1 - (level - average level) / 0.5) / 2,
     // where level = (L + R peak) / 65536 x music volume and the average follows it by 10% a tick; the cookie is
-    // 1.05 - 0.05 x pulse (+ hover/click), its glowing copy 1.05 + 0.03 x pulse at 0.4 x (1 - pulse) (0.1 in kiai).
+    // 1.05 - 0.05 x pulse (+ hover/click), its glowing copy 1.05 + 0.03 x pulse at 0.4 x (1 - pulse) (0.1 in kiai),
+    // the pulse eased OutQuad; the visualizer ring starts at 150 x (1.05 + 0.03 x InQuad(1 - pulse)) units.
     float cookiePulse, levelAvg, glowLevel = 1;
-    float CookieScale => 1.05f - 0.05f * cookiePulse + clickShrink;
+    float EasedPulse => (float)Easing.Apply(4, cookiePulse);
+    float CookieScale => 1.05f - 0.05f * EasedPulse + clickShrink;
+    float VisRadius => (1.05f + 0.03f * (float)Easing.Apply(3, 1 - cookiePulse) + clickShrink) * 150;
 
     void UpdatePulse(double dtMs)
     {
@@ -496,7 +499,7 @@ sealed class MainMenu : Screen
             for (int n = 1023; n >= 0; n--)
             {
                 ref float bar = ref bars[1023 - n];
-                bar = (float)(Math.Max(bar, fft[(n + visOffset) % 1024] * 3) * decay);
+                bar = (float)(Math.Max(bar, fft[(n + visOffset) % 1024] * 1.6f * 3) * decay); // stable amplifies the menu's FFT 1.6x
                 if (bar < 0.01f) bar = 0;
             }
             if (over == 0) break;
@@ -529,6 +532,9 @@ sealed class MainMenu : Screen
         return f.Peak * (float)(1 - p * p);
     }
 
+    // stable tints the bars with the skin's MenuGlow only for supporters; everyone else (and offline) gets this
+    static readonly Color VisColour = new(128, 128, 160, 255);
+
     void DrawVisuals(double now)
     {
         BeginBlendMode(BlendMode.Additive);
@@ -545,17 +551,19 @@ sealed class MainMenu : Screen
         if (skin.Tex("menu-vis") is { } vis)
         {
             var centre = CookiePos;
-            float radius = CookieScale * 150 * u, bw = vis.Width * sd, bh = vis.Height * sd * 0.5f;
+            float radius = VisRadius * u, bw = vis.Width * sd, bh = vis.Height * sd * 0.5f;
+            // stable: the ring dims as the cookie slides left (to 30% when open) and to 70% outside kiai
+            float ringAlpha = (1 - cookieX / -120f * 0.7f) * (songs.Beat() is { Kiai: true } ? 1 : 0.7f);
             var src = new Rectangle(0, 0, vis.Tex.Width, vis.Tex.Height);
             for (int i = 0; i < bars.Length; i++)
             {
                 float len = bars[i];
                 if (len == 0) continue;
-                float alpha = 0.4f * Math.Min(1, (len - 0.04f) / 0.08f);
+                float alpha = ringAlpha * 0.4f * Math.Min(1, (len - 0.04f) / 0.08f);
                 if (alpha <= 0) continue;
                 float angle = MathF.PI * 2 * (0.4f + i / 1024f * 4);
                 var p = centre + new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * radius;
-                DrawTexturePro(vis.Tex, src, new Rectangle(p.X, p.Y, bw * len, bh), new Vector2(0, bh / 2), angle * 180 / MathF.PI, ColorAlpha(skin.MenuGlow, alpha));
+                DrawTexturePro(vis.Tex, src, new Rectangle(p.X, p.Y, bw * len, bh), new Vector2(0, bh / 2), angle * 180 / MathF.PI, ColorAlpha(VisColour, alpha));
             }
         }
 
@@ -682,7 +690,7 @@ sealed class MainMenu : Screen
             cookie.Draw(CookiePos, CookieScale * sd, Color.White);
             bool kiai = songs.Beat() is { Kiai: true };
             if (kiai) BeginBlendMode(BlendMode.Additive);
-            cookie.Draw(CookiePos, (1.05f + 0.03f * cookiePulse + clickShrink) * sd, ColorAlpha(Color.White, (kiai ? 0.1f : 0.4f) * (1 - cookiePulse) * glowLevel));
+            cookie.Draw(CookiePos, (1.05f + 0.03f * EasedPulse + clickShrink) * sd, ColorAlpha(Color.White, (kiai ? 0.1f : 0.4f) * (1 - EasedPulse) * glowLevel));
             if (kiai) EndBlendMode();
         }
         else

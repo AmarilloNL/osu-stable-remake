@@ -41,7 +41,6 @@ sealed class Skin
     public string ScorePrefix = "score", ComboPrefix = "score";
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
     public Color SongSelectActiveText = Color.Black, SongSelectInactiveText = Color.White;
-    public Color MenuGlow = new(128, 128, 160, 255); // main menu visualizer (stable's built-in default)
     public bool CursorCentre = true, CursorRotate = true, CursorExpand = true, LayeredHitSounds = true, SpinnerFrequencyModulate = true;
     public Color InputOverlayText = Color.Black;
     public Color SpinnerBackground = new(100, 100, 100, 255); // stable tints spinner-background with this
@@ -173,7 +172,6 @@ sealed class Skin
                     break;
                 case "Version": Version = v.Equals("latest", StringComparison.OrdinalIgnoreCase) ? 99 : double.TryParse(v, CultureInfo.InvariantCulture, out var ver) ? ver : 1; break;
                 case "SongSelectActiveText": SongSelectActiveText = ParseColour(v) ?? SongSelectActiveText; break;
-                case "MenuGlow": MenuGlow = ParseColour(v) ?? MenuGlow; break;
                 case "SpinnerBackground": SpinnerBackground = ParseColour(v) ?? SpinnerBackground; break;
                 case "SpinnerNoBlink": SpinnerNoBlink = v == "1"; break;
                 case "CursorCentre": CursorCentre = v != "0"; break;
