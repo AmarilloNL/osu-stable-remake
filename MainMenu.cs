@@ -295,6 +295,7 @@ sealed class MainMenu : Screen
     void UpdateJump(double dtMs)
     {
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { if (jumpDropOpen) jumpDropOpen = false; else jumpAt = double.NaN; return; }
+        if (Input.IsKeyPressed(KeyboardKey.Enter)) { jumpAt = double.NaN; return; } // stable: Enter closes it (Up / Down already played the song)
         var at = Input.GetMousePosition();
         if (Input.IsMouseButtonPressed(MouseButton.Left))
         {

@@ -85,7 +85,8 @@ static class Input
     public static bool AltHeld => IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt);
     public static bool CtrlHeld => IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl); // stable takes either
     public static bool ShiftHeld => IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
-    static bool Pressed(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressed(k) || keysPressed.Contains((int)k);
+    static bool Raw(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressed(k) || keysPressed.Contains((int)k);
+    static bool Pressed(KeyboardKey k) => Raw(k) || k == KeyboardKey.Enter && Raw(KeyboardKey.KpEnter); // stable: the numpad Enter is Enter
     public static bool IsKeyPressed(KeyboardKey k) => Pressed(k) && !(k == KeyboardKey.Enter && AltHeld);
     public static bool AltEnterPressed => AltHeld && Pressed(KeyboardKey.Enter);
     public static bool IsKeyPressedRepeat(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressedRepeat(k);
