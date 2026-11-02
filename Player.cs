@@ -744,8 +744,8 @@ sealed partial class Player : Screen
         if (failed)
         {
             if (double.IsPositiveInfinity(menuShownAt)) { UpdateFailAnim(dtMs); return; }
-            string? f = visualClick ? null : UpdateMenu(dtMs);
-            if (f == "pause-back" || Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.Escape)) Leave(back);
+            string? f = UpdateMenuKeys() ?? (visualClick ? null : UpdateMenu(dtMs));
+            if (f == "pause-back" || menuSel < 0 && Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.Escape)) Leave(back);
             else if (f == "pause-retry" || Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.Grave)) Retry();
             else if (Input.IsKeyPressed(KeyboardKey.W) && (savedReplay ?? watching) is { } replay)
                 Leave(new Player(map, back, replay.Mods, Replays.Frames(replay), replay));
@@ -778,7 +778,7 @@ sealed partial class Player : Screen
         else if (paused && resumePending) UpdateResume();
         else if (paused)
         {
-            string? c = visualClick ? null : UpdateMenu(dtMs);
+            string? c = UpdateMenuKeys() ?? (visualClick ? null : UpdateMenu(dtMs));
             if (c == "pause-continue") { Continue(); return; } // not into gameplay input this frame
             else if (c == "pause-retry" || Input.IsKeyPressed(KeyboardKey.R)) Retry();
             else if (c == "pause-back" || Input.IsKeyPressed(KeyboardKey.Q)) Leave(back);
@@ -2773,6 +2773,68 @@ sealed partial class Player : Screen
     }
 
     // Returns the button clicked this frame (mouse or either game key), or null.
+    // stable's keyboard pause / fail menu: Up / Down pick a button (the first press: Up the last one, Down the first
+    // there is), Enter / Space / Skip press it. Arrows (the skin's arrow-pause, else play-warningarrow in blue) flank it
+    // 170 units either side at 0.8: sliding in from 170 further out over 300ms (In) as they fade in, then swaying 45 out
+    // and back (300ms Out, 300ms In) for as long as they show; they glide to a new pick over 100ms (Out).
+    int menuSel = -1; // stable's numbering: 0 continue, 1 retry, 2 back
+    double menuSelAt, menuSelMovedAt = double.MinValue, menuSelFor = double.NaN;
+    float menuSelFromY;
+
+    string? UpdateMenuKeys()
+    {
+        if (menuShownAt != menuSelFor) { menuSel = -1; menuSelFor = menuShownAt; }
+        int d = Input.IsKeyPressed(KeyboardKey.Down) ? 1 : Input.IsKeyPressed(KeyboardKey.Up) ? -1 : 0;
+        if (d != 0)
+        {
+            if (menuSel < 0) { menuSel = d < 0 ? 2 : failed ? 1 : 0; menuSelAt = Game.NowMs; menuSelMovedAt = double.MinValue; }
+            else
+            {
+                menuSelFromY = MenuArrowY();
+                menuSelMovedAt = Game.NowMs;
+                menuSel = failed ? (menuSel + d + 1) % 2 + 1 : (menuSel + d + 3) % 3;
+                (skin.Sound("pause-hover") ?? skin.Sound("menuclick"))?.Play(BeatmapSamples.EffectVolume);
+            }
+        }
+        bool press = Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.Space) || Input.IsKeyPressed(Config.Key("keySkip", KeyboardKey.Space));
+        if (menuSel < 0 || !press) return null;
+        string name = MenuSelName;
+        skin.Sound(name + "-click")?.Play(BeatmapSamples.EffectVolume);
+        menuFlash = (name, Game.NowMs);
+        return name;
+    }
+
+    string MenuSelName => menuSel switch { 0 => "pause-continue", 1 => "pause-retry", _ => "pause-back" };
+
+    float MenuArrowY()
+    {
+        int h = GetScreenHeight();
+        float to = h / 2f + MenuY(MenuSelName) * h / 480f;
+        double t = (Game.NowMs - menuSelMovedAt) / 100;
+        return t >= 1 ? to : menuSelFromY + (to - menuSelFromY) * (float)Easing.Apply(1, t);
+    }
+
+    void DrawMenuArrows(float fade)
+    {
+        if (menuSel < 0) return;
+        var own = skin.Tex("arrow-pause");
+        if ((own ?? skin.Tex("play-warningarrow")) is not { } arrow) return;
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        float u = h / 480f;
+        double t = Game.NowMs - menuSelAt;
+        float dx; // units outwards
+        if (t < 300) dx = 170 * (1 - (float)Easing.Apply(2, t / 300));
+        else
+        {
+            double p = (t - 300) % 600;
+            dx = p < 300 ? 45 * (float)Easing.Apply(1, p / 300) : 45 * (1 - (float)Easing.Apply(2, (p - 300) / 300));
+        }
+        var tint = ColorAlpha(own != null ? Color.White : new Color(0, 114, 255, 255), (float)Math.Min(1, t / 300) * fade);
+        float y = MenuArrowY(), sc = 0.8f * h / 768f;
+        arrow.Draw(new Vector2(w / 2f - (170 + dx) * u, y), sc, tint);
+        arrow.Draw(new Vector2(w / 2f + (170 + dx) * u, y), sc, tint, flipX: true);
+    }
+
     string? UpdateMenu(double dtMs)
     {
         var mouse = Input.GetMousePosition();
@@ -2819,6 +2881,7 @@ sealed partial class Player : Screen
                 EndBlendMode();
             }
         }
+        DrawMenuArrows(fade);
     }
 
     // ---- skip button: the skin's play-skip, bottom-right, 60% alpha brightening on hover; fades in over 400ms.
