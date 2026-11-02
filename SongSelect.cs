@@ -1088,6 +1088,9 @@ sealed class SongSelect : Screen
         // Ctrl+Enter: this one play with Auto, like stable (the selected mods stay as they are).
         if (Input.IsKeyPressed(KeyboardKey.Enter) && !Input.IsKeyDown(KeyboardKey.LeftAlt))
         {
+            // stable: Shift+Enter (grouped) closes / opens the group of the focus (else the selection)
+            if (Grouped && groups.Count > 0 && (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) && !Input.IsKeyDown(KeyboardKey.LeftControl))
+            { ToggleGroup(focusGroup >= 0 ? focusGroup : groupIndex); return; }
             if (Grouped && focusGroup >= 0 && focusEntry < 0) { ToggleGroup(focusGroup); return; }
             if (Grouped && focusGroup >= 0 && (focusGroup != groupIndex || focusEntry != setIndex)) { SelectEntry(focusGroup, focusEntry); return; }
             if (!Grouped && focusRow >= 0) { SelectRun(RowInfo(focusRow).Set); return; }
