@@ -752,6 +752,19 @@ sealed class SongSelect : Screen
     // one (after Previous), else a random song; Stop pauses at the start so nothing restarts it.
     readonly Stack<int> musicBack = [], musicForward = [];
 
+    internal IReadOnlyList<BeatmapSet> Library => sets;
+
+    // the main menu's Jump To window: play that map's set (like Next, it can be gone back from)
+    internal void MusicJump(DbBeatmap b)
+    {
+        int i = view.FindIndex(v => v.Set.Diffs.Contains(b));
+        if (i < 0 || i == setIndex) return;
+        musicBack.Push(setIndex);
+        setIndex = i;
+        diffIndex = 0;
+        SelectionChanged();
+    }
+
     internal void MusicNext()
     {
         if (view.Count == 0) return;

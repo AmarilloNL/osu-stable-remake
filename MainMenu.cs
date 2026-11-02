@@ -227,12 +227,102 @@ sealed class MainMenu : Screen
             5 => ToggleSongInfo(),
             _ => null,
         };
+        if (over == 6) { OpenJump(); return; }
         if (over == 0) songs.MusicPrevious();
         else if (over == 1) songs.MusicPlay();
         else if (over == 3) songs.MusicStop();
         else if (over == 4) songs.MusicNext();
         skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
         if (notice != null) Notification.Show(notice, 1000);
+    }
+
+    // ---- stable's Jump To window (the list button): the library one row per set, filtered as you type (in the
+    // artist, title, creator, source and tags). Rows are 30 units tall in a 360-unit list from y 80 between white
+    // lines at 79 and 440, the text 20 units 5 down; a hovered row lights to 60% grey, the playing one cornflower blue
+    // at 60%. A click plays that song (on the playing one it closes the window), Up / Down step through, Esc closes.
+    // At most 250 rows. (stable's collection dropdown isn't here.)
+    double jumpAt = double.NaN;
+    string jumpFilter = "";
+    List<DbBeatmap> jumpList = [];
+    float[] jumpHover = [];
+    float jumpScroll; // units
+
+    void OpenJump()
+    {
+        skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+        jumpAt = Game.NowMs;
+        jumpFilter = "";
+        BuildJumpList();
+        ScrollJumpTo(JumpCurrent(), centre: true);
+    }
+
+    void BuildJumpList()
+    {
+        var text = StringComparer.CurrentCulture;
+        jumpList = [.. songs.Library.Select(s => s.First)
+            .Where(b => jumpFilter.Length == 0 || $"{b.Artist} {b.Title} {b.Creator} {b.Source} {b.Tags}".Contains(jumpFilter, StringComparison.CurrentCultureIgnoreCase))
+            .OrderBy(b => b.Artist, text).ThenBy(b => b.Title, text).Take(250)];
+        jumpHover = new float[jumpList.Count];
+        jumpScroll = 0;
+    }
+
+    int JumpCurrent() => songs.Current is { } c ? jumpList.FindIndex(b => b.Folder == c.Folder) : -1;
+
+    void ScrollJumpTo(int i, bool centre = false)
+    {
+        if (i < 0) return;
+        float max = Math.Max(0, jumpList.Count * 30 - 360);
+        if (centre || i * 30 < jumpScroll || i * 30 + 30 > jumpScroll + 360) jumpScroll = Math.Clamp(i * 30f - (centre ? 0 : 300), 0, max);
+    }
+
+    void UpdateJump(double dtMs)
+    {
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { jumpAt = double.NaN; return; }
+        bool changed = false;
+        for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed()) { jumpFilter += char.ConvertFromUtf32(ch); changed = true; SongSelect.TypingSound("key-press"); }
+        if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && jumpFilter.Length > 0)
+        { jumpFilter = jumpFilter[..^1]; changed = true; SongSelect.TypingSound("key-delete"); }
+        if (changed) BuildJumpList();
+        int cur = JumpCurrent();
+        int step = Input.IsKeyPressed(KeyboardKey.Down) ? 1 : Input.IsKeyPressed(KeyboardKey.Up) ? -1 : 0;
+        if (step != 0 && jumpList.Count > 0)
+        {
+            int to = cur < 0 ? 0 : Math.Clamp(cur + step, 0, jumpList.Count - 1);
+            songs.MusicJump(jumpList[to]);
+            ScrollJumpTo(to);
+        }
+        jumpScroll = Math.Clamp(jumpScroll - Input.GetMouseWheelMove() * 45, 0, Math.Max(0, jumpList.Count * 30 - 360));
+        var mouse = Input.GetMousePosition();
+        int over = mouse.X >= 10 * u && mouse.X < w - 20 * u && mouse.Y >= 80 * u && mouse.Y < 440 * u ? (int)((mouse.Y / u - 80 + jumpScroll) / 30) : -1;
+        if (over >= jumpList.Count) over = -1;
+        for (int i = 0; i < jumpHover.Length; i++) // stable: in over 100ms, out over 20ms
+            jumpHover[i] = Math.Clamp(jumpHover[i] + (i == over ? (float)(dtMs / 100) : -(float)(dtMs / 20)), 0, 1);
+        if (over < 0 || !Input.IsMouseButtonPressed(MouseButton.Left)) return;
+        if (over == cur) jumpAt = double.NaN; // a second click on the playing song closes the window
+        else songs.MusicJump(jumpList[over]);
+    }
+
+    void DrawJump(double now)
+    {
+        float fade = (float)Math.Clamp((now - jumpAt) / 200, 0, 1);
+        Dialog.Backdrop(fade);
+        Dialog.Title("Jump To...", fade);
+        var white = ColorAlpha(Color.White, fade);
+        Game.Text(jumpFilter, 10 * u, 50 * u, 20 * u, white);
+        DrawRectangleRec(new Rectangle(10 * u, 79 * u, w - 20 * u, u), white);
+        DrawRectangleRec(new Rectangle(10 * u, 440 * u, w - 20 * u, u), white);
+        int cur = JumpCurrent();
+        BeginScissorMode((int)(10 * u), (int)(80 * u), (int)(w - 20 * u), (int)(360 * u));
+        int first = Math.Max(0, (int)(jumpScroll / 30)), last = Math.Min(jumpList.Count - 1, (int)((jumpScroll + 360) / 30));
+        for (int i = first; i <= last; i++)
+        {
+            float y = (80 + i * 30 - jumpScroll) * u;
+            float a = i == cur ? 0.6f : 0.01f + 0.59f * jumpHover[i];
+            DrawRectangleRec(new Rectangle(10 * u, y, w - 30 * u, 30 * u), ColorAlpha(i == cur ? new Color(100, 149, 237, 255) : new Color(50, 50, 50, 255), a * fade));
+            var b = jumpList[i];
+            Game.Text($"{b.ShownArtist} - {b.ShownTitle}", 10 * u, y + 5 * u, 20 * u, white);
+        }
+        EndScissorMode();
     }
 
     void DrawMusicControls()
@@ -373,6 +463,7 @@ sealed class MainMenu : Screen
             return;
         }
         if (!double.IsNaN(exitAskedAt)) { UpdateExitDialog(); return; }
+        if (!double.IsNaN(jumpAt)) { UpdateJump(dtMs); return; }
 
         var mouse = Input.GetMousePosition();
         bool moved = Vector2.Distance(mouse, lastMouse) > 5;
@@ -751,6 +842,7 @@ sealed class MainMenu : Screen
         DrawMenuStars(now);
 
         if (!double.IsNaN(exitAskedAt)) DrawExitDialog(now);
+        if (!double.IsNaN(jumpAt)) DrawJump(now);
         if (!double.IsNaN(quitAt))
             DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((quitAt - now) / 1500, 0, 1)));
         Snow.Update(songs);
