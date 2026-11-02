@@ -145,7 +145,7 @@ sealed class SongSelect : Screen
         var clock = Stopwatch.StartNew();
         List<DbBeatmap> all;
         try { all = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")); Console.Error.WriteLine($"osu!.db: {all.Count} maps in {clock.ElapsedMilliseconds}ms"); }
-        catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException or UnauthorizedAccessException)
+        catch (Exception e) when (e is not OutOfMemoryException) // unreadable or a format we don't know: read the folders instead
         {
             loadStage = $"osu!.db couldn't be read ({e.Message}); reading the Songs folder instead…";
             Console.Error.WriteLine($"osu!.db: {e}");
@@ -289,7 +289,7 @@ sealed class SongSelect : Screen
             if (stars) RateStars(entry, m);
             return entry;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return null; }
+        catch (Exception e) when (e is not OutOfMemoryException) { Console.Error.WriteLine($"unreadable map {file}: {e.GetType().Name}"); return null; } // a malformed map mustn't stop the library
     }
 
     // the star ratings stable keeps for a map (every EZ/HR/DT/HT combination)
@@ -301,7 +301,7 @@ sealed class SongSelect : Screen
             foreach (var mods in RatedMods)
                 entry.SetStars((int)mods, (float)StarRating.Compute(mods == Mods.None && nomod != null ? nomod : Beatmap.Load(entry.FilePath, mods: mods), mods));
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { }
+        catch (Exception e) when (e is not OutOfMemoryException) { } // (on a background thread: anything uncaught would end the game)
     }
 
     // the library entry with this MD5, if it's loaded
@@ -349,7 +349,7 @@ sealed class SongSelect : Screen
                         AR = (float)m.AR, CS = (float)m.CS, OD = (float)m.OD, HP = (float)m.HP, PreviewMs = (int)m.PreviewTime,
                     });
                 }
-                catch (IOException) { }
+                catch (Exception e) when (e is not OutOfMemoryException) { } // skip a malformed map
             }
         return list;
     }
