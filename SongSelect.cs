@@ -966,8 +966,12 @@ sealed class SongSelect : Screen
             if (click || esc) { while (Input.GetCharPressed() != 0) { } return; }
         }
 
-        // stable: Ctrl+A toggles Auto outside the mod select too
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) { mods = ModInfo.Toggle(mods, KeyboardKey.V); while (Input.GetCharPressed() != 0) { } }
+        // stable: Ctrl+A toggles Auto outside the mod select too (on and off: not V's cycle through Cinema)
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A))
+        {
+            mods = mods.HasFlag(Mods.Autoplay) ? mods & ~(Mods.Autoplay | Mods.Cinema) : ModInfo.Toggle(mods, KeyboardKey.V);
+            while (Input.GetCharPressed() != 0) { }
+        }
         if (Grouped)
         {
             if (Pressed(KeyboardKey.Down)) MoveFocus(1);
