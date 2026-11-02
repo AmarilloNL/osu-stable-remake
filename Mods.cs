@@ -99,6 +99,15 @@ static class ModInfo
         _ => m,
     };
 
+    // stable's Shift+S / D / V: straight to the second state (PF, NC, Cinema), or off from it; other keys as without Shift
+    public static Mods ShiftToggle(Mods m, KeyboardKey key) => key switch
+    {
+        KeyboardKey.S => m.HasFlag(Mods.Perfect) ? m & ~(Mods.SuddenDeath | Mods.Perfect) : m & ~Mods.NoFail | Mods.SuddenDeath | Mods.Perfect,
+        KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~(Mods.DoubleTime | Mods.Nightcore) : m & ~Mods.HalfTime | Mods.DoubleTime | Mods.Nightcore,
+        KeyboardKey.V => m.HasFlag(Mods.Cinema) ? m & ~(Mods.Autoplay | Mods.Cinema) : m & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay | Mods.Cinema,
+        _ => Toggle(m, key),
+    };
+
     // "HDHR", "HD DT", "NC" ... (used by the --mods test flag)
     public static Mods Parse(string s)
     {

@@ -2337,7 +2337,7 @@ sealed class SongSelect : Screen
     {
         // each mod's key follows its binding (keyEasy ... keyAuto); Toggle works on stable's default keys
         for (int i = 0; i < ModKeys.Length; i++)
-            if (Input.IsKeyPressed(Config.Key(ModBindings[i], ModKeys[i]))) mods = ModInfo.Toggle(mods, ModKeys[i]);
+            if (Input.IsKeyPressed(Config.Key(ModBindings[i], ModKeys[i]))) mods = Input.ShiftHeld ? ModInfo.ShiftToggle(mods, ModKeys[i]) : ModInfo.Toggle(mods, ModKeys[i]);
         var mouse = Input.GetMousePosition();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (click)
