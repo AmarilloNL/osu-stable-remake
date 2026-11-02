@@ -2414,7 +2414,8 @@ sealed class SongSelect : Screen
     // stable's cursor ripples (the Cursor ripples option): each click leaves the skin's cursor-ripple (else a ring) at
     // the cursor, added on, growing 0.05 -> 0.5 (Out) and fading out from 20% over 700ms.
     static readonly List<(Vector2 Pos, double At)> ripples = [];
-    internal static void Ripple(Vector2 at) { if (Config.GetBool("CursorRipple", false)) ripples.Add((at, Game.NowMs)); }
+    // (stable leaves them out during active play)
+    internal static void Ripple(Vector2 at) { if (Config.GetBool("CursorRipple", false) && Game.Screen is not Player { ActivePlay: true }) ripples.Add((at, Game.NowMs)); }
 
     static void DrawRipples()
     {
