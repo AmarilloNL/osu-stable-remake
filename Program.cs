@@ -566,6 +566,7 @@ static class Game
             // F12 (Save Screenshot): the frame as Screenshots/screenshotN.jpg (or .png, per Screenshot format) next to the remake (never in stable's folder)
             if (Input.IsKeyPressed(Config.Key("keyScreenshot", KeyboardKey.F12)))
             {
+                if (Input.ShiftHeld) Toast.Show("You must be logged in to upload screenshots."); // stable offline: Shift+F12 saves and says this first
                 Rlgl.DrawRenderBatchActive();
                 var dir = Path.Combine(AppContext.BaseDirectory, "Screenshots");
                 Directory.CreateDirectory(dir);
