@@ -129,6 +129,7 @@ sealed class SongSelect : Screen
     static volatile int loadDone, loadTotal;
     // maps read from their .osu that still need their star ratings (worked out in the background once the list is up)
     static List<DbBeatmap> unrated = [];
+    Task? rating;
 
     static List<BeatmapSet> LoadLibrary()
     {
@@ -873,7 +874,7 @@ sealed class SongSelect : Screen
             // instead of one each time a new title scrolls into view)
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
             // like stable's background difficulty calculation: new maps' stars fill in while the list is already up
-            if (unrated.Count > 0) { var todo = unrated; unrated = []; Task.Run(() => { foreach (var b in todo) RateStars(b); rankedFor = null; }); }
+            if (unrated.Count > 0) { var todo = unrated; unrated = []; rating = Task.Run(() => { foreach (var b in todo) RateStars(b); rankedFor = null; }); }
             ApplyFilter(again);
             if (reselect == null && filter.Length == 0 && view.Count > 0)
             {
@@ -885,6 +886,8 @@ sealed class SongSelect : Screen
             }
             reselect = null;
         }
+        // the new maps' star ratings are in: re-sort (by difficulty they all sat at 0 stars), keeping the selection
+        if (rating is { IsCompleted: true }) { rating = null; ApplyFilter(); }
         PollScores();
         UpdatePreview(menu);
         UpdateTiming();
