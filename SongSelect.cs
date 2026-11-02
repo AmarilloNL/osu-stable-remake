@@ -130,6 +130,12 @@ sealed class SongSelect : Screen
     // maps read from their .osu that still need their star ratings (worked out in the background once the list is up)
     static List<DbBeatmap> unrated = [];
     Task? rating;
+    static Task RunLowPriority(Action work)
+    {
+        var done = new TaskCompletionSource();
+        new Thread(() => { try { work(); } finally { done.SetResult(); } }) { IsBackground = true, Priority = ThreadPriority.BelowNormal }.Start();
+        return done.Task;
+    }
 
     static List<BeatmapSet> LoadLibrary()
     {
@@ -874,7 +880,8 @@ sealed class SongSelect : Screen
             // instead of one each time a new title scrolls into view)
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
             // like stable's background difficulty calculation: new maps' stars fill in while the list is already up
-            if (unrated.Count > 0) { var todo = unrated; unrated = []; rating = Task.Run(() => { foreach (var b in todo) RateStars(b); rankedFor = null; }); }
+            // (on a low-priority thread: thousands of new maps can take minutes, and a play shouldn't stutter meanwhile)
+            if (unrated.Count > 0) { var todo = unrated; unrated = []; rating = RunLowPriority(() => { foreach (var b in todo) RateStars(b); rankedFor = null; }); }
             ApplyFilter(again);
             if (reselect == null && filter.Length == 0 && view.Count > 0)
             {
