@@ -189,9 +189,8 @@ sealed partial class Player
             u = h / 480f; sd = h / 768f;
             var mouse = Input.GetMousePosition();
 
+            // stable's ranking screen keys: Esc back, F2 export, Space / Enter skip the animations (retry and watch are buttons only)
             if (Input.IsKeyPressed(KeyboardKey.Escape)) Back();
-            else if (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.Grave)) Retry();
-            else if (Input.IsKeyPressed(KeyboardKey.W)) Watch();
             else if (Input.IsKeyPressed(KeyboardKey.F2)) Export();
             else if (Input.IsKeyPressed(KeyboardKey.Space) || Input.IsKeyPressed(KeyboardKey.Enter)) SkipAnimations();
             else if (Input.IsMouseButtonPressed(MouseButton.Left))
