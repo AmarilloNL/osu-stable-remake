@@ -242,6 +242,7 @@ sealed class MainMenu : Screen
     // at 60%. A click plays that song (on the playing one it closes the window), Up / Down step through, Esc closes.
     // At most 250 rows. (stable's collection dropdown isn't here.)
     double jumpAt = double.NaN;
+    internal bool JumpOpen => !double.IsNaN(jumpAt);
     string jumpFilter = "";
     List<DbBeatmap> jumpList = [];
     float[] jumpHover = [];
@@ -291,7 +292,7 @@ sealed class MainMenu : Screen
             songs.MusicJump(jumpList[to]);
             ScrollJumpTo(to);
         }
-        jumpScroll = Math.Clamp(jumpScroll - Input.GetMouseWheelMove() * 45, 0, Math.Max(0, jumpList.Count * 30 - 360));
+        jumpScroll = Math.Clamp(jumpScroll - VolumeControl.Wheel * 45, 0, Math.Max(0, jumpList.Count * 30 - 360));
         var mouse = Input.GetMousePosition();
         int over = mouse.X >= 10 * u && mouse.X < w - 20 * u && mouse.Y >= 80 * u && mouse.Y < 440 * u ? (int)((mouse.Y / u - 80 + jumpScroll) / 30) : -1;
         if (over >= jumpList.Count) over = -1;

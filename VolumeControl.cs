@@ -73,7 +73,7 @@ static class VolumeControl
         }
 
         bool hovered = Master.Hovered || Effect.Hovered || Music.Hovered;
-        bool active = alt || hovered || Game.Screen is MainMenu
+        bool active = alt || hovered || Game.Screen is MainMenu { JumpOpen: false } // (the Jump To window scrolls with it)
             || player != null && !Config.GetBool("MouseDisableWheel", false);
         if (raw != 0 && active)
         {
