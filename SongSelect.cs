@@ -901,7 +901,7 @@ sealed class SongSelect : Screen
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
             // like stable's background difficulty calculation: new maps' stars fill in while the list is already up
             // (on a low-priority thread: thousands of new maps can take minutes, and a play shouldn't stutter meanwhile)
-            if (unrated.Count > 0) { var todo = unrated; unrated = []; var keep = cacheEntries; rating = RunLowPriority(() => { foreach (var b in todo) RateStars(b); rankedFor = null; OsuDb.SaveMapCache(keep); }); }
+            if (unrated.Count > 0) { var todo = unrated; unrated = []; var keep = cacheEntries; rating = RunLowPriority(() => { var sw = Stopwatch.StartNew(); foreach (var b in todo) RateStars(b); rankedFor = null; OsuDb.SaveMapCache(keep); Console.Error.WriteLine($"star ratings for {todo.Count} new maps in {sw.Elapsed.TotalSeconds:0.0}s"); }); }
             ApplyFilter(again);
             if (reselect == null && filter.Length == 0 && view.Count > 0)
             {
