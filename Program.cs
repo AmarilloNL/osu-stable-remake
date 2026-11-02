@@ -516,7 +516,8 @@ static class Game
             last = now;
             stats.Add(dt);
 
-            if (Input.AltEnterPressed) SetFullscreen(DisplayMode() != "Fullscreen"); // like the options' toggle
+            // like the options' toggle; stable takes Alt+Enter only in the main menu and song select (and the lobby)
+            if (Input.AltEnterPressed && Screen is MainMenu or SongSelect or Options) SetFullscreen(DisplayMode() != "Fullscreen");
 
             Input.Update(now / 1000);
             if (!testRun) { ConfineCursor(); ApplySensitivity(); }
