@@ -861,6 +861,9 @@ sealed class SongSelect : Screen
     void Play(Mods mods)
     {
         if (Selected is not { } b) return;
+        // stable, however the play starts (Enter, the panel, the logo): Ctrl held makes it an Auto play and Ctrl+Shift
+        // a Cinema one, for this play only (the selected mods stay as they are)
+        if (Input.CtrlHeld) mods = mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay | (Input.ShiftHeld ? Mods.Cinema : Mods.None);
         try
         {
             var map = Beatmap.Load(b.FilePath, mods: mods);
@@ -1098,7 +1101,7 @@ sealed class SongSelect : Screen
             if (Grouped && focusGroup >= 0 && focusEntry < 0) { ToggleGroup(focusGroup); return; }
             if (Grouped && focusGroup >= 0 && (focusGroup != groupIndex || focusEntry != setIndex)) { SelectEntry(focusGroup, focusEntry); return; }
             if (!Grouped && focusRow >= 0) { SelectRun(RowInfo(focusRow).Set); return; }
-            Play(Input.CtrlHeld ? mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay : mods);
+            Play(mods);
             return;
         }
 
