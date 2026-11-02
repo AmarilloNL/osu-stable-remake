@@ -153,8 +153,10 @@ sealed class MainMenu : Screen
     // stable's Now Playing controls (y measured): FontAwesome icons 20 units apart from 136 to 16 units
     // in from the right edge, growing to 1.2x on hover over 100ms, and a 134x3-unit seek bar (additive track and
     // fill) 143 units in at y 40. Each click plays a sound and shows a notice in the centre band.
-    // TODO: the notice wording is from memory (stable's exact text is unknown); the list button does nothing yet.
+    // The notices << Prev, >> Next, Play, Pause / Unpause are stable's (checked); Stop's and the info toggle's wording
+    // is unverified, and the list button does nothing yet.
     static readonly int[] MusicIcons = [0xf048, 0xf04b, 0xf04c, 0xf04d, 0xf051, 0xf129, 0xf0c9];
+    static readonly string[] MusicTips = ["Previous track", "Play", "Pause", "Stop the music!", "Next track", "View song info", "Jump To window"]; // stable's
     readonly float[] musicHover = new float[MusicIcons.Length];
 
     // The controls drop 20 units over 400ms on each song change and go back up 7.6-8s later (unless
@@ -248,6 +250,12 @@ sealed class MainMenu : Screen
         if (songs.Music is { } m && m.LengthMs > 0)
             DrawRectangleRec(seek with { Width = seek.Width * (float)Math.Clamp(songs.MusicMs / m.LengthMs, 0, 1) }, ColorAlpha(new Color(255, 255, 255, 128), layer));
         EndBlendMode();
+        if (layer <= 0) return;
+        var mouse = Input.GetMousePosition();
+        for (int i = 0; i < MusicIcons.Length; i++)
+            if (CheckCollisionPointRec(mouse, MusicButtonRect(i))) Options.DrawScreenTooltip(MusicTips[i], mouse);
+        if (CheckCollisionPointRec(mouse, new Rectangle(seek.X, seek.Y - 3 * u, seek.Width, seek.Height + 6 * u)))
+            Options.DrawScreenTooltip("Click to seek to a specific point in the song.", mouse);
     }
 
     void DrawTip(double now)
