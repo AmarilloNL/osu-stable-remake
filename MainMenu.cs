@@ -317,7 +317,7 @@ sealed class MainMenu : Screen
         bool changed = false;
         for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed()) { jumpFilter += char.ConvertFromUtf32(ch); changed = true; SongSelect.TypingSound("key-press"); }
         if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && jumpFilter.Length > 0)
-        { jumpFilter = jumpFilter[..^1]; changed = true; SongSelect.TypingSound("key-delete"); }
+        { jumpFilter = SongSelect.DeleteBack(jumpFilter); changed = true; SongSelect.TypingSound("key-delete"); }
         if (changed) BuildJumpList();
         int cur = JumpCurrent();
         int step = Input.IsKeyPressed(KeyboardKey.Down) ? 1 : Input.IsKeyPressed(KeyboardKey.Up) ? -1 : 0;
@@ -347,8 +347,8 @@ sealed class MainMenu : Screen
         Game.Text("Collections:", 11.6f * u, 30 * u, 20 * u, ColorAlpha(new Color(254, 220, 97, 255), fade));
         Game.Text(jumpCollection ?? "All", 12 * u, 56 * u, 10.7f * u, white);
         Options.DrawIcon(0xf078, 142 * u, 61.5f * u, 10.5f * u, white);
-        string search = jumpFilter.Length > 0 ? jumpFilter : "Type to search!";
-        Game.Text(search, w - 35 * u - Game.TextWidth(search, 20 * u), 50 * u, 20 * u, white);
+        string search = jumpFilter.Length > 0 ? jumpFilter : "Type to search!"; // right-aligned without trailing spaces (stable measures them out)
+        Game.Text(search, w - 35 * u - Game.TextWidth(search.TrimEnd(), 20 * u), 50 * u, 20 * u, white);
         Options.DrawIcon(0xf002, w - 22.7f * u, 61 * u, 16.5f * u, white);
         DrawRectangleRec(new Rectangle(10 * u, 79 * u, w - 20 * u, u), white);
         DrawRectangleRec(new Rectangle(10 * u, 440 * u, w - 20 * u, u), white);

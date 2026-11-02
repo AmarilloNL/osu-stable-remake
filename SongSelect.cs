@@ -892,6 +892,10 @@ sealed class SongSelect : Screen
 
     static bool Pressed(KeyboardKey k) => Input.IsKeyPressed(k) || Input.IsKeyPressedRepeat(k);
 
+    // Backspace in stable's text boxes: one character, or with Ctrl the last word ("my love" -> "my ")
+    internal static string DeleteBack(string s) =>
+        !Input.CtrlHeld ? s[..^1] : s.TrimEnd().LastIndexOf(' ') is var sp and >= 0 ? s.TrimEnd()[..(sp + 1)] : "";
+
     // The main menu we return to on Esc/back (null: quit instead).
     internal Screen? Menu;
     internal DbBeatmap? Current => Selected;
@@ -1121,8 +1125,7 @@ sealed class SongSelect : Screen
         }
         if (Pressed(KeyboardKey.Backspace) && filter.Length > 0)
         {
-            // stable: Ctrl+Backspace deletes the last word ("my love" -> "my ")
-            filter = !Input.CtrlHeld ? filter[..^1] : filter.TrimEnd().LastIndexOf(' ') is var sp and >= 0 ? filter.TrimEnd()[..(sp + 1)] : "";
+            filter = DeleteBack(filter);
             changed = true;
             TypingSound("key-delete");
         }

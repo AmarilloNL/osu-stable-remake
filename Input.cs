@@ -48,7 +48,7 @@ static class Input
                 case "up" or "rup": script.Add(new(t, Kind.MouseUp, B())); break;
                 case "move": script.Add(new(t, Kind.Move, Pos: P(1))); break;
                 case "wheel": script.Add(new(t, Kind.Wheel, (int)F(a[1]))); break;
-                case "text": script.Add(new(t, Kind.Text, Text: a[1])); break;
+                case "text": script.Add(new(t, Kind.Text, Text: string.Join(' ', a[1..]))); break;
                 default: throw new FormatException("--input: unknown event " + part);
             }
         }
