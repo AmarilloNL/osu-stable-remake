@@ -781,19 +781,39 @@ sealed class Options : Screen
             if (skin.Frame(name, 0) is { } j) j.Draw(new Vector2(ox + x * u, cy), js, Color.White);
     }
 
-    // stable's tooltips outside the options panel are bigger and darker (measured at 1080p over song select's web
-    // button and the mod icons): 9.1-unit text 4px inside a box 10px right of and below the cursor, near-black at 88%
-    // with a 1px grey (80) edge and slightly rounded corners.
+    // stable's tooltip everywhere but the options panel: text of size 9 - (height - 1024) / 256 (ours renders ~3.5%
+    // narrower, so a touch more), 4px inside a (10, 10, 10) box at 230 with a grey (80) edge, 10px right of and below
+    // the cursor and kept on the screen; wider than 400 units it wraps. It fades in over 200ms once hovered for 120ms.
+    static string? tipText;
+    static double tipSince, tipLast;
     internal static void DrawScreenTooltip(string text, Vector2 mouse)
     {
-        float u = GetScreenHeight() / 480f, px = u / 2.25f, ts = 9.1f * u, lineH = 11.5f * u;
-        var lines = text.Split('\n');
-        float bw = lines.Max(l => Game.TextWidth(l, ts)) + 9 * px, bh = 22 * px + (lines.Length - 1) * lineH;
-        var box = new Rectangle(mouse.X + 10 * px, mouse.Y + 10 * px, bw, bh);
+        double now = Game.NowMs;
+        if (text != tipText || now - tipLast > 100) { tipText = text; tipSince = now; } // a new hover
+        tipLast = now;
+        float a = (float)Math.Clamp((now - tipSince - 120) / 200, 0, 1);
+        if (a <= 0) return;
+        int w = GetScreenWidth(), h = GetScreenHeight();
+        float u = h / 480f, px = u / 2.25f, ts = (9 - (h - 1024) / 256f) * 1.035f * u, lineH = ts * 1.26f;
+        var lines = new List<string>();
+        foreach (var line in text.Split('\n'))
+        {
+            string cur = "";
+            foreach (var word in line.Split(' '))
+            {
+                string next = cur.Length == 0 ? word : cur + " " + word;
+                if (cur.Length > 0 && Game.TextWidth(next, ts) > 400 * u) { lines.Add(cur); cur = word; }
+                else cur = next;
+            }
+            lines.Add(cur);
+        }
+        float bw = lines.Max(l => Game.TextWidth(l, ts)) + 9 * px, bh = ts * 1.075f + (lines.Count - 1) * lineH;
+        float x = Math.Min(mouse.X + 10 * px, w - bw), y = Math.Min(mouse.Y + 10 * px, h - bh);
+        var box = new Rectangle(x, y, bw, bh);
         float round = Math.Min(1, 6 * px / Math.Min(bw, bh));
-        DrawRectangleRounded(box, round, 4, new Color(8, 8, 8, 224));
-        DrawRectangleRoundedLinesEx(box, round, 4, 1, new Color(80, 80, 80, 255));
-        for (int i = 0; i < lines.Length; i++) Game.Text(lines[i], box.X + 4 * px, box.Y + (22 * px - ts) / 2 + i * lineH, ts, Color.White);
+        DrawRectangleRounded(box, round, 4, new Color(10, 10, 10, (int)(230 * a)));
+        DrawRectangleRoundedLinesEx(box, round, 4, 1, new Color(80, 80, 80, (int)(255 * a)));
+        for (int i = 0; i < lines.Count; i++) Game.Text(lines[i], x + 4 * px, y + (ts * 1.075f - ts) / 2 + i * lineH, ts, ColorAlpha(Color.White, a));
     }
 
     // stable's options panel tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint

@@ -168,6 +168,6 @@ sealed partial class Player
             else DrawRing(c, 2.9f * u, 3.6f * u, 0, 360, 24, col);
             Game.Text(rows[i].Label, r.X + 17.4f * u, c.Y - 6.8f * u, 12.45f * u, enabled ? Color.White : Xna.Gray);
         }
-        if (overDim) Options.DrawTooltip($"{dim}% dimmed", mouseAt); // stable's slider tooltip
+        if (overDim) Options.DrawScreenTooltip($"{dim}% dimmed", mouseAt); // stable's slider tooltip
     }
 }

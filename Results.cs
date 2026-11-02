@@ -350,7 +350,7 @@ sealed partial class Player
             }
         }
 
-        void DrawTooltip(Vector2 mouse) => Options.DrawTooltip(tooltip, mouse); // stable's tooltip box
+        void DrawTooltip(Vector2 mouse) => Options.DrawScreenTooltip(tooltip, mouse); // stable's tooltip box
 
         void DrawTopBar()
         {
