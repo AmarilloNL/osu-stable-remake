@@ -21,6 +21,7 @@ enum Mods
     SpunOut = 4096,
     Autopilot = 8192,
     Perfect = 16384, // always set together with SuddenDeath
+    Cinema = 1 << 22, // always set together with Autoplay
     ScoreV2 = 1 << 29,
 }
 
@@ -63,7 +64,7 @@ static class ModInfo
         var parts = new List<string>();
         void Add(Mods f, string s) { if (m.HasFlag(f)) parts.Add(s); }
         // stable's order (its score lists): ScoreV2, Auto, SO, EZ, NF, HD, NC/DT, HT, HR, RX/AP, PF/SD, FL
-        Add(Mods.ScoreV2, "ScoreV2"); Add(Mods.Autoplay, "Auto"); Add(Mods.SpunOut, "SO");
+        Add(Mods.ScoreV2, "ScoreV2"); if (m.HasFlag(Mods.Cinema)) parts.Add("Cinema"); else Add(Mods.Autoplay, "Auto"); Add(Mods.SpunOut, "SO");
         Add(Mods.Easy, "EZ"); Add(Mods.NoFail, "NF"); Add(Mods.Hidden, "HD");
         if (m.HasFlag(Mods.Nightcore)) parts.Add("NC"); else Add(Mods.DoubleTime, "DT");
         Add(Mods.HalfTime, "HT"); Add(Mods.HardRock, "HR");
@@ -73,7 +74,7 @@ static class ModInfo
         return parts.Count == 0 ? "No mods" : string.Join(" ", parts);
     }
 
-    // stable's mod-select hotkeys. S and D cycle SD -> PF -> off and DT -> NC -> off.
+    // stable's mod-select hotkeys. S, D and V cycle SD -> PF -> off, DT -> NC -> off and Auto -> Cinema -> off.
     public static Mods Toggle(Mods m, KeyboardKey key) => key switch
     {
         KeyboardKey.Q => Flip(m, Mods.Easy, Mods.HardRock),
@@ -91,7 +92,9 @@ static class ModInfo
         KeyboardKey.Z => Flip(m, Mods.Relax, Mods.Autopilot | Mods.Autoplay),
         KeyboardKey.X => Flip(m, Mods.Autopilot, Mods.Relax | Mods.Autoplay | Mods.SpunOut),
         KeyboardKey.C => Flip(m, Mods.SpunOut, Mods.Autopilot | Mods.Autoplay),
-        KeyboardKey.V => Flip(m, Mods.Autoplay, Mods.Relax | Mods.Autopilot),
+        KeyboardKey.V => m.HasFlag(Mods.Cinema) ? m & ~(Mods.Autoplay | Mods.Cinema)
+                   : m.HasFlag(Mods.Autoplay) ? m | Mods.Cinema
+                   : Flip(m, Mods.Autoplay, Mods.Relax | Mods.Autopilot),
         KeyboardKey.B => Flip(m, Mods.ScoreV2, Mods.None),
         _ => m,
     };
@@ -107,7 +110,7 @@ static class ModInfo
                 "EZ" => Mods.Easy, "NF" => Mods.NoFail, "HT" => Mods.HalfTime, "HR" => Mods.HardRock,
                 "SD" => Mods.SuddenDeath, "PF" => Mods.SuddenDeath | Mods.Perfect, "DT" => Mods.DoubleTime,
                 "NC" => Mods.DoubleTime | Mods.Nightcore, "HD" => Mods.Hidden, "FL" => Mods.Flashlight,
-                "RX" => Mods.Relax, "AP" => Mods.Autopilot, "SO" => Mods.SpunOut, "AT" => Mods.Autoplay, "V2" => Mods.ScoreV2,
+                "RX" => Mods.Relax, "AP" => Mods.Autopilot, "SO" => Mods.SpunOut, "AT" => Mods.Autoplay, "CN" => Mods.Autoplay | Mods.Cinema, "V2" => Mods.ScoreV2,
                 _ => Mods.None,
             };
         return m;

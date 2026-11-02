@@ -87,6 +87,10 @@ sealed partial class Player : Screen
 
     readonly Mods mods;
     readonly bool auto, relax, autopilot;
+    // stable's Cinema (Auto's second state): an Auto play showing only the background, video and storyboard - no
+    // objects, interface, cursor or bursts (the hitsounds still play) - that goes back to song select at the end
+    readonly bool cinema;
+    internal bool Cinema => cinema;
     readonly double rate, modMul;
     readonly Health health;
     bool failed;
@@ -150,6 +154,7 @@ sealed partial class Player : Screen
         this.back = back;
         this.mods = mods;
         auto = mods.HasFlag(Mods.Autoplay);
+        cinema = auto && mods.HasFlag(Mods.Cinema);
         relax = mods.HasFlag(Mods.Relax);
         autopilot = mods.HasFlag(Mods.Autopilot);
         rate = mods.Rate();
@@ -734,6 +739,7 @@ sealed partial class Player : Screen
 
         if (UpdateStartHold(dtMs)) return;
         // The results screen takes over (and disposes us later), so the outro keeps playing like stable.
+        if (finished && cinema) { Leave(back); return; } // stable: Cinema ends at song select
         if (finished) // stable goes to the ranking screen through black too
         {
             if (VirtualClock) Game.Screen = new Results(this);
@@ -1489,7 +1495,7 @@ sealed partial class Player : Screen
             score += 1100;
             V2Bonus(500);
             health.Apply(HpEvent.SpinnerBonus);
-            skin.Sound("spinnerbonus")?.Play(BeatmapSamples.EffectVolume);
+            if (!cinema) skin.Sound("spinnerbonus")?.Play(BeatmapSamples.EffectVolume);
         }
         else if (s.SpinsCounted > 1 && s.SpinsCounted % 2 == 0)
         {
@@ -1604,6 +1610,19 @@ sealed partial class Player : Screen
         float sbDim = 1 - bgDim / 100f;
         bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
+        if (!cinema) DrawPlayfield(w, h);
+        if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: true);
+        if (!cinema)
+        {
+            DrawBreakOverlays(w, h);
+            if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
+            DrawHud(w, h);
+        }
+        DrawOverlays(w, h);
+    }
+
+    void DrawPlayfield(int w, int h)
+    {
         UpdateComboBursts();
         DrawComboBursts(w, h);
         DrawLightings();
@@ -1647,11 +1666,10 @@ sealed partial class Player : Screen
         }
         DrawPopups(3);
         DrawPopups(4);
+    }
 
-        if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: true);
-        DrawBreakOverlays(w, h);
-        if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
-        DrawHud(w, h);
+    void DrawOverlays(int w, int h)
+    {
         DrawEpilepsyWarning(w, h);
         if (retryHold > 0) DrawRectangle(0, 0, w, h, ColorAlpha(Color.Black, (float)(retryHold / 100)));
         if (paused && resumePending) DrawResume();
@@ -1669,6 +1687,7 @@ sealed partial class Player : Screen
         }
         if (!double.IsNaN(LeftSongSelectAt)) back.DrawLeaving(Game.NowMs - LeftSongSelectAt);
         DrawVisualSettings(w, h);
+        if (cinema) return;
         UpdateBreakStars(auto && playback == null ? autoKeys : inputKeys);
         DrawBreakStars();
         var cursorAt = auto || autopilot || playback != null ? ToScreen(cursor) : Input.GetMousePosition();

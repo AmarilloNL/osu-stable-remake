@@ -490,7 +490,7 @@ sealed class SongSelect : Screen
     // quarter alpha, under the panels
     static readonly (Mods Flag, string Name)[] CaptionOrder =
     [
-        (Mods.ScoreV2, "ScoreV2"), (Mods.Autoplay, "Autoplay"), (Mods.SpunOut, "SpunOut"), (Mods.Easy, "Easy"), (Mods.NoFail, "NoFail"),
+        (Mods.ScoreV2, "ScoreV2"), (Mods.Cinema, "Cinema"), (Mods.Autoplay, "Autoplay"), (Mods.SpunOut, "SpunOut"), (Mods.Easy, "Easy"), (Mods.NoFail, "NoFail"),
         (Mods.Hidden, "Hidden"), (Mods.Nightcore, "Nightcore"), (Mods.DoubleTime, "DoubleTime"), (Mods.HalfTime, "HalfTime"),
         (Mods.HardRock, "HardRock"), (Mods.Relax, "Relax"), (Mods.Autopilot, "AutoPilot"), (Mods.Perfect, "Perfect"),
         (Mods.SuddenDeath, "SuddenDeath"), (Mods.Flashlight, "Flashlight"),
@@ -503,7 +503,7 @@ sealed class SongSelect : Screen
         if (mods != captionMods)
         {
             captionMods = mods;
-            caption = string.Join(",", CaptionOrder.Where(c => mods.HasFlag(c.Flag)
+            caption = string.Join(",", CaptionOrder.Where(c => mods.HasFlag(c.Flag) && !(c.Flag == Mods.Autoplay && mods.HasFlag(Mods.Cinema))
                 && !(c.Flag == Mods.DoubleTime && mods.HasFlag(Mods.Nightcore)) && !(c.Flag == Mods.SuddenDeath && mods.HasFlag(Mods.Perfect))).Select(c => c.Name));
         }
         if (caption.Length == 0) return;
@@ -2288,7 +2288,7 @@ sealed class SongSelect : Screen
         ("Difficulty Reduction", new Color(50, 205, 50, 255), [(KeyboardKey.Q, Mods.Easy, Mods.None, "easy", ""), (KeyboardKey.W, Mods.NoFail, Mods.None, "nofail", ""), (KeyboardKey.E, Mods.HalfTime, Mods.None, "halftime", "")]),
         ("Difficulty Increase", new Color(255, 69, 0, 255), [(KeyboardKey.A, Mods.HardRock, Mods.None, "hardrock", ""), (KeyboardKey.S, Mods.SuddenDeath, Mods.Perfect, "suddendeath", "perfect"),
             (KeyboardKey.D, Mods.DoubleTime, Mods.Nightcore, "doubletime", "nightcore"), (KeyboardKey.F, Mods.Hidden, Mods.None, "hidden", ""), (KeyboardKey.G, Mods.Flashlight, Mods.None, "flashlight", "")]),
-        ("Special", Color.White, [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.X, Mods.Autopilot, Mods.None, "relax2", ""), (KeyboardKey.C, Mods.SpunOut, Mods.None, "spunout", ""), (KeyboardKey.V, Mods.Autoplay, Mods.None, "autoplay", ""),
+        ("Special", Color.White, [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.X, Mods.Autopilot, Mods.None, "relax2", ""), (KeyboardKey.C, Mods.SpunOut, Mods.None, "spunout", ""), (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"),
             (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")]),
     ];
     const string ModBlurb = "Mods provide different ways to enjoy gameplay. Some have an effect on the score you can achieve during ranked play. Others are just for fun.";
@@ -2392,7 +2392,7 @@ sealed class SongSelect : Screen
                 if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * u)
                 {
                     var (_, flag, alt, _, _) = ModRows[r].Mods[c];
-                    Options.DrawScreenTooltip(ModTips[alt != Mods.None && mods.HasFlag(alt) ? alt : flag], mouse);
+                    if (ModTips.TryGetValue(alt != Mods.None && mods.HasFlag(alt) ? alt : flag, out var tip)) Options.DrawScreenTooltip(tip, mouse); // (stable has no text for Cinema)
                 }
     }
 
@@ -2465,7 +2465,7 @@ sealed class SongSelect : Screen
     // the cursor, added on, growing 0.05 -> 0.5 (Out) and fading out from 20% over 700ms.
     static readonly List<(Vector2 Pos, double At)> ripples = [];
     // (stable leaves them out during active play)
-    internal static void Ripple(Vector2 at) { if (Config.GetBool("CursorRipple", false) && Game.Screen is not Player { ActivePlay: true }) ripples.Add((at, Game.NowMs)); }
+    internal static void Ripple(Vector2 at) { if (Config.GetBool("CursorRipple", false) && Game.Screen is not (Player { ActivePlay: true } or Player { Cinema: true })) ripples.Add((at, Game.NowMs)); }
 
     static void DrawRipples()
     {
