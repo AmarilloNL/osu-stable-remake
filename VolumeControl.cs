@@ -56,7 +56,7 @@ static class VolumeControl
         float raw = Input.GetMouseWheelMove();
         Wheel = raw;
         var player = Game.Screen as Player;
-        bool alt = Input.IsKeyDown(KeyboardKey.LeftAlt) || Input.IsKeyDown(KeyboardKey.RightAlt);
+        bool alt = Input.AltHeld;
         bool hoverable = player is not { Playing: true };
 
         foreach (var m in Meters)

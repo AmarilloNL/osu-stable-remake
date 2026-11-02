@@ -796,7 +796,7 @@ sealed partial class Player : Screen
         if (paused) return;
         // stable's quick retry: holding the Quick Retry key (or Ctrl+R) fills 10 a 60Hz tick and retries at 100;
         // letting go drains 3 a tick. The screen fades to black with it.
-        bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyDown(KeyboardKey.R);
+        bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.CtrlHeld && Input.IsKeyDown(KeyboardKey.R);
         if (!retryHeld) retryArmed = true; // a retry needs the key let go first (it's usually still held when the new play starts)
         retryHold = retryHeld && retryArmed ? Math.Min(100, retryHold + 10 * dtMs / (1000 / 60.0)) : Math.Max(0, retryHold - 3 * dtMs / (1000 / 60.0));
         if (retryHold >= 100) { Retry(quick: true); return; }
@@ -808,7 +808,7 @@ sealed partial class Player : Screen
             Config.SetOwn("MouseDisableButtons", mouseButtons ? "0" : "1");
             Notification.Show(mouseButtons ? "Mouse buttons are enabled." : "Mouse buttons are disabled.", 1000);
         }
-        int offsetStep = Input.IsKeyDown(KeyboardKey.LeftShift) ? 1 : 5;
+        int offsetStep = Input.ShiftHeld ? 1 : 5;
         if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
         if (Input.IsKeyPressed(Config.Key("keyDecreaseAudioOffset", KeyboardKey.Minus)) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);
         // stable: the skip key does nothing during Auto (measured; its Skip button still shows)

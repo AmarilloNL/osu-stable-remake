@@ -187,8 +187,7 @@ sealed class MainMenu : Screen
             : Input.IsKeyPressed(KeyboardKey.C) ? 2 : Input.IsKeyPressed(KeyboardKey.V) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Right) ? 4 : -1;
         // stable: F1 previous, F2 play, F3 pause, F4 stop (not Alt+F4), F5 next, F6 / J the Jump To window; none with
         // Shift, Ctrl or Alt held
-        bool mod = Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift) || Input.IsKeyDown(KeyboardKey.LeftControl)
-            || Input.IsKeyDown(KeyboardKey.RightControl) || Input.IsKeyDown(KeyboardKey.LeftAlt) || Input.IsKeyDown(KeyboardKey.RightAlt);
+        bool mod = Input.ShiftHeld || Input.CtrlHeld || Input.AltHeld;
         if (!mod && keyed < 0)
             keyed = Input.IsKeyPressed(KeyboardKey.F1) ? 0 : Input.IsKeyPressed(KeyboardKey.F2) ? 1 : Input.IsKeyPressed(KeyboardKey.F3) ? 2
                 : Input.IsKeyPressed(KeyboardKey.F4) ? 3 : Input.IsKeyPressed(KeyboardKey.F5) ? 4

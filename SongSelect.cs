@@ -943,7 +943,7 @@ sealed class SongSelect : Screen
         Game.Skin.UploadPrefetched();
         if (!Ambient()) return;
 
-        if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
         // stable offline: the chat keys open the options at sign-in
         if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, this); return; }
 
@@ -967,12 +967,12 @@ sealed class SongSelect : Screen
         }
 
         // stable: Ctrl+A toggles Auto outside the mod select too
-        if (Input.IsKeyDown(KeyboardKey.LeftControl) && Input.IsKeyPressed(KeyboardKey.A)) { mods = ModInfo.Toggle(mods, KeyboardKey.V); while (Input.GetCharPressed() != 0) { } }
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) { mods = ModInfo.Toggle(mods, KeyboardKey.V); while (Input.GetCharPressed() != 0) { } }
         if (Grouped)
         {
             if (Pressed(KeyboardKey.Down)) MoveFocus(1);
             if (Pressed(KeyboardKey.Up)) MoveFocus(-1);
-            bool shift = Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift);
+            bool shift = Input.ShiftHeld;
             if (Pressed(KeyboardKey.Right)) { if (shift) JumpGroup(1); else Sideways(1); }
             if (Pressed(KeyboardKey.Left)) { if (shift) JumpGroup(-1); else Sideways(-1); }
         }
@@ -992,10 +992,10 @@ sealed class SongSelect : Screen
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
         if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, []); return; } // stable: its import screen checks for new files
         // stable: Shift+Delete is the beatmap options' Delete...
-        if (Input.IsKeyPressed(KeyboardKey.Delete) && (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) && Selected != null)
+        if (Input.IsKeyPressed(KeyboardKey.Delete) && Input.ShiftHeld && Selected != null)
             Notification.Show(BeatmapOptions[1].Notice!, 3000);
         // F2: random map (stable's spin; F2 again stops it); Shift+F2: back to the one before the last random pick.
-        if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
+        if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.ShiftHeld);
         UpdateSpin(dtMs);
         float wheel = VolumeControl.Wheel;
         if (FocusRow != lastFocusRow) { lastFocusRow = FocusRow; wheelTarget = null; }
@@ -1082,19 +1082,19 @@ sealed class SongSelect : Screen
         }
         else dragVelocity = 0;
         // Ctrl+1..9 watches that local score.
-        if (Input.IsKeyDown(KeyboardKey.LeftControl))
+        if (Input.CtrlHeld)
             for (int n = 0; n < 9; n++)
                 if (Input.IsKeyPressed(KeyboardKey.One + n) && n < SelectedScores.Count) { Watch(SelectedScores[n]); return; }
         // Ctrl+Enter: this one play with Auto, like stable (the selected mods stay as they are).
-        if (Input.IsKeyPressed(KeyboardKey.Enter) && !Input.IsKeyDown(KeyboardKey.LeftAlt))
+        if (Input.IsKeyPressed(KeyboardKey.Enter))
         {
             // stable: Shift+Enter (grouped) closes / opens the group of the focus (else the selection)
-            if (Grouped && groups.Count > 0 && (Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift)) && !Input.IsKeyDown(KeyboardKey.LeftControl))
+            if (Grouped && groups.Count > 0 && Input.ShiftHeld && !Input.CtrlHeld)
             { ToggleGroup(focusGroup >= 0 ? focusGroup : groupIndex); return; }
             if (Grouped && focusGroup >= 0 && focusEntry < 0) { ToggleGroup(focusGroup); return; }
             if (Grouped && focusGroup >= 0 && (focusGroup != groupIndex || focusEntry != setIndex)) { SelectEntry(focusGroup, focusEntry); return; }
             if (!Grouped && focusRow >= 0) { SelectRun(RowInfo(focusRow).Set); return; }
-            Play(Input.IsKeyDown(KeyboardKey.LeftControl) ? mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay : mods);
+            Play(Input.CtrlHeld ? mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay : mods);
             return;
         }
 
@@ -1114,7 +1114,7 @@ sealed class SongSelect : Screen
         }
         if (Pressed(KeyboardKey.Backspace) && filter.Length > 0)
         {
-            filter = Input.IsKeyDown(KeyboardKey.LeftControl) ? "" : filter[..^1];
+            filter = Input.CtrlHeld ? "" : filter[..^1];
             changed = true;
             TypingSound("key-delete");
         }
@@ -2102,7 +2102,7 @@ sealed class SongSelect : Screen
             Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
             if (name == "selection-mode") { if (modeMenuAt < 0) OpenModeMenu(); else CloseModeMenu(); }
             else if (name == "selection-mods") OpenModSelect(!modSelect);
-            else if (name == "selection-random" && view.Count > 0) RandomKey(Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift));
+            else if (name == "selection-random" && view.Count > 0) RandomKey(Input.ShiftHeld);
             else if (name == "selection-options") OpenBeatmapOptions(); // stable's Beatmap Options dialog
             return true;
         }
