@@ -129,6 +129,7 @@ sealed class SongSelect : Screen
     static volatile int loadDone, loadTotal;
     // maps read from their .osu that still need their star ratings (worked out in the background once the list is up)
     static List<DbBeatmap> unrated = [];
+    static List<(string, long, long, DbBeatmap)> cacheEntries = [];
     Task? rating;
     static Task RunLowPriority(Action work)
     {
@@ -160,21 +161,34 @@ sealed class SongSelect : Screen
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Console.Error.WriteLine($"Songs folder: {e.Message}"); }
         var newMaps = new List<DbBeatmap>();
+        var toRate = new List<DbBeatmap>();
+        var cache = fresh.Count > 0 ? OsuDb.LoadMapCache() : new Dictionary<string, (long Length, long Ticks, DbBeatmap Map)>();
+        var keyed = new List<(string, long, long, DbBeatmap)>();
         if (fresh.Count > 0) { loadStage = "Reading new beatmaps…"; loadDone = 0; loadTotal = fresh.Count; }
         foreach (var dir in fresh)
         {
             try
             {
                 foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
-                    if (ReadMap(file, stars: false) is { } b) newMaps.Add(b);
+                {
+                    var fi = new FileInfo(file);
+                    string key = Path.GetFileName(dir) + "/" + fi.Name;
+                    long ticks = fi.LastWriteTimeUtc.Ticks;
+                    DbBeatmap? b = cache.TryGetValue(key, out var c) && c.Length == fi.Length && c.Ticks == ticks ? c.Map : null;
+                    if (b == null && ReadMap(file, stars: false) is { } read) { b = read; toRate.Add(read); }
+                    if (b == null) continue;
+                    newMaps.Add(b);
+                    keyed.Add((key, fi.Length, ticks, b));
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
             loadDone++;
         }
+        cacheEntries = keyed;
         if (fresh.Count > 0) Console.Error.WriteLine($"{fresh.Count} folders osu!.db doesn't list ({string.Join(", ", fresh.Take(5).Select(Path.GetFileName))}{(fresh.Count > 5 ? ", ..." : "")}): {newMaps.Count} maps");
         Console.Error.WriteLine($"library read in {clock.ElapsedMilliseconds}ms");
         all.AddRange(newMaps);
-        unrated = newMaps;
+        unrated = toRate;
         TotalBeatmaps = all.Count;
         for (int i = 0; i < all.Count; i++) all[i].BuildSearchKey(i > 0 ? all[i - 1] : null); // here, not on the first keystroke
         return [.. all.Where(b => b.Mode == 0)
@@ -881,7 +895,7 @@ sealed class SongSelect : Screen
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
             // like stable's background difficulty calculation: new maps' stars fill in while the list is already up
             // (on a low-priority thread: thousands of new maps can take minutes, and a play shouldn't stutter meanwhile)
-            if (unrated.Count > 0) { var todo = unrated; unrated = []; rating = RunLowPriority(() => { foreach (var b in todo) RateStars(b); rankedFor = null; }); }
+            if (unrated.Count > 0) { var todo = unrated; unrated = []; var keep = cacheEntries; rating = RunLowPriority(() => { foreach (var b in todo) RateStars(b); rankedFor = null; OsuDb.SaveMapCache(keep); }); }
             ApplyFilter(again);
             if (reselect == null && filter.Length == 0 && view.Count > 0)
             {

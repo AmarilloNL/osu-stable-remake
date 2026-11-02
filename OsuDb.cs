@@ -212,6 +212,66 @@ static class OsuDb
         return b;
     }
 
+    // Ours: the maps read from Songs folders osu!.db doesn't list (until stable lists them), so they needn't be read
+    // and rated again on every start. Keyed by folder/file with the file's size and write time; next to the exe.
+    static string CachePath => Path.Combine(AppContext.BaseDirectory, "remake-maps.cache");
+    const int CacheVersion = 1;
+    static readonly Mods[] CachedStars = [Mods.None, Mods.HardRock, Mods.Easy, Mods.DoubleTime, Mods.HalfTime,
+        Mods.HardRock | Mods.DoubleTime, Mods.Easy | Mods.DoubleTime, Mods.HardRock | Mods.HalfTime, Mods.Easy | Mods.HalfTime];
+
+    public static Dictionary<string, (long Length, long Ticks, DbBeatmap Map)> LoadMapCache()
+    {
+        var cache = new Dictionary<string, (long, long, DbBeatmap)>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var r = new BinaryReader(File.OpenRead(CachePath));
+            if (r.ReadInt32() != CacheVersion) return cache;
+            for (int n = r.ReadInt32(); n > 0; n--)
+            {
+                string key = r.ReadString();
+                long length = r.ReadInt64(), ticks = r.ReadInt64();
+                var b = new DbBeatmap
+                {
+                    Artist = r.ReadString(), ArtistUnicode = r.ReadString(), Title = r.ReadString(), TitleUnicode = r.ReadString(),
+                    Creator = r.ReadString(), Version = r.ReadString(), Source = r.ReadString(), Tags = r.ReadString(),
+                    AudioFile = r.ReadString(), OsuFile = r.ReadString(), Folder = r.ReadString(), Md5 = r.ReadString(),
+                    Mode = r.ReadByte(), AR = r.ReadSingle(), CS = r.ReadSingle(), OD = r.ReadSingle(), HP = r.ReadSingle(),
+                    PreviewMs = r.ReadInt32(), BeatmapId = r.ReadInt32(), SetId = r.ReadInt32(), Circles = r.ReadInt32(),
+                    Sliders = r.ReadInt32(), Spinners = r.ReadInt32(), DrainSeconds = r.ReadInt32(), TotalMs = r.ReadInt32(),
+                    MinBpm = r.ReadDouble(), MaxBpm = r.ReadDouble(), MainBpm = r.ReadDouble(), LastModified = r.ReadInt64(),
+                    Status = r.ReadByte(), Unplayed = true,
+                };
+                foreach (var m in CachedStars) if (r.ReadSingle() is var s && !float.IsNaN(s)) b.SetStars((int)m, s);
+                cache[key] = (length, ticks, b);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or EndOfStreamException or FormatException) { }
+        return cache;
+    }
+
+    public static void SaveMapCache(IEnumerable<(string Key, long Length, long Ticks, DbBeatmap Map)> maps)
+    {
+        try
+        {
+            var list = maps.ToList();
+            using var w = new BinaryWriter(File.Create(CachePath));
+            w.Write(CacheVersion);
+            w.Write(list.Count);
+            foreach (var (key, length, ticks, b) in list)
+            {
+                w.Write(key); w.Write(length); w.Write(ticks);
+                foreach (var s in new[] { b.Artist, b.ArtistUnicode, b.Title, b.TitleUnicode, b.Creator, b.Version, b.Source, b.Tags, b.AudioFile, b.OsuFile, b.Folder, b.Md5 })
+                    w.Write(s ?? "");
+                w.Write(b.Mode); w.Write(b.AR); w.Write(b.CS); w.Write(b.OD); w.Write(b.HP);
+                w.Write(b.PreviewMs); w.Write(b.BeatmapId); w.Write(b.SetId); w.Write(b.Circles); w.Write(b.Sliders); w.Write(b.Spinners);
+                w.Write(b.DrainSeconds); w.Write(b.TotalMs); w.Write(b.MinBpm); w.Write(b.MaxBpm); w.Write(b.MainBpm);
+                w.Write(b.LastModified); w.Write(b.Status);
+                foreach (var m in CachedStars) w.Write(b.StoredStars(m) ?? float.NaN);
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Console.Error.WriteLine($"map cache: {e.Message}"); }
+    }
+
     // stable's collection.db: version, then per collection a name and its beatmap MD5s.
     public static List<(string Name, HashSet<string> Md5s)> LoadCollections(string path)
     {
