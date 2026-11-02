@@ -407,7 +407,7 @@ sealed class SongSelect : Screen
     }
 
     // when the map was last played: stable's record or this client's latest saved replay, whichever is newer
-    DateTime? LastPlayedUtc(DbBeatmap d)
+    internal DateTime? LastPlayedUtc(DbBeatmap d)
     {
         DateTime? at = d.Unplayed || d.LastPlayed <= 0 ? null : new DateTime(d.LastPlayed, DateTimeKind.Utc);
         if (scores.TryGetValue(d.Md5, out var local) && local.Count > 0 && local.Max(r => r.Date).ToUniversalTime() is var mine && (at == null || mine > at)) at = mine;

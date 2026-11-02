@@ -236,8 +236,8 @@ sealed class MainMenu : Screen
         if (notice != null) Notification.Show(notice, 1000);
     }
 
-    // ---- stable's Jump To window (the list button): the library one row per set, filtered as you type (in the
-    // artist, title, creator, source and tags). Rows are 30 units tall in a 360-unit list from y 80 between white
+    // ---- stable's Jump To window (the list button): the library one row per set, most recently played first,
+    // filtered as you type (in "Artist - Title"). Rows are 30 units tall in a 360-unit list from y 80 between white
     // lines at 79 and 440, the text 20 units 5 down; a hovered row lights to 60% grey, the playing one cornflower blue
     // at 60%. A click plays that song (on the playing one it closes the window), Up / Down step through, Esc closes.
     // At most 250 rows. (stable's collection dropdown isn't here.)
@@ -259,10 +259,9 @@ sealed class MainMenu : Screen
 
     void BuildJumpList()
     {
-        var text = StringComparer.CurrentCulture;
-        jumpList = [.. songs.Library.Select(s => s.First)
-            .Where(b => jumpFilter.Length == 0 || $"{b.Artist} {b.Title} {b.Creator} {b.Source} {b.Tags}".Contains(jumpFilter, StringComparison.CurrentCultureIgnoreCase))
-            .OrderBy(b => b.Artist, text).ThenBy(b => b.Title, text).Take(250)];
+        jumpList = [.. songs.Library
+            .Where(s => jumpFilter.Length == 0 || $"{s.First.Artist} - {s.First.Title}".Contains(jumpFilter, StringComparison.CurrentCultureIgnoreCase))
+            .OrderByDescending(s => s.Diffs.Max(d => songs.LastPlayedUtc(d) ?? DateTime.MinValue)).Select(s => s.First).Take(250)];
         jumpHover = new float[jumpList.Count];
         jumpScroll = 0;
     }
@@ -321,7 +320,7 @@ sealed class MainMenu : Screen
             float a = i == cur ? 0.6f : 0.01f + 0.59f * jumpHover[i];
             DrawRectangleRec(new Rectangle(10 * u, y, w - 30 * u, 30 * u), ColorAlpha(i == cur ? new Color(100, 149, 237, 255) : new Color(50, 50, 50, 255), a * fade));
             var b = jumpList[i];
-            Game.Text($"{b.ShownArtist} - {b.ShownTitle}", 10 * u, y + 5 * u, 20 * u, white);
+            Game.Text(b.BothUnicode ? $"{b.ArtistUnicode} - {b.TitleUnicode}" : $"{b.Artist} - {b.Title}", 10 * u, y + 5 * u, 20 * u, white);
         }
         EndScissorMode();
     }
