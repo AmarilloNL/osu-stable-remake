@@ -153,7 +153,7 @@ sealed class MainMenu : Screen
     // stable's Now Playing controls (y measured): FontAwesome icons 20 units apart from 136 to 16 units
     // in from the right edge, growing to 1.2x on hover over 100ms, and a 134x3-unit seek bar (additive track and
     // fill) 143 units in at y 40. Each click plays a sound and shows a notice in the centre band.
-    // The notices << Prev, >> Next, Play, Pause / Unpause are stable's (checked); Stop's and the info toggle's wording
+    // The notices << Prev, >> Next, Play, Pause / Unpause and Stop Playing are stable's (checked); the info toggle's wording
     // is unverified. The list button opens the Jump To window.
     static readonly int[] MusicIcons = [0xf048, 0xf04b, 0xf04c, 0xf04d, 0xf051, 0xf129, 0xf0c9];
     static readonly string[] MusicTips = ["Previous track", "Play", "Pause", "Stop the music!", "Next track", "View song info", "Jump To window"]; // stable's
@@ -230,7 +230,7 @@ sealed class MainMenu : Screen
             0 => "<< Prev",
             1 => "Play",
             2 => songs.MusicPause() ? "Pause" : "Unpause",
-            3 => "Stop playing",
+            3 => "Stop Playing",
             4 => ">> Next",
             5 => ToggleSongInfo(),
             _ => null,
