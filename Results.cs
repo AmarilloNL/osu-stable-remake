@@ -114,6 +114,7 @@ sealed partial class Player
         }
 
         void Leave(Func<Screen> next) => Game.FadeTo(next, Cleanup); // stable's ranking screen leaves through black
+        public override void CloseRequested() => Leave(() => p.back); // stable: back to song select
 
         void Back()
         {

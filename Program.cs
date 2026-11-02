@@ -12,6 +12,9 @@ abstract class Screen
     public abstract void Update(double dtMs);
     public abstract void Draw();
     public virtual void Entered() { } // each time it becomes Game.Screen
+    // stable turns the window's close button / Alt+F4 into its own exit: a play or the ranking screen goes back to
+    // song select, anything else says farewell (and a second request while it does closes at once)
+    public virtual void CloseRequested() => Game.Farewell();
 }
 
 static class Game
@@ -79,6 +82,16 @@ static class Game
     public static Skin Skin = null!;
     public static Font Font, Bold, Light, Mono, Icons; // Icons: osu!ui's FontAwesome (options sidebar etc.)
     public static bool Quit;
+
+    // stable's exit (away from the main menu's own): "seeya" with the menu voice on while the screen fades to black over
+    // 1.5s, the screen frozen meanwhile, then it closes
+    public static double QuitAt = double.NaN;
+    public static void Farewell()
+    {
+        if (!double.IsNaN(QuitAt)) return;
+        if (Config.GetBool("MenuVoice", true)) Skin.Sound("seeya")?.Play(BeatmapSamples.EffectVolume);
+        QuitAt = NowMs + 1500;
+    }
     public static readonly Stopwatch Clock = Stopwatch.StartNew();
 
     public static double NowMs => Clock.Elapsed.TotalMilliseconds;
@@ -496,7 +509,7 @@ static class Game
         double cpuSum = 0; // test runs: the part before EndDrawing (present and any GPU wait excluded)
         if (Environment.GetEnvironmentVariable("ALLOC_PROFILE") == "1") AllocProfile.Instance = new AllocProfile();
 
-        while (!WindowShouldClose() && !Quit)
+        while (!Quit)
         {
             double now = NowMs;
             double dt = now - last;
@@ -512,7 +525,9 @@ static class Game
             BeatmapImport.Poll();
             VolumeControl.Update(songSelect);
             // minimised (a 0x0 window) only a play keeps running, so its time stays with the music; menus wait
-            if (UpdateFade(dt) && (!IsWindowMinimized() || Screen is Player)) Screen.Update(dt);
+            if (WindowShouldClose()) { if (double.IsNaN(QuitAt)) Screen.CloseRequested(); else Quit = true; } // raylib clears it each frame
+            if (!double.IsNaN(QuitAt)) { if (now >= QuitAt) Quit = true; }
+            else if (UpdateFade(dt) && (!IsWindowMinimized() || Screen is Player)) Screen.Update(dt);
 
             BeginDrawing();
             ClearBackground(Color.Black);
@@ -523,6 +538,7 @@ static class Game
                 VolumeControl.Draw();
                 Notification.Draw();
                 Toast.Draw();
+                if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
                 SongSelect.FlushCursor();
                 stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
             }

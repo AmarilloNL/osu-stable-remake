@@ -304,6 +304,8 @@ sealed partial class Player : Screen
         samples.Unload();
     }
 
+    public override void CloseRequested() => Leave(back); // stable: back to song select
+
     void Leave(Screen next)
     {
         if (next == back && !VirtualClock) { Game.FadeTo(back, Dispose); return; } // stable goes back through black

@@ -490,12 +490,17 @@ sealed class MainMenu : Screen
             case "edit": toast = ("The beatmap editor isn't part of this offline remake.", Game.NowMs); break;
             case "multiplayer": toast = ("Multiplayer isn't part of this offline remake.", Game.NowMs); break;
             case "options": Game.Screen = new Options(this, songs); break;
-            case "exit":
-                if (Config.GetBool("MenuVoice", true)) skin.Sound("seeya")?.Play(BeatmapSamples.EffectVolume);
-                quitAt = Game.NowMs + 1500; // fade out under the farewell, like stable
-                break;
+            case "exit": Farewell(); break;
         }
     }
+
+    void Farewell()
+    {
+        if (Config.GetBool("MenuVoice", true)) skin.Sound("seeya")?.Play(BeatmapSamples.EffectVolume);
+        quitAt = Game.NowMs + 1500; // fade out under the farewell, like stable
+    }
+
+    public override void CloseRequested() { if (double.IsNaN(quitAt)) Farewell(); else Game.Quit = true; }
 
     public override void Update(double dtMs)
     {
