@@ -43,11 +43,11 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 <details open>
 <summary><b>Gameplay</b></summary>
 
-- osu!standard with all of stable's mods and hotkeys: EZ NF HT HR SD PF DT NC HD FL RX AP SO, Auto and Score V2 (stable's V2 scoring and slider-head judging)
+- osu!standard with all of stable's mods and hotkeys: EZ NF HT HR SD PF DT NC HD FL RX AP SO, Auto, Cinema and Score V2 (stable's V2 scoring and slider-head judging)
 - Stable's flashlight, countdown, breaks (pass/fail), warning arrows, skip, the fail animation and sound
 - Pause and resume exactly like stable (click the orange cursor to resume), hold-to-retry, Visual Settings bar (dim, storyboard, video, skin, hitsound toggles, per map)
 - Follow points, snaking sliders, judgement animations and particles, old- and new-style spinners
-- Loved/Qualified map warning, local beatmap offset with `+` / `-` (read from stable's `osu!.db`)
+- Loved/Qualified map warning, local beatmap offset with `+` / `-` (`Alt` for 1ms steps; read from stable's `osu!.db`)
 - Stable's keyboard bindings (Options → Change keyboard bindings), F7 frame limiter, F10 mouse buttons, F12 screenshots
 </details>
 
@@ -57,7 +57,7 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 - Reads stable's `osu!.db` directly, in the background (a 100k-map library is ready in a few seconds)
 - Stable's carousel, search with filters (`stars>5 ar=9 length<120`), sorting and grouping (collections, recently played, artist, difficulty)
 - Mod-adjusted star ratings, preview music, local leaderboard and personal best
-- Mod select (`F1`) and beatmap options (`F3`) as stable's dialogs, random (`F2`) and rewind (`Shift+F2`), play with Auto (`Ctrl+Enter`), watch a local score (`Ctrl+1`–`9`)
+- Mod select (`F1`) and beatmap options (`F3`) as stable's dialogs, random (`F2`) and rewind (`Shift+F2`), play with Auto (`Ctrl+Enter`) or Cinema (`Ctrl+Shift+Enter`), watch a local score (`Ctrl+1`–`9`)
 </details>
 
 <details>
