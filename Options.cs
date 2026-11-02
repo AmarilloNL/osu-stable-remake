@@ -62,6 +62,7 @@ sealed class Options : Screen
         int m = GetCurrentMonitor();
         var resolutions = new[] { (800, 600), (1024, 768), (1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440), (3840, 2160), (GetMonitorWidth(m), GetMonitorHeight(m)) }
             .Where(r => r.Item1 <= GetMonitorWidth(m) && r.Item2 <= GetMonitorHeight(m)).Distinct().OrderBy(r => r.Item1).Select(r => $"{r.Item1}x{r.Item2}").ToArray();
+        var devices = Bass.Devices().Select(d => d.Name).Where(n => n != "Default").ToArray(); // (BASS lists its own "Default" too)
         string build = $"b{File.GetLastWriteTime(Environment.ProcessPath ?? AppContext.BaseDirectory):yyyyMMdd}";
         items =
         [
@@ -140,7 +141,7 @@ sealed class Options : Screen
 
             S("AUDIO", 0xf026),
             H("DEVICES"),
-            new(Kind.Choice, "Output device:", "AudioDevice", Values: [""], Names: ["Default"], DefValue: ""), // stable keeps "" for the default device
+            new(Kind.Choice, "Output device:", "AudioDevice", Values: ["", .. devices], Names: ["Default", .. devices], DefValue: ""), // stable keeps "" for the default device
             T("Audio compatibility mode", "AudioCompatibility"),
             H("VOLUME"),
             new(Kind.Slider, "Master:", "VolumeUniversal", 0, 100, 100, "0", "%"),
@@ -301,6 +302,7 @@ sealed class Options : Screen
         switch (it.Key)
         {
             case "VolumeUniversal" or "VolumeMusic": songs.ApplyMusicVolume(); break;
+            case "AudioDevice": Bass.SwitchDevice(value); break;
             case "DisplayStarsMinimum" or "DisplayStarsMaximum": songs.ApplyFilter(); break;
             case "FrameSync":
                 if (value == "VSync") SetWindowState(ConfigFlags.VSyncHint);

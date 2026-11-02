@@ -14,6 +14,43 @@ static class Bass
     [DllImport(Dll)] public static extern bool BASS_SetConfig(uint option, uint value);
     [DllImport(Dll)] public static extern bool BASS_Init(int device, uint freq, uint flags, IntPtr win, IntPtr guid);
     [DllImport(Dll)] public static extern bool BASS_Free();
+    [StructLayout(LayoutKind.Sequential)] public struct DeviceInfo { public IntPtr Name, Driver; public uint Flags; }
+    [DllImport(Dll)] public static extern bool BASS_GetDeviceInfo(int device, out DeviceInfo info);
+    [DllImport(Dll)] public static extern bool BASS_SetDevice(int device);
+    [DllImport(Dll)] public static extern bool BASS_ChannelSetDevice(int handle, int device);
+
+    // The output device: stable's AudioDevice holds its name ("" = the system default) and switching moves everything
+    // that's loaded across. BASS's current device is per thread, so loads (some off the main thread) set it first.
+    public static int Device = -1;
+    static readonly HashSet<int> live = [];
+    public static void Register(int handle, bool alive) { if (handle == 0) return; lock (live) { if (alive) live.Add(handle); else live.Remove(handle); } }
+    public static void UseDevice() { if (Device > 0) BASS_SetDevice(Device); }
+
+    // enabled output devices (index 0 is BASS's "no sound")
+    public static List<(int Index, string Name, bool Default)> Devices()
+    {
+        var list = new List<(int, string, bool)>();
+        for (int i = 1; BASS_GetDeviceInfo(i, out var d); i++)
+            if ((d.Flags & 1) != 0) list.Add((i, Marshal.PtrToStringAnsi(d.Name) ?? "", (d.Flags & 2) != 0));
+        return list;
+    }
+
+    static int DeviceFor(string name) => (name.Length > 0 ? Devices().FirstOrDefault(d => d.Name == name).Index : 0) is var i and > 0 ? i
+        : Devices().FirstOrDefault(d => d.Default).Index;
+
+    public static void SwitchDevice(string name)
+    {
+        int to = DeviceFor(name), from = Device;
+        if (to <= 0 || to == from) return;
+        if (!BASS_Init(to, 44100, 0, IntPtr.Zero, IntPtr.Zero) && BASS_ErrorGetCode() != 14) // 14: already initialised
+        {
+            Console.Error.WriteLine($"audio device {name}: BASS_Init failed {BASS_ErrorGetCode()}");
+            return;
+        }
+        lock (live) foreach (int h in live) BASS_ChannelSetDevice(h, to);
+        if (from > 0 && BASS_SetDevice(from)) BASS_Free();
+        BASS_SetDevice(Device = to);
+    }
     [DllImport(Dll)] public static extern int BASS_ErrorGetCode();
     [DllImport(Dll, CharSet = CharSet.Unicode)] public static extern int BASS_SampleLoad(uint filetype, string file, ulong offset, uint length, uint max, uint flags);
     [DllImport(Dll)] public static extern int BASS_SampleLoad(uint filetype, byte[] mem, ulong offset, uint length, uint max, uint flags); // filetype 1 = memory
@@ -51,19 +88,24 @@ static class Bass
         BASS_SetConfig(ConfigDevBuffer, (uint)Config.GetInt("AudioDeviceBuffer", 10));
         BASS_SetConfig(ConfigUpdatePeriod, 5);
         BASS_SetConfig(ConfigBuffer, 100);
-        if (!BASS_Init(-1, 44100, 0, IntPtr.Zero, IntPtr.Zero))
+        Device = DeviceFor(Config.Get("AudioDevice", ""));
+        if (!BASS_Init(Device > 0 ? Device : -1, 44100, 0, IntPtr.Zero, IntPtr.Zero))
+        {
             Console.Error.WriteLine($"BASS_Init failed: {BASS_ErrorGetCode()}");
+            if (Device > 0 && BASS_Init(-1, 44100, 0, IntPtr.Zero, IntPtr.Zero)) Device = DeviceFor("");
+        }
     }
 }
 
 sealed class Track : IDisposable
 {
     readonly int handle;
-    Track(int handle) => this.handle = handle;
+    Track(int handle) { this.handle = handle; Bass.Register(handle, true); }
 
     // tempo: always go through BASS_FX so the rate can change later (replay speed).
     public static Track? Load(string path, double rate = 1, bool nightcore = false, bool tempo = false)
     {
+        Bass.UseDevice();
         if (rate == 1 && !tempo)
         {
             int h = Bass.BASS_StreamCreateFile(0, path, 0, 0, Bass.StreamPrescan | Bass.Unicode);
@@ -108,14 +150,18 @@ sealed class Track : IDisposable
 
     public void Dispose()
     {
+        Bass.Register(handle, false);
         Bass.BASS_ChannelStop(handle);
         Bass.BASS_StreamFree(handle);
     }
 }
 
 // A hitsound: one BASS sample with up to 8 overlapping voices.
-sealed class SoundPool(int sample)
+sealed class SoundPool
 {
+    readonly int sample;
+    SoundPool(int sample) { this.sample = sample; Bass.Register(sample, true); }
+
     public void Play(float volume, float pitch = 1)
     {
         if (sample == 0) return;
@@ -128,7 +174,9 @@ sealed class SoundPool(int sample)
 
     public void Unload()
     {
-        if (sample != 0) Bass.BASS_SampleFree(sample);
+        if (sample == 0) return;
+        Bass.Register(sample, false);
+        Bass.BASS_SampleFree(sample);
     }
 
     // A looping voice (pause music); stop it with Stop.
@@ -156,9 +204,10 @@ sealed class SoundPool(int sample)
         return ch;
     }
 
-    public static SoundPool Load(byte[] data) => new(Bass.BASS_SampleLoad(1, data, 0, (uint)data.Length, 8, Bass.SampleOverPos));
+    public static SoundPool Load(byte[] data) { Bass.UseDevice(); return new(Bass.BASS_SampleLoad(1, data, 0, (uint)data.Length, 8, Bass.SampleOverPos)); }
 
     // A blank/invalid file is a deliberate mute in osu!, so it still counts as found (silent).
     public static SoundPool? Load(string path) =>
-        File.Exists(path) ? new SoundPool(Bass.BASS_SampleLoad(0, path, 0, 0, 8, Bass.SampleOverPos | Bass.Unicode)) : null;
+        File.Exists(path) ? Load0(path) : null;
+    static SoundPool Load0(string path) { Bass.UseDevice(); return new(Bass.BASS_SampleLoad(0, path, 0, 0, 8, Bass.SampleOverPos | Bass.Unicode)); }
 }
