@@ -98,7 +98,7 @@ static class VolumeControl
         }
 
         // Keys: stable leaves them to gameplay unless Alt is held, and to song select unless Alt/hover.
-        if (alt || hovered || Game.Screen is MainMenu)
+        if (alt || hovered || Game.Screen is MainMenu { JumpOpen: false }) // (the Jump To window steps with Up / Down)
         {
             int dir = Key(KeyboardKey.Up) ? 1 : Key(KeyboardKey.Down) ? -1 : 0;
             if (dir != 0) Step(dir * 5, now);
