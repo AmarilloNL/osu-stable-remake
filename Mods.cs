@@ -108,6 +108,15 @@ static class ModInfo
         _ => Toggle(m, key),
     };
 
+    // stable's right-click on a mod button: the cycle backwards (off -> PF -> SD -> off and the like)
+    public static Mods ToggleBack(Mods m, KeyboardKey key) => key switch
+    {
+        KeyboardKey.S => m.HasFlag(Mods.Perfect) ? m & ~Mods.Perfect : m.HasFlag(Mods.SuddenDeath) ? m & ~Mods.SuddenDeath : ShiftToggle(m, key),
+        KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~Mods.Nightcore : m.HasFlag(Mods.DoubleTime) ? m & ~Mods.DoubleTime : ShiftToggle(m, key),
+        KeyboardKey.V => m.HasFlag(Mods.Cinema) ? m & ~Mods.Cinema : m.HasFlag(Mods.Autoplay) ? m & ~Mods.Autoplay : ShiftToggle(m, key),
+        _ => Toggle(m, key),
+    };
+
     // "HDHR", "HD DT", "NC" ... (used by the --mods test flag)
     public static Mods Parse(string s)
     {

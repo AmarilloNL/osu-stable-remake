@@ -2339,11 +2339,12 @@ sealed class SongSelect : Screen
         for (int i = 0; i < ModKeys.Length; i++)
             if (Input.IsKeyPressed(Config.Key(ModBindings[i], ModKeys[i]))) mods = Input.ShiftHeld ? ModInfo.ShiftToggle(mods, ModKeys[i]) : ModInfo.Toggle(mods, ModKeys[i]);
         var mouse = Input.GetMousePosition();
-        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (click)
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left), rclick = Input.IsMouseButtonPressed(MouseButton.Right);
+        if (click || rclick)
             for (int r = 0; r < ModRows.Length; r++)
                 for (int c = 0; c < ModRows[r].Mods.Length; c++)
-                    if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * U) mods = ModInfo.Toggle(mods, ModRows[r].Mods[c].Key);
+                    if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * U)
+                        mods = click ? ModInfo.Toggle(mods, ModRows[r].Mods[c].Key) : ModInfo.ToggleBack(mods, ModRows[r].Mods[c].Key);
         float buttonsY = modContentY + 35 + 180;
         bool reset = Input.IsKeyPressed(KeyboardKey.One) || Input.IsKeyPressed(KeyboardKey.Backspace) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(buttonsY));
         bool close = Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter)
