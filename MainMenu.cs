@@ -185,6 +185,14 @@ sealed class MainMenu : Screen
         // stable's keys in the menu: Z/Left previous, X play, C pause, V/Right next, R random.
         int keyed = Input.IsKeyPressed(KeyboardKey.Z) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Left) ? 0 : Input.IsKeyPressed(KeyboardKey.X) ? 1
             : Input.IsKeyPressed(KeyboardKey.C) ? 2 : Input.IsKeyPressed(KeyboardKey.V) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Right) ? 4 : -1;
+        // stable: F1 previous, F2 play, F3 pause, F4 stop (not Alt+F4), F5 next, F6 / J the Jump To window; none with
+        // Shift, Ctrl or Alt held
+        bool mod = Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift) || Input.IsKeyDown(KeyboardKey.LeftControl)
+            || Input.IsKeyDown(KeyboardKey.RightControl) || Input.IsKeyDown(KeyboardKey.LeftAlt) || Input.IsKeyDown(KeyboardKey.RightAlt);
+        if (!mod && keyed < 0)
+            keyed = Input.IsKeyPressed(KeyboardKey.F1) ? 0 : Input.IsKeyPressed(KeyboardKey.F2) ? 1 : Input.IsKeyPressed(KeyboardKey.F3) ? 2
+                : Input.IsKeyPressed(KeyboardKey.F4) ? 3 : Input.IsKeyPressed(KeyboardKey.F5) ? 4
+                : Input.IsKeyPressed(KeyboardKey.F6) || Input.IsKeyPressed(KeyboardKey.J) ? 6 : -1;
         if (Input.IsKeyPressed(KeyboardKey.R)) { songs.MusicNext(); skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
         int over = -1;
         for (int i = 0; i < MusicIcons.Length; i++)
@@ -240,13 +248,21 @@ sealed class MainMenu : Screen
     // filtered as you type (in "Artist - Title"). Rows are 30 units tall in a 360-unit list from y 80 between white
     // lines at 79 and 440, the text 20 units 5 down; a hovered row lights to 60% grey, the playing one cornflower blue
     // at 60%. A click plays that song (on the playing one it closes the window), Up / Down step through, Esc closes.
-    // At most 250 rows. (stable's collection dropdown isn't here.)
+    // At most 250 rows. Above: "Collections:" in gold over a dropdown (All, then each collection) on the left, and the
+    // filter right-aligned before a magnifier on the right ("Type to search!" while empty), measured at 1080p. The music
+    // controls stay on top and work.
     double jumpAt = double.NaN;
     internal bool JumpOpen => !double.IsNaN(jumpAt);
     string jumpFilter = "";
     List<DbBeatmap> jumpList = [];
     float[] jumpHover = [];
     float jumpScroll; // units
+    string? jumpCollection; // null: All
+    bool jumpDropOpen;
+    List<(string Name, HashSet<string> Md5s)>? collections;
+    List<(string Name, HashSet<string> Md5s)> Collections => collections ??= OsuDb.LoadCollections(Path.Combine(Config.OsuDir, "collection.db"));
+    Rectangle JumpDropRect => new(10 * u, 55 * u, 140 * u, 12 * u);
+    Rectangle JumpDropItem(int i) => new(10 * u, (67 + i * 12) * u, 140 * u, 12 * u);
 
     void OpenJump()
     {
@@ -259,7 +275,9 @@ sealed class MainMenu : Screen
 
     void BuildJumpList()
     {
+        var inCollection = jumpCollection == null ? null : Collections.FirstOrDefault(c => c.Name == jumpCollection).Md5s;
         jumpList = [.. songs.Library
+            .Where(s => inCollection == null || s.Diffs.Any(d => inCollection.Contains(d.Md5)))
             .Where(s => jumpFilter.Length == 0 || $"{s.First.Artist} - {s.First.Title}".Contains(jumpFilter, StringComparison.CurrentCultureIgnoreCase))
             .OrderByDescending(s => s.Diffs.Max(d => songs.LastPlayedUtc(d) ?? DateTime.MinValue)).Select(s => s.First).Take(250)];
         jumpHover = new float[jumpList.Count];
@@ -277,7 +295,26 @@ sealed class MainMenu : Screen
 
     void UpdateJump(double dtMs)
     {
-        if (Input.IsKeyPressed(KeyboardKey.Escape)) { jumpAt = double.NaN; return; }
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { if (jumpDropOpen) jumpDropOpen = false; else jumpAt = double.NaN; return; }
+        var at = Input.GetMousePosition();
+        if (Input.IsMouseButtonPressed(MouseButton.Left))
+        {
+            for (int i = 0; i < MusicIcons.Length; i++) // the controls stay usable over the window
+                if (CheckCollisionPointRec(at, MusicButtonRect(i))) { if (i == 6) jumpAt = double.NaN; else MusicAction(i); return; }
+            if (jumpDropOpen)
+            {
+                jumpDropOpen = false;
+                for (int i = 0; i <= Collections.Count; i++)
+                    if (CheckCollisionPointRec(at, JumpDropItem(i)))
+                    {
+                        jumpCollection = i == 0 ? null : Collections[i - 1].Name;
+                        BuildJumpList();
+                        ScrollJumpTo(JumpCurrent(), centre: true);
+                    }
+                return;
+            }
+            if (CheckCollisionPointRec(at, JumpDropRect)) { jumpDropOpen = true; return; }
+        }
         bool changed = false;
         for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed()) { jumpFilter += char.ConvertFromUtf32(ch); changed = true; SongSelect.TypingSound("key-press"); }
         if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && jumpFilter.Length > 0)
@@ -308,7 +345,12 @@ sealed class MainMenu : Screen
         Dialog.Backdrop(fade);
         Dialog.Title("Jump To...", fade);
         var white = ColorAlpha(Color.White, fade);
-        Game.Text(jumpFilter, 10 * u, 50 * u, 20 * u, white);
+        Game.Text("Collections:", 11.6f * u, 30 * u, 20 * u, ColorAlpha(new Color(254, 220, 97, 255), fade));
+        Game.Text(jumpCollection ?? "All", 12 * u, 56 * u, 10.7f * u, white);
+        Options.DrawIcon(0xf078, 142 * u, 61.5f * u, 10.5f * u, white);
+        string search = jumpFilter.Length > 0 ? jumpFilter : "Type to search!";
+        Game.Text(search, w - 35 * u - Game.TextWidth(search, 20 * u), 50 * u, 20 * u, white);
+        Options.DrawIcon(0xf002, w - 22.7f * u, 61 * u, 16.5f * u, white);
         DrawRectangleRec(new Rectangle(10 * u, 79 * u, w - 20 * u, u), white);
         DrawRectangleRec(new Rectangle(10 * u, 440 * u, w - 20 * u, u), white);
         int cur = JumpCurrent();
@@ -323,6 +365,14 @@ sealed class MainMenu : Screen
             Game.Text(b.BothUnicode ? $"{b.ArtistUnicode} - {b.TitleUnicode}" : $"{b.Artist} - {b.Title}", 10 * u, y + 5 * u, 20 * u, white);
         }
         EndScissorMode();
+        if (jumpDropOpen)
+            for (int i = 0; i <= Collections.Count; i++)
+            {
+                var r = JumpDropItem(i);
+                DrawRectangleRec(r, ColorAlpha(CheckCollisionPointRec(Input.GetMousePosition(), r) ? new Color(50, 50, 50, 255) : Color.Black, 0.9f * fade));
+                Game.Text(i == 0 ? "All" : Collections[i - 1].Name, r.X + 2 * u, r.Y + 0.6f * u, 10.7f * u, white);
+            }
+        DrawMusicControls(); // stable keeps them over the window
     }
 
     void DrawMusicControls()
