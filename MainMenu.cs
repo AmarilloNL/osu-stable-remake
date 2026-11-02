@@ -182,17 +182,16 @@ sealed class MainMenu : Screen
     {
         string key = songs.Current?.Md5 ?? "";
         if (key != songKey) { songKey = key; songChangedAt = Game.NowMs; }
-        // stable's keys in the menu: Z/Left previous, X play, C pause, V/Right next, R random.
-        int keyed = Input.IsKeyPressed(KeyboardKey.Z) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Left) ? 0 : Input.IsKeyPressed(KeyboardKey.X) ? 1
-            : Input.IsKeyPressed(KeyboardKey.C) ? 2 : Input.IsKeyPressed(KeyboardKey.V) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Right) ? 4 : -1;
-        // stable: F1 previous, F2 play, F3 pause, F4 stop (not Alt+F4), F5 next, F6 / J the Jump To window; none with
-        // Shift, Ctrl or Alt held
+        // stable's keys in the menu: Z/Left previous, X play, C pause, V/Right next, R random; F1 previous, F2 play,
+        // F3 pause, F4 stop, F5 next, F6 / J the Jump To window - none of them with Shift, Ctrl or Alt held
         bool mod = Input.ShiftHeld || Input.CtrlHeld || Input.AltHeld;
+        int keyed = mod ? -1 : Input.IsKeyPressed(KeyboardKey.Z) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Left) ? 0 : Input.IsKeyPressed(KeyboardKey.X) ? 1
+            : Input.IsKeyPressed(KeyboardKey.C) ? 2 : Input.IsKeyPressed(KeyboardKey.V) || !VolumeControl.Shown && Input.IsKeyPressed(KeyboardKey.Right) ? 4 : -1;
         if (!mod && keyed < 0)
             keyed = Input.IsKeyPressed(KeyboardKey.F1) ? 0 : Input.IsKeyPressed(KeyboardKey.F2) ? 1 : Input.IsKeyPressed(KeyboardKey.F3) ? 2
                 : Input.IsKeyPressed(KeyboardKey.F4) ? 3 : Input.IsKeyPressed(KeyboardKey.F5) ? 4
                 : Input.IsKeyPressed(KeyboardKey.F6) || Input.IsKeyPressed(KeyboardKey.J) ? 6 : -1;
-        if (Input.IsKeyPressed(KeyboardKey.R)) { songs.MusicNext(); skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
+        if (!mod && Input.IsKeyPressed(KeyboardKey.R)) { songs.MusicNext(); skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
         int over = -1;
         for (int i = 0; i < MusicIcons.Length; i++)
         {
