@@ -569,7 +569,7 @@ sealed class MainMenu : Screen
         else if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, songs); }
         else if (Input.IsKeyPressed(KeyboardKey.E)) Activate(1);
         else if (Input.IsKeyPressed(KeyboardKey.O)) Activate(2);
-        else if (Input.IsKeyPressed(KeyboardKey.Q)) Activate(3);
+        else if (Input.IsKeyPressed(KeyboardKey.Q)) exitAskedAt = Game.NowMs; // stable: Q asks like Esc (it doesn't quit straight away)
         else if (Input.IsKeyPressed(KeyboardKey.F)) Config.SetOwn("FpsCounter", Config.GetBool("FpsCounter", false) ? "0" : "1"); // stable: F toggles the FPS counter here
         else if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
