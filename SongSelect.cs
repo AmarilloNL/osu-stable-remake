@@ -1611,7 +1611,9 @@ sealed class SongSelect : Screen
         Snow.Update(this);
         Snow.Draw();
         if (webTip && !modSelect && !beatmapOptions) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
+        else if (scoreTip != null && !modSelect && !beatmapOptions) Options.DrawScreenTooltip(ScoreTip(scoreTip), Input.GetMousePosition());
         webTip = false;
+        scoreTip = null;
         DrawModeMenu();
         DrawDropdown();
         if (modSelect) DrawModSelect(w, h);
@@ -2057,7 +2059,7 @@ sealed class SongSelect : Screen
         var white = ColorAlpha(Color.White, scoreFade);
         var row = new Rectangle(4.3f * u, y, 235.7f * u, ScoreRowH - 2 * u);
         DrawRectangleRec(row, hover ? new Color(100, 100, 100, (int)(77 * scoreFade)) : new Color(0, 0, 0, (int)(77 * scoreFade))); // stable: black at 0.3, grey (100) on hover (measured 10 -> 7 over a dark background)
-        // (stable numbers a row only with its online rank, so local scores show none)
+        // (a row shows its place only while hovered: DrawScores)
         if (Game.Skin.Tex(SmallGrade(GradeOf(r))) is { } g) g.Draw(new Vector2(49 * u, y + 14 * u), 21 * u / Math.Max(1, g.Height), white);
         string name = r.FromStable ? (r.Player.Length > 0 ? r.Player : "stable") : Config.Get("Username", "You");
         Game.Text(name, 63 * u, y + 7.7f * u - 8 * u, 16 * u, white);
@@ -2093,6 +2095,27 @@ sealed class SongSelect : Screen
         if (hover) webTip = true;
     }
     bool webTip;
+    readonly float[] rankAlpha = new float[8];
+    double rankFadeAt;
+    int hoveredScore = -1;
+    static readonly string[] PlaceTexts = ["1", "2", "3", "4", "5", "6", "7", "8"];
+    ReplayInfo? scoreTip; // the score under the cursor
+    ReplayInfo? scoreTipFor;
+    string scoreTipText = "";
+
+    // stable's tooltip over a local score: when, the judgement counts, accuracy and the mods by name ("None" without)
+    string ScoreTip(ReplayInfo r)
+    {
+        if (r == scoreTipFor) return scoreTipText;
+        scoreTipFor = r;
+        var date = r.Date.Kind == DateTimeKind.Unspecified ? r.Date : r.Date.ToLocalTime();
+        string mods = string.Join(",", CaptionOrder.Where(c => r.Mods.HasFlag(c.Flag)
+            && !(c.Flag == Mods.DoubleTime && r.Mods.HasFlag(Mods.Nightcore)) && !(c.Flag == Mods.SuddenDeath && r.Mods.HasFlag(Mods.Perfect)))
+            .Select(c => c.Flag == Mods.Autoplay ? "Auto" : c.Name));
+        double acc = r.N300 + r.N100 + r.N50 + r.NMiss == 0 ? 100 : r.Accuracy;
+        return scoreTipText = string.Format("Achieved on {0}\n300:{1} 100:{2} 50:{3} Miss:{4}\nAccuracy:{5:0.00}%\nMods:{6}",
+            date, r.N300, r.N100, r.N50, r.NMiss, acc, mods.Length > 0 ? mods : "None");
+    }
 
     // stable's dropdown outline (measured): about half a unit thick with ~1.3-unit rounded corners.
     void DropdownBorder(Rectangle r, Color c) =>
@@ -2125,12 +2148,28 @@ sealed class SongSelect : Screen
             else Game.Text("No records set!", at.X - Game.TextWidth("No records set!", 14 * u) / 2, at.Y - 7 * u, 14 * u, ColorAlpha(Color.White, k * scoreFade));
         }
         var mouse = Input.GetMousePosition();
+        double now = Game.NowMs;
+        float step = (float)Math.Min(1, (now - rankFadeAt) / 100);
+        rankFadeAt = now;
+        int hovered = -1;
         for (int n = 0; n < Math.Min(8, list.Count); n++)
         {
             float y = ScoreTop + n * ScoreRowH;
             bool hover = mouse.X < 240 * u && ScoreRowAt(mouse.Y) == n && mouse.Y >= ScoreTop;
             DrawScoreRow(list[n], y, n + 1 < list.Count ? list[n + 1].Score : null, hover);
+            if (hover) { scoreTip = list[n]; hovered = n; }
+            // stable: a row's place shows while it's hovered (size 18, centred 18 units in and 15 down; in and out over
+            // 100ms)
+            rankAlpha[n] = Math.Clamp(rankAlpha[n] + (hover ? step : -step), 0, 1);
+            if (rankAlpha[n] > 0)
+            {
+                string place = PlaceTexts[n];
+                float ps = 18 * u;
+                Game.Text(place, 22.3f * u - Game.TextWidth(place, ps) / 2, y + 15 * u - ps / 2, ps, ColorAlpha(Color.White, rankAlpha[n] * scoreFade));
+            }
         }
+        if (hovered >= 0 && hovered != hoveredScore) Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume); // stable's hover sound
+        hoveredScore = hovered;
         // (stable shows its "Personal Best" box only for the online ranking types, never for Local Ranking)
     }
     // F3 / Beatmap Options: stable's dialog for the selected set. Offline, the actions that would change stable's files

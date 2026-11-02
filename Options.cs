@@ -794,7 +794,7 @@ sealed class Options : Screen
         float a = (float)Math.Clamp((now - tipSince - 120) / 200, 0, 1);
         if (a <= 0) return;
         int w = GetScreenWidth(), h = GetScreenHeight();
-        float u = h / 480f, px = u / 2.25f, ts = (9 - (h - 1024) / 256f) * 1.035f * u, lineH = ts * 1.26f;
+        float u = h / 480f, px = u / 2.25f, ts = (9 - (h - 1024) / 256f) * 1.035f * u, lineH = ts * 0.98f; // stable: 20px apart at 1080p
         var lines = new List<string>();
         foreach (var line in text.Split('\n'))
         {
