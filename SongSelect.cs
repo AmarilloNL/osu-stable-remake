@@ -126,7 +126,7 @@ sealed class SongSelect : Screen
 
     // what the library load is doing, for the loading screen (set by the loading task)
     static volatile string loadStage = "Loading osu!.db…";
-    static volatile int loadDone, loadTotal;
+    static int loadDone, loadTotal; // (read by the loading screen while the load runs)
     // maps read from their .osu that still need their star ratings (worked out in the background once the list is up)
     static List<DbBeatmap> unrated = [];
     static List<(string, long, long, DbBeatmap)> cacheEntries = [];
@@ -165,8 +165,11 @@ sealed class SongSelect : Screen
         var cache = fresh.Count > 0 ? OsuDb.LoadMapCache() : new Dictionary<string, (long Length, long Ticks, DbBeatmap Map)>();
         var keyed = new List<(string, long, long, DbBeatmap)>();
         if (fresh.Count > 0) { loadStage = "Reading new beatmaps…"; loadDone = 0; loadTotal = fresh.Count; }
-        foreach (var dir in fresh)
+        // folders in parallel: reading the .osu text is the cost (~1.5ms a map), and they don't depend on each other
+        var gate = new object();
+        Parallel.ForEach(fresh, dir =>
         {
+            var mine = new List<(string Key, long Length, long Ticks, DbBeatmap Map, bool Rate)>();
             try
             {
                 foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
@@ -175,15 +178,21 @@ sealed class SongSelect : Screen
                     string key = Path.GetFileName(dir) + "/" + fi.Name;
                     long ticks = fi.LastWriteTimeUtc.Ticks;
                     DbBeatmap? b = cache.TryGetValue(key, out var c) && c.Length == fi.Length && c.Ticks == ticks ? c.Map : null;
-                    if (b == null && ReadMap(file, stars: false) is { } read) { b = read; toRate.Add(read); }
-                    if (b == null) continue;
-                    newMaps.Add(b);
-                    keyed.Add((key, fi.Length, ticks, b));
+                    bool rate = b == null;
+                    b ??= ReadMap(file, stars: false);
+                    if (b != null) mine.Add((key, fi.Length, ticks, b, rate));
                 }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-            loadDone++;
-        }
+            lock (gate)
+                foreach (var (key, length, ticks, b, rate) in mine)
+                {
+                    newMaps.Add(b);
+                    keyed.Add((key, length, ticks, b));
+                    if (rate) toRate.Add(b);
+                }
+            Interlocked.Increment(ref loadDone);
+        });
         cacheEntries = keyed;
         if (fresh.Count > 0) Console.Error.WriteLine($"{fresh.Count} folders osu!.db doesn't list ({string.Join(", ", fresh.Take(5).Select(Path.GetFileName))}{(fresh.Count > 5 ? ", ..." : "")}): {newMaps.Count} maps");
         Console.Error.WriteLine($"library read in {clock.ElapsedMilliseconds}ms");
