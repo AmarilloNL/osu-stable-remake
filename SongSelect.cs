@@ -2351,7 +2351,7 @@ sealed class SongSelect : Screen
                     if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * U)
                         mods = click ? ModInfo.Toggle(mods, ModRows[r].Mods[c].Key) : ModInfo.ToggleBack(mods, ModRows[r].Mods[c].Key);
         float buttonsY = modContentY + 35 + 180;
-        bool reset = Input.IsKeyPressed(KeyboardKey.One) || Input.IsKeyPressed(KeyboardKey.Backspace) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(buttonsY));
+        bool reset = Input.IsKeyPressed(KeyboardKey.One) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(buttonsY));
         bool close = Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter)
             || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(buttonsY + 50));
         if (reset) { mods = Mods.None; modButtonFlashed = 0; modButtonFlashAt = Game.NowMs; }
