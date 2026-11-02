@@ -2266,7 +2266,8 @@ sealed class SongSelect : Screen
     {
         var mouse = Input.GetMousePosition();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) ? BeatmapOptions.Length - 1 : -1;
+        // Esc, F3 and Enter close it (stable's dialogs take Enter as a plain close)
+        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) || Input.IsKeyPressed(KeyboardKey.Enter) ? BeatmapOptions.Length - 1 : -1;
         for (int i = 0; i < BeatmapOptions.Length && chosen < 0; i++)
             if (Input.IsKeyPressed(KeyboardKey.One + i) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(beatmapOptionsY + i * 50))) chosen = i;
         if (chosen < 0) return;

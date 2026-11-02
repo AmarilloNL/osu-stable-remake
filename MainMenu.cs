@@ -905,7 +905,8 @@ sealed class MainMenu : Screen
         if (!InIntro) SongSelect.DrawCursor();
     }
 
-    // Esc on the closed menu: stable's "Are you sure you want to exit osu!?" dialog. 1 / Enter quits, 2 / Esc cancels.
+    // Esc on the closed menu: stable's "Are you sure you want to exit osu!?" dialog. 1 quits; 2 / Esc / Enter close it (stable's dialogs
+    // take Enter as a plain close, pressing no button)
     double exitAskedAt = double.NaN;
     const string ExitQuestion = "Are you sure you want to exit osu!?";
     float exitButtonsY;
@@ -914,12 +915,12 @@ sealed class MainMenu : Screen
     {
         var mouse = Input.GetMousePosition();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (Input.IsKeyPressed(KeyboardKey.One) || Input.IsKeyPressed(KeyboardKey.Enter) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(exitButtonsY)))
+        if (Input.IsKeyPressed(KeyboardKey.One) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(exitButtonsY)))
         {
             exitAskedAt = double.NaN;
             Activate(3);
         }
-        else if (Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(exitButtonsY + 50)))
+        else if (Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(exitButtonsY + 50)))
             exitAskedAt = double.NaN;
     }
 
