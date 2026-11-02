@@ -493,6 +493,7 @@ static class Game
         double nextFrame = NowMs, last = NowMs;
         var stats = new FrameStats();
         var work = new List<float>();
+        double cpuSum = 0; // test runs: the part before EndDrawing (present and any GPU wait excluded)
         if (Environment.GetEnvironmentVariable("ALLOC_PROFILE") == "1") AllocProfile.Instance = new AllocProfile();
 
         while (!WindowShouldClose() && !Quit)
@@ -563,6 +564,7 @@ static class Game
             }
             if (secs >= exitAfter) Quit = true;
             if (AllocProfile.Instance is { } ap) ap.On = secs > 8; // gameplay only, after loading
+            if (exitAfter < double.MaxValue) cpuSum += NowMs - now;
             EndDrawing();
             if (exitAfter < double.MaxValue) // test runs: update+draw+present time per frame, slow ones listed
             {
@@ -579,7 +581,7 @@ static class Game
         if (work.Count > 0) // test runs report how long frames took to build (the limiter's wait excluded)
         {
             work.Sort();
-            Console.Error.WriteLine($"frame work: {work.Count} frames, mean {work.Average():0.000}ms, p99 {work[(int)(work.Count * 0.99)]:0.000}ms, max {work[^1]:0.000}ms; main thread allocated {GC.GetAllocatedBytesForCurrentThread() / 1048576.0:0} MB");
+            Console.Error.WriteLine($"frame work: {work.Count} frames, mean {work.Average():0.000}ms (cpu {cpuSum / work.Count:0.000}ms), p99 {work[(int)(work.Count * 0.99)]:0.000}ms, max {work[^1]:0.000}ms; main thread allocated {GC.GetAllocatedBytesForCurrentThread() / 1048576.0:0} MB");
         }
         AllocProfile.Instance?.Print();
         Skin.Unload();
