@@ -778,6 +778,12 @@ sealed class SongSelect : Screen
     // the main menu's Jump To window: play that map's set (like Next, it can be gone back from)
     internal void MusicJump(DbBeatmap b)
     {
+        if (Grouped) // the view holds only the open group: find the set's first entry in any group
+        {
+            for (int g = 0; g < groups.Count; g++)
+                if (groups[g].Entries.FindIndex(e => e.Set.Diffs.Contains(b)) is var e and >= 0) { SelectEntry(g, e); return; }
+            return;
+        }
         int i = view.FindIndex(v => v.Set.Diffs.Contains(b));
         if (i < 0 || i == setIndex) return;
         musicBack.Push(setIndex);
