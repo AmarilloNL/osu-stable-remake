@@ -458,7 +458,7 @@ sealed class Options : Screen
             else Close();
             return;
         }
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.O)) { Close(); return; }
+        if (Input.CtrlHeld && !Input.AltHeld && Input.IsKeyPressed(KeyboardKey.O)) { Close(); return; }
         for (int ch = Input.GetCharPressed(); ch != 0; ch = Input.GetCharPressed()) { search += char.ConvertFromUtf32(ch); scrollTarget = 0; SongSelect.TypingSound("key-press"); }
         if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && search.Length > 0) { search = search[..^1]; SongSelect.TypingSound("key-delete"); }
 

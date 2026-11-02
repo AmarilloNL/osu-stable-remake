@@ -946,7 +946,7 @@ sealed class SongSelect : Screen
         Game.Skin.UploadPrefetched();
         if (!Ambient()) return;
 
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
+        if (Input.CtrlHeld && !Input.AltHeld && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
         // stable offline: the chat keys open the options at sign-in
         if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, this); return; }
 
