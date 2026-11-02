@@ -972,8 +972,9 @@ sealed class SongSelect : Screen
         {
             if (Pressed(KeyboardKey.Down)) MoveFocus(1);
             if (Pressed(KeyboardKey.Up)) MoveFocus(-1);
-            if (Pressed(KeyboardKey.Right)) Sideways(1);
-            if (Pressed(KeyboardKey.Left)) Sideways(-1);
+            bool shift = Input.IsKeyDown(KeyboardKey.LeftShift) || Input.IsKeyDown(KeyboardKey.RightShift);
+            if (Pressed(KeyboardKey.Right)) { if (shift) JumpGroup(1); else Sideways(1); }
+            if (Pressed(KeyboardKey.Left)) { if (shift) JumpGroup(-1); else Sideways(-1); }
         }
         else
         {
@@ -1313,6 +1314,16 @@ sealed class SongSelect : Screen
         SlideIn();
         if (Grouped && groups.Count > 0) { expanded = -1; focusGroup = groupIndex; focusEntry = -1; } // stable: all closed
         Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+    }
+
+    // stable's Shift+Left / Right (grouped): the group before / after the focused (else the open) one opens, wrapping
+    void JumpGroup(int dir)
+    {
+        if (groups.Count == 0) return;
+        int g = focusGroup >= 0 ? focusGroup : expanded >= 0 ? expanded : groupIndex;
+        int to = ((g + dir) % groups.Count + groups.Count) % groups.Count;
+        if (expanded != to) ToggleGroup(to);
+        else { focusGroup = to; focusEntry = -1; }
     }
 
     void ToggleGroup(int g)
