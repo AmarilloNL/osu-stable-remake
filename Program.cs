@@ -502,7 +502,7 @@ static class Game
             last = now;
             stats.Add(dt);
 
-            if (Input.IsKeyPressed(KeyboardKey.Enter) && Input.IsKeyDown(KeyboardKey.LeftAlt)) SetFullscreen(DisplayMode() != "Fullscreen"); // like the options' toggle
+            if (Input.AltEnterPressed) SetFullscreen(DisplayMode() != "Fullscreen"); // like the options' toggle
 
             Input.Update(now / 1000);
             if (!testRun) { ConfineCursor(); ApplySensitivity(); }

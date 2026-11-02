@@ -81,7 +81,11 @@ static class Input
         }
     }
 
-    public static bool IsKeyPressed(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressed(k) || keysPressed.Contains((int)k);
+    // Alt+Enter is the fullscreen toggle (AltEnterPressed): no screen sees it as Enter (the exit dialog would quit)
+    static bool AltHeld => IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt);
+    static bool Pressed(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressed(k) || keysPressed.Contains((int)k);
+    public static bool IsKeyPressed(KeyboardKey k) => Pressed(k) && !(k == KeyboardKey.Enter && AltHeld);
+    public static bool AltEnterPressed => AltHeld && Pressed(KeyboardKey.Enter);
     public static bool IsKeyPressedRepeat(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressedRepeat(k);
     public static bool IsKeyDown(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyDown(k) || keysDown.Contains((int)k);
     public static bool IsMouseButtonPressed(MouseButton b) => !ScriptOnly && Raylib.IsMouseButtonPressed(b) || buttonsPressed.Contains((int)b);
