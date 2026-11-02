@@ -1610,7 +1610,7 @@ sealed class SongSelect : Screen
         DrawBottomBar(w, h, s);
         Snow.Update(this);
         Snow.Draw();
-        if (webTip && !modSelect && !beatmapOptions) Options.DrawTooltip("Quick web access for this beatmap", Input.GetMousePosition());
+        if (webTip && !modSelect && !beatmapOptions) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
         webTip = false;
         DrawModeMenu();
         DrawDropdown();
@@ -2187,6 +2187,25 @@ sealed class SongSelect : Screen
             (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")]),
     ];
     const string ModBlurb = "Mods provide different ways to enjoy gameplay. Some have an effect on the score you can achieve during ranked play. Others are just for fun.";
+    // stable's tooltips over the mod icons (its English texts); a two-state icon describes the state it shows
+    static readonly Dictionary<Mods, string> ModTips = new()
+    {
+        [Mods.Easy] = "Reduces overall difficulty - larger circles, more forgiving HP drain, less accuracy required.",
+        [Mods.NoFail] = "You can't fail. No matter what.",
+        [Mods.HalfTime] = "Less zoom.",
+        [Mods.HardRock] = "Everything just got a bit harder...",
+        [Mods.SuddenDeath] = "Miss a note and fail.",
+        [Mods.Perfect] = "SS or quit.",
+        [Mods.DoubleTime] = "Zoooooooooom.",
+        [Mods.Nightcore] = "uguuuuuuuu",
+        [Mods.Hidden] = "Play with no approach circles and fading notes for a slight score advantage.",
+        [Mods.Flashlight] = "Restricted view area.",
+        [Mods.Relax] = "You don't need to click.\nGive your clicking/tapping fingers a break from the heat of things.\n** UNRANKED **",
+        [Mods.Autopilot] = "Automatic cursor movement - just follow the rhythm.\n** UNRANKED **",
+        [Mods.SpunOut] = "Spinners will be automatically completed.",
+        [Mods.Autoplay] = "Watch a perfect automated play through the song.",
+        [Mods.ScoreV2] = "Try the future scoring system.\n** UNRANKED **",
+    };
     double modSelectAt, modButtonFlashAt = double.MinValue;
     int modButtonFlashed = -1;
     readonly Dictionary<Mods, (bool On, double At)> modAnim = [];
@@ -2263,6 +2282,13 @@ sealed class SongSelect : Screen
         float buttonsY = modContentY + 35 + 180;
         Dialog.Button(0, "Reset All Mods", new Color(255, 69, 0, 255), buttonsY, age, mouse, modButtonFlashed == 0 ? now - modButtonFlashAt : double.MaxValue);
         Dialog.Button(1, "Close", Xna.Gray, buttonsY + 50, age, mouse);
+        for (int r = 0; r < ModRows.Length; r++)
+            for (int c = 0; c < ModRows[r].Mods.Length; c++)
+                if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * u)
+                {
+                    var (_, flag, alt, _, _) = ModRows[r].Mods[c];
+                    Options.DrawScreenTooltip(ModTips[alt != Mods.None && mods.HasFlag(alt) ? alt : flag], mouse);
+                }
     }
 
     // ---------------------------------------------------------------- background (loaded off the main thread)

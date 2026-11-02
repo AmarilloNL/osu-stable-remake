@@ -781,8 +781,23 @@ sealed class Options : Screen
             if (skin.Frame(name, 0) is { } j) j.Draw(new Vector2(ox + x * u, cy), js, Color.White);
     }
 
-    // stable's tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint white edge;
-    // each further line adds 8.9 units.
+    // stable's tooltips outside the options panel are bigger and darker (measured at 1080p over song select's web
+    // button and the mod icons): 9.1-unit text 4px inside a box 10px right of and below the cursor, near-black at 88%
+    // with a 1px grey (80) edge and slightly rounded corners.
+    internal static void DrawScreenTooltip(string text, Vector2 mouse)
+    {
+        float u = GetScreenHeight() / 480f, px = u / 2.25f, ts = 9.1f * u, lineH = 11.5f * u;
+        var lines = text.Split('\n');
+        float bw = lines.Max(l => Game.TextWidth(l, ts)) + 9 * px, bh = 22 * px + (lines.Length - 1) * lineH;
+        var box = new Rectangle(mouse.X + 10 * px, mouse.Y + 10 * px, bw, bh);
+        float round = Math.Min(1, 6 * px / Math.Min(bw, bh));
+        DrawRectangleRounded(box, round, 4, new Color(8, 8, 8, 224));
+        DrawRectangleRoundedLinesEx(box, round, 4, 1, new Color(80, 80, 80, 255));
+        for (int i = 0; i < lines.Length; i++) Game.Text(lines[i], box.X + 4 * px, box.Y + (22 * px - ts) / 2 + i * lineH, ts, Color.White);
+    }
+
+    // stable's options panel tooltip (measured): an 8-unit box down-right of the cursor, black at 50% with a faint
+    // white edge; each further line adds 8.9 units.
     internal static void DrawTooltip(string text, Vector2 mouse)
     {
         float u = GetScreenHeight() / 480f, ts = 7 * u, lineH = 8.9f * u;
