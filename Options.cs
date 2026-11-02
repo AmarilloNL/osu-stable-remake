@@ -291,12 +291,7 @@ sealed class Options : Screen
     {
         int m = GetCurrentMonitor();
         bool MonitorSized() => Game.Resolution() is var (rw, rh) && rw >= GetMonitorWidth(m) && rh >= GetMonitorHeight(m);
-        if (it.Key == "Fullscreen")
-        {
-            Config.SetOwn("DisplayMode", value == "1" ? "Fullscreen" : MonitorSized() ? "Borderless" : "Windowed");
-            Game.ApplyDisplay();
-            return;
-        }
+        if (it.Key == "Fullscreen") { Game.SetFullscreen(value == "1"); return; }
         if (Config.Get(it.Key, "") == value) return;
         Config.SetOwn(it.Key, value);
         switch (it.Key)

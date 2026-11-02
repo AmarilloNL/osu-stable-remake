@@ -254,6 +254,16 @@ static class Game
             : w >= GetMonitorWidth(m) && h >= GetMonitorHeight(m) ? "Borderless" : "Windowed");
     }
 
+    // The Fullscreen setting (the options' toggle and Alt+Enter): fullscreen at the fullscreen resolution, else the
+    // window, borderless when the windowed size covers the monitor.
+    public static void SetFullscreen(bool on)
+    {
+        Config.SetOwn("DisplayMode", on ? "Fullscreen" : "Windowed");
+        int m = GetCurrentMonitor();
+        if (!on && Resolution() is var (w, h) && w >= GetMonitorWidth(m) && h >= GetMonitorHeight(m)) Config.SetOwn("DisplayMode", "Borderless");
+        ApplyDisplay();
+    }
+
     // Safe to call again at runtime (the options screen does).
     public static void ApplyDisplay()
     {
@@ -492,7 +502,7 @@ static class Game
             last = now;
             stats.Add(dt);
 
-            if (Input.IsKeyPressed(KeyboardKey.Enter) && Input.IsKeyDown(KeyboardKey.LeftAlt)) ToggleFullscreen();
+            if (Input.IsKeyPressed(KeyboardKey.Enter) && Input.IsKeyDown(KeyboardKey.LeftAlt)) SetFullscreen(DisplayMode() != "Fullscreen"); // like the options' toggle
 
             Input.Update(now / 1000);
             if (!testRun) { ConfineCursor(); ApplySensitivity(); }
