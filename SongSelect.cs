@@ -1121,7 +1121,8 @@ sealed class SongSelect : Screen
         }
         if (Pressed(KeyboardKey.Backspace) && filter.Length > 0)
         {
-            filter = Input.CtrlHeld ? "" : filter[..^1];
+            // stable: Ctrl+Backspace deletes the last word ("my love" -> "my ")
+            filter = !Input.CtrlHeld ? filter[..^1] : filter.TrimEnd().LastIndexOf(' ') is var sp and >= 0 ? filter.TrimEnd()[..(sp + 1)] : "";
             changed = true;
             TypingSound("key-delete");
         }
