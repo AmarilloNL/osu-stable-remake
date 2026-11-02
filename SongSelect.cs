@@ -2411,7 +2411,7 @@ sealed class SongSelect : Screen
     // Set by the player: stable's "Automatic cursor size" scales the cursor by 1 - 0.7 x (CS - 4) / 5 in play.
     internal static float CursorPlayScale = 1;
 
-    // stable's cursor ripples (the Cursor ripples option): each click leaves the skin's cursor-ripple (else a ring) at
+    // stable's cursor ripples (the Cursor ripples option): each click leaves the skin's cursor-ripple (else osu!ui's menu-osu-shockwave) at
     // the cursor, added on, growing 0.05 -> 0.5 (Out) and fading out from 20% over 700ms.
     static readonly List<(Vector2 Pos, double At)> ripples = [];
     // (stable leaves them out during active play)
@@ -2420,7 +2420,7 @@ sealed class SongSelect : Screen
     static void DrawRipples()
     {
         ripples.RemoveAll(r => Game.NowMs - r.At > 700);
-        if (ripples.Count == 0 || (Game.Skin.Own("cursor-ripple") ? Game.Skin.Tex("cursor-ripple") : Game.Skin.DefaultTex("approachcircle")) is not { } tex) return;
+        if (ripples.Count == 0 || (Game.Skin.Own("cursor-ripple") ? Game.Skin.Tex("cursor-ripple") : Game.Skin.DefaultTex("menu-osu-shockwave")) is not { } tex) return;
         float sd = GetScreenHeight() / 768f;
         BeginBlendMode(BlendMode.Additive);
         foreach (var (p, at) in ripples)
