@@ -329,6 +329,7 @@ static class Game
     }
 
     const string PipeName = "osu!stable remake";
+    static Mutex? single; // held for the game's lifetime
     static readonly System.Collections.Concurrent.ConcurrentQueue<string> Opened = new();
     static volatile bool raise;
 
@@ -348,7 +349,7 @@ static class Game
             foreach (var f in files) w.WriteLine(f);
             return true;
         }
-        catch (Exception e) when (e is TimeoutException or IOException) { return false; }
+        catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException) { return false; }
     }
 
     static void Listen() => new Thread(() =>
@@ -362,7 +363,8 @@ static class Game
                 while (r.ReadLine() is { } f) Opened.Enqueue(f);
                 raise = true;
             }
-            catch (IOException) { }
+            catch (IOException) { } // a launch that gave up halfway
+            catch (UnauthorizedAccessException) { return; } // the name is someone else's: no hand-over then
     }) { IsBackground = true }.Start();
 
     // The frame as the framebuffer holds it. raylib's LoadImageFromScreen multiplies the size by Windows' display
@@ -533,7 +535,9 @@ static class Game
         // Files opened with the game ("Open with", or dropped on the exe) open like files dropped on the window. Like
         // stable, starting it again while it runs brings the running game to the front instead (with those files).
         string[] opened = [.. args.TakeWhile(a => !a.StartsWith("--")).Where(File.Exists).Select(Path.GetFullPath)];
-        using var single = new Mutex(false, PipeName, out bool firstInstance);
+        bool firstInstance = true; // (a mutex this account can't open, e.g. an elevated game's: just start)
+        try { single = new Mutex(false, PipeName, out firstInstance); }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException or WaitHandleCannotBeOpenedException) { }
         if (!firstInstance && !args.Any(a => a.StartsWith("--")) && Forward(opened)) return; // (test runs start anyway)
         if (firstInstance) Listen();
         foreach (var f in opened) Opened.Enqueue(f);
