@@ -74,6 +74,7 @@ sealed partial class Player : Screen
     internal readonly List<Vector2> perfGraph = []; // stable's ranking graph (see Final)
     readonly double diffMul;
     readonly List<double> hitErrors = [];
+    readonly List<int> spinRpms = []; // the RPM readout while spinners turn (the ranking screen's "Spin" tooltip)
     readonly List<(Vector2 Pos, double Time, int Result, string Sprite, bool Spinner)> popups = [];
     readonly List<int> visible = [];
 
@@ -1561,6 +1562,7 @@ sealed partial class Player : Screen
         // stable's RPM readout: eased 0.9 a 60Hz tick toward the current speed (rad/ms -> turns/min).
         double kr = Math.Pow(0.9, 1 / (1000 / 60.0));
         s.Rpm = s.Rpm * kr + (1 - kr) * Math.Abs(s.Velocity) * 1000 / (2 * Math.PI) * 60;
+        spinRpms.Add((int)s.Rpm);
         int req = SpinsRequired(o);
         // stable fades "SPIN!" out over 300ms once a quarter of the required count is spun (all of it for replays
         // recorded before 2019-05-10); a quarter of 0 fades it right at the start.

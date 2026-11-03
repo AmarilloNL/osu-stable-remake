@@ -80,7 +80,13 @@ sealed partial class Player
             var errs = p.hitErrors;
             var early = errs.Where(e => e < 0).DefaultIfEmpty().Average();
             var late = errs.Where(e => e >= 0).DefaultIfEmpty().Average();
-            tooltip = errs.Count == 0 ? "" : $"Accuracy:\nError: {early:0.00}ms - {late:+0.00}ms avg\nUnstable Rate: {p.HitStats().Ur:0.00}";
+            tooltip = errs.Count == 0 ? "" : $"Accuracy:\nError: {early:0.00}ms - {late:0.00}ms avg\nUnstable Rate: {p.HitStats().Ur:0.00}";
+            // stable adds its spinners' speed: the RPM readout's average and maximum, and twice its standard deviation
+            if (p.spinRpms.Count > 0)
+            {
+                double mean = p.spinRpms.Average(), sd = Math.Sqrt(p.spinRpms.Average(r => (r - mean) * (r - mean)));
+                tooltip += (tooltip.Length > 0 ? "\n" : "") + $"Spin:\nSpeed: {mean:000}(Max:{p.spinRpms.Max():000}rpm)\nUnstable Rate: {sd * 2:0.00}";
+            }
 
             // Gameplay already has the background loaded (decoding it again here cost ~80ms on the transition frame);
             // only a storyboard-drawn one (which gameplay skips) is loaded here, and then owned.
