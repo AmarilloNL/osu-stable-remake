@@ -927,6 +927,7 @@ sealed partial class Player : Screen
     // One step of game logic at the current time.
     void Step(double dtMs)
     {
+        NightcoreBeat();
         if (storyboard != null)
         {
             storyboard.PlaySamples(time);
@@ -1613,6 +1614,29 @@ sealed partial class Player : Screen
             case 50: n50++; break;
             default: nMiss++; break;
         }
+    }
+
+    // stable's Nightcore beat over the music, counted in half beats from the current red timing point: every 4 bars a
+    // kick and a finish (none at a point's start when it omits its first bar line), else a kick on half beat 0 and a
+    // clap on 2 of each meter-long group, and a hat on the others only when the map's slider tick rate is even.
+    int ncHalfBeat = -1;
+    void NightcoreBeat()
+    {
+        if (!mods.HasFlag(Mods.Nightcore)) return;
+        var tp = map.UninheritedAt(time + 5);
+        if (time < tp.Time) return;
+        int n = (int)((time - tp.Time) * 2 / tp.BeatLength), inBar = n % tp.Meter;
+        if (n == ncHalfBeat) return;
+        ncHalfBeat = n;
+        float vol = BeatmapSamples.EffectVolume;
+        if (n % (8 * tp.Meter) == 0)
+        {
+            skin.Sound("nightcore-kick")?.Play(vol);
+            if (n > 0 || !tp.OmitFirstBarLine) skin.Sound("nightcore-finish")?.Play(vol);
+        }
+        else if (inBar % 4 == 0) skin.Sound("nightcore-kick")?.Play(vol);
+        else if (inBar % 4 == 2) skin.Sound("nightcore-clap")?.Play(vol);
+        else if (Math.Clamp(map.SliderTickRate, 0.5, 8) % 2 == 0) skin.Sound("nightcore-hat")?.Play(vol);
     }
 
     void PlayEdge(HitObject o, int edge)

@@ -8,7 +8,7 @@ enum ObjType { Circle, Slider, Spinner }
 sealed class TimingPoint
 {
     public double Time, BeatLength;
-    public bool Uninherited, Kiai;
+    public bool Uninherited, Kiai, OmitFirstBarLine;
     public int Meter = 4;
     public int SampleSet, SampleIndex, Volume;
 }
@@ -274,6 +274,7 @@ sealed class Beatmap
                     Uninherited = uninherited,
                     Meter = t.Length > 2 && int.TryParse(t[2], out int meter) && meter > 0 ? meter : 4,
                     Kiai = t.Length > 7 && int.TryParse(t[7], out int fx) && (fx & 1) != 0,
+                    OmitFirstBarLine = t.Length > 7 && int.TryParse(t[7], out int fx8) && (fx8 & 8) != 0,
                 });
                 break;
             case "HitObjects":
