@@ -1064,7 +1064,7 @@ static class Game
 // stable's FPS counter (FpsCounter, F11 toggles), measured from its captures in 640x480 units: rounded boxes 40.2
 // wide and 12.7 tall, 3 in from the right; the bottom one shows the frame time on (172,220,25), and when a frame
 // limit applies a (255,204,34) box above it shows "fps/limit" with the limit smaller and grey. Consolas.
-// TODO: box colours for slow frames are guesses (the captures only show good ones).
+// Box and dot colours for slow frames follow stable's rules (see FrameStats below), not just its captures.
 sealed class FrameStats
 {
     // stable's counter: frame time eased 0.05 per second; fps counted over

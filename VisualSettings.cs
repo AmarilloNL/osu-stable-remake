@@ -49,6 +49,7 @@ sealed partial class Player
         var t = Toggles;
         samples.UseMapSamples = t.Hitsounds;
         skin.SetMapSkin(t.Skin ? map.Folder : null);
+        map.NumberCombos(skips: t.Skin && !Config.GetBool("IgnoreBeatmapSkins", false));
         colours = t.Skin && map.ComboColours.Count > 0
             ? map.ComboColours.Select(c => new Color(c.R, c.G, c.B, (byte)255)).ToArray()
             : skin.ComboColours;

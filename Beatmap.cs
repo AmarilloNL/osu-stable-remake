@@ -375,12 +375,17 @@ sealed class Beatmap
         TimingPoints = TimingPoints.OrderBy(t => t.Time).ToList();
         Objects = Objects.OrderBy(o => o.Time).ToList();
 
-        // stable's numbering/colouring: the colour counter gains 1 + skip on every new combo,
-        // the first object included (so the first combo uses colour 2); spinners don't take a colour but force a new
-        // combo on the next object, as does the end of a break. Combo-colour skips are beatmap skinning, so
-        // "ignore beatmap skins" drops them.
-        // TODO: that last mapping (stable's setting is unknown) is inferred; verify on a map with skips.
-        bool ignoreSkips = Config.GetBool("IgnoreBeatmapSkins", false);
+        NumberCombos(skips: !Config.GetBool("IgnoreBeatmapSkins", false));
+        foreach (var o in Objects) if (o.Type == ObjType.Slider) BuildSlider(o);
+        ApplyStacking();
+    }
+
+    // stable's numbering/colouring: the colour counter gains 1 + skip on every new combo, the first object included (so
+    // the first combo uses colour 2); spinners don't take a colour but force a new combo on the next object, as does the
+    // end of a break. The skips count only while the map's skin is in use: stable drops them when "Ignore all beatmap
+    // skins" or the map's own Visual Settings skin toggle is on (a play numbers again with the latter).
+    public void NumberCombos(bool skips)
+    {
         int combo = 0, colour = 0, nextBreak = 0;
         bool force = false;
         var breaks = Breaks.OrderBy(b => b.End).ToList();
@@ -389,7 +394,7 @@ sealed class Beatmap
             var o = Objects[i];
             bool newCombo = o.NewCombo;
             for (; nextBreak < breaks.Count && breaks[nextBreak].End < o.Time; nextBreak++) newCombo = true;
-            int skip = ignoreSkips ? 0 : o.ComboSkip;
+            int skip = skips ? o.ComboSkip : 0;
             o.StartsCombo = o.Type == ObjType.Spinner ? newCombo : force || newCombo || i == 0;
             if (o.Type == ObjType.Spinner)
             {
@@ -405,10 +410,7 @@ sealed class Beatmap
             else combo++;
             o.ComboNumber = combo;
             o.ColourIndex = colour;
-
-            if (o.Type == ObjType.Slider) BuildSlider(o);
         }
-        ApplyStacking();
     }
 
     void BuildSlider(HitObject o)
