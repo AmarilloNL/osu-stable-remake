@@ -655,7 +655,8 @@ sealed partial class Player : Screen
     internal bool Playing => !paused && !finished;
     internal bool Paused => paused;
     // stable's "active play": a live play from the first object's approach to the last object's end, not paused or failed
-    internal bool ActivePlay => !paused && !failed && !finished && playback == null && !auto
+    // (not before the clock starts: it waits for the song select preview to fade, and the time reads 0 meanwhile)
+    internal bool ActivePlay => fadeOut == null && !paused && !failed && !finished && playback == null && !auto
         && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime;
     internal void ApplyMusicVolume() { if (music != null) music.Volume = Config.MusicVolume; }
     // the Boss key pauses any play in progress (stable's does too)

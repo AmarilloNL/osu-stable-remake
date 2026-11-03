@@ -420,10 +420,12 @@ static class Game
     static double clippedAt;
 
     // The ConfineMouse option (Never / Fullscreen / Always): keeps the cursor inside the window (the letterbox box) while it has focus.
+    // Stable also keeps it there during a live play in progress (not paused, not watching), whatever the option says.
     static void ConfineCursor()
     {
         string mode = Config.Get("ConfineMouse", "Fullscreen");
-        bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() == "Fullscreen"); // stable: "Fullscreen" means its Fullscreen setting, not a monitor-sized window
+        bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() == "Fullscreen" // stable: "Fullscreen" means its Fullscreen setting, not a monitor-sized window
+            || Screen is Player { ActivePlay: true });
         ClipRect? r = null;
         if (want) { var p = GetWindowPosition(); p += BoxAt; r = new ClipRect { L = (int)p.X, T = (int)p.Y, R = (int)p.X + W, B = (int)p.Y + H }; }
         // Windows drops the clip on focus changes and the like, so it's re-applied every 250ms while wanted
