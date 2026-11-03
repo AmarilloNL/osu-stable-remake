@@ -1788,32 +1788,46 @@ sealed class SongSelect : Screen
 
     // stable's song select thumbnails: the set's thumbnail from osu!'s own cache, Data\bt\<set id>.jpg (80x60, or
     // <set id>l.jpg at 160x120 when the window is 768+ tall), which stable fills while online; offline it shows what's
-    // cached, and so does this. Centre-left 5.2 units into the panel at 1.425x (half that for the large ones), fading
-    // in over 400ms once loaded, grey (50) except on the selected set's panels (white), 300ms between the two.
+    // cached, and so does this. Centre-left 5.2 units into the panel at 1.425x (half that for the large ones). A
+    // thumbnail loads once its panel has been on screen for 500ms (100 on the selected set; gaps under 200ms don't
+    // count as leaving) and fades in over 400ms. Other sets' thumbnails are added onto the panel at grey 50; the
+    // selected set's are drawn normally in white, fading in from nothing over a second when it gets selected (300ms
+    // for the grey <-> white change). Checked against stable with test thumbnails at 1600x900.
     // Files are decoded off the main thread and textures unloaded once their panel has been out of sight for 5s.
-    readonly Dictionary<int, (Sprite? Tex, double At, double Seen)> thumbs = [];
+    readonly Dictionary<int, (Sprite? Tex, double At, double Seen, double Since, bool Asked)> thumbs = [];
     readonly System.Collections.Concurrent.ConcurrentQueue<(int Set, Image Img)> thumbsLoaded = new();
     double thumbsSweptAt;
     string? thumbSet, thumbSetBefore;
-    double thumbSetAt = double.NegativeInfinity;
+    double thumbSetAt = double.NegativeInfinity, thumbSetBeforeAt = double.NegativeInfinity;
 
     void DrawThumb(DbBeatmap b, float x, float cy, float u, float s)
     {
         double now = Game.NowMs;
-        if (!thumbs.TryGetValue(b.SetId, out var t))
+        if (Selected?.Folder != thumbSet) // the first selection on entering is instant, like stable's
+            (thumbSetBefore, thumbSetBeforeAt, thumbSet, thumbSetAt) = (thumbSet, thumbSetAt, Selected?.Folder, thumbSet == null ? double.NegativeInfinity : now);
+        bool sel = b.Folder == thumbSet, before = b.Folder == thumbSetBefore;
+        thumbs.TryGetValue(b.SetId, out var t);
+        if (now - t.Seen >= 200) t.Since = now;
+        t.Seen = now;
+        if (!t.Asked && now - t.Since >= (sel ? 100 : 500))
         {
+            t.Asked = true;
             int set = b.SetId;
             string file = Path.Combine(Config.OsuDir, "Data", "bt", $"{set}{(Game.H >= 768 ? "l" : "")}.jpg");
             Task.Run(() => { if (File.Exists(file) && LoadImage(file) is { Width: > 0 } img) thumbsLoaded.Enqueue((set, img)); });
         }
-        thumbs[b.SetId] = t with { Seen = now };
+        thumbs[b.SetId] = t;
         if (t.Tex is not { } tex) return;
-        if (Selected?.Folder != thumbSet) (thumbSetBefore, thumbSet, thumbSetAt) = (thumbSet, Selected?.Folder, now);
         float lit = (float)Math.Clamp((now - thumbSetAt) / 300, 0, 1);
-        lit = b.Folder == thumbSet ? lit : b.Folder == thumbSetBefore ? 1 - lit : 0;
+        lit = sel ? lit : before ? 1 - lit : 0;
         byte grey = (byte)(50 + 205 * lit);
+        // alpha: the later of the load fade (400ms) and the selection fade (1000ms) restarts it from zero
+        double selAt = sel ? thumbSetAt : before ? thumbSetBeforeAt : double.NegativeInfinity;
+        double alpha = selAt > t.At ? (now - selAt) / 1000 : (now - t.At) / 400;
         float scale = 1.425f * s, w = tex.Width * scale;
-        tex.Draw(new Vector2(x + 5.2f * u + w / 2, cy + 0.25f * u), scale, new Color(grey, grey, grey, (byte)(255 * Math.Clamp((now - t.At) / 400, 0, 1))));
+        if (!sel) BeginBlendMode(BlendMode.Additive);
+        tex.Draw(new Vector2(x + 5.2f * u + w / 2, cy + 0.25f * u), scale, new Color(grey, grey, grey, (byte)(255 * Math.Clamp(alpha, 0, 1))));
+        if (!sel) EndBlendMode();
     }
 
     // once a frame: textures for decoded thumbnails, and the ones not drawn for 5s unloaded
