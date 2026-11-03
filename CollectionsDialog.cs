@@ -104,15 +104,16 @@ sealed partial class SongSelect
         return false;
     }
 
-    void SaveCollections()
+    bool SaveCollections()
     {
-        if (OsuDb.SaveCollections(Path.Combine(Config.OsuDir, "collection.db"), Collections)) return;
+        if (OsuDb.SaveCollections(Path.Combine(Config.OsuDir, "collection.db"), Collections)) return true;
         Notification.Show("collection.db changed or couldn't be written: read again, please try once more.", 3000);
         collections = null; // (read again on the next use)
         collectionPicked = collectionRenaming = -1;
+        return false;
     }
 
-    // + / ++ / - / --: the selected map, or its whole set, into or out of the collection
+    // + / +Set / - / -Set: the selected map, or its whole set, into or out of the collection
     void ChangeCollection(int i, bool add, bool wholeSet)
     {
         if (Selected is not { } b || !CanWriteCollections()) return;
@@ -120,8 +121,7 @@ sealed partial class SongSelect
         var maps = wholeSet ? sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs ?? [b] : [b];
         bool changed = false;
         foreach (var m in maps) changed |= add ? md5s.Add(m.Md5) : md5s.Remove(m.Md5);
-        if (!changed) return;
-        SaveCollections();
+        if (!changed || !SaveCollections()) return;
         string what = wholeSet ? $"{b.Artist} - {b.Title}" : $"{b.Artist} - {b.Title} [{b.Version}]";
         Notification.Show(add ? $"Added {what} to '{name}'." : $"Removed {what} from '{name}'.", 1500);
     }
