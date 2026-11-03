@@ -607,6 +607,9 @@ sealed partial class Player : Screen
     // "spinnerspin", its frequency 20000 + 40000 x (spins / required) Hz (max 100000) with SpinnerFrequencyModulate.
     // Both stop when the slider is lost or ends, the spinner stops turning or ends, and on pause / fail / the end.
     int spinLoop;
+    // stable: the slider and spinner sounds play at the current timing point's volume (5ms on), at least 8%
+    int PointVolume => Math.Max(8, map.PointAt(time + 5).Volume);
+
     void UpdateLoopSounds()
     {
         bool live = !paused && !failed && !finished;
@@ -626,7 +629,7 @@ sealed partial class Player : Screen
             var tp = map.PointAt(time + 5);
             bool own = map.FormatVersion >= 14;
             int set = own && so.NormalSet > 0 ? so.NormalSet : tp.SampleSet, addition = own && so.AdditionSet > 0 ? so.AdditionSet : set;
-            int volume = Math.Max(8, tp.Volume);
+            int volume = PointVolume;
             bool whistle = (so.HitSound & 2) != 0;
             if (skin.LayeredHitSounds || !whistle) samples.Loop("slide", set, "sliderslide", tp.SampleIndex, volume); else samples.StopLoop("slide");
             if (whistle) samples.Loop("whistle", addition, "sliderwhistle", tp.SampleIndex, volume); else samples.StopLoop("whistle");
@@ -635,7 +638,7 @@ sealed partial class Player : Screen
 
         if (spinner is { } sp && sp.S.Velocity != 0)
         {
-            float vol = BeatmapSamples.EffectVolume * map.PointAt(time).Volume / 100f;
+            float vol = BeatmapSamples.EffectVolume * PointVolume / 100f;
             if (spinLoop == 0 || Bass.BASS_ChannelIsActive(spinLoop) != Bass.ActivePlaying)
             {
                 if (spinLoop != 0) Bass.BASS_ChannelPlay(spinLoop, false);
@@ -1573,7 +1576,7 @@ sealed partial class Player : Screen
             score += 1100;
             V2Bonus(500);
             health.Apply(HpEvent.SpinnerBonus);
-            if (!cinema) skin.Sound("spinnerbonus")?.Play(BeatmapSamples.EffectVolume);
+            if (!cinema) skin.Sound("spinnerbonus")?.Play(BeatmapSamples.EffectVolume * PointVolume / 100f);
         }
         else if (s.SpinsCounted > 1 && s.SpinsCounted % 2 == 0)
         {
