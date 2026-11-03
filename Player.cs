@@ -1606,7 +1606,7 @@ sealed partial class Player : Screen
     void BreakCombo()
     {
         if (VerifyLog) Console.Error.WriteLine($"  combo break at {time:0} after {combo}");
-        if (combo >= 20) skin.Sound("combobreak")?.Play(BeatmapSamples.EffectVolume);
+        if (combo > 20 && !mods.HasFlag(Mods.Relax) && !mods.HasFlag(Mods.Autopilot)) skin.Sound("combobreak")?.Play(BeatmapSamples.EffectVolume); // stable: over 20, not with Relax / Autopilot
         combo = 0;
         if (mods.HasFlag(Mods.SuddenDeath)) Fail();
     }
@@ -1671,7 +1671,8 @@ sealed partial class Player : Screen
         storyboard?.FireHitSound(time, set, add, bits, idx);
         if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * vol / 100f, SamplePitch); return; }
         vol = Math.Max(8, vol);
-        samples.Play(set, "hitnormal", idx, (int)(vol * 0.8), SamplePitch);
+        // the normal sound: with no additions, when the map asks for it, or with the skin's LayeredHitSounds (on by default)
+        if (bits == 0 || (bits & 1) != 0 || skin.LayeredHitSounds) samples.Play(set, "hitnormal", idx, (int)(vol * 0.8), SamplePitch);
         if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, (int)(vol * 0.85), SamplePitch);
         if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol, SamplePitch);
         if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, (int)(vol * 0.85), SamplePitch);
