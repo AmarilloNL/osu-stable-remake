@@ -29,6 +29,8 @@ static class Game
             Previous = screen;
             screen = value;
             if (skinReloadQueued && value is not (Player or Player.Results)) { skinReloadQueued = false; ReloadSkin(); } // (those hold the old skin)
+            // stable's window title names the map during a play ("osu!  - Artist - Title [Version]")
+            if (IsWindowReady()) SetWindowTitle(value is Player p ? $"osu!stable remake - {p.MapName}" : "osu!stable remake");
             value.Entered();
         }
     }

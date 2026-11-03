@@ -654,6 +654,9 @@ sealed partial class Player : Screen
 
     internal bool Playing => !paused && !finished;
     internal bool Paused => paused;
+    // stable's display name: "Artist - Title" (or the title, or the file's name) and " [Version]"
+    internal string MapName => (map.Artist.Length > 0 ? $"{map.Artist} - {map.Title}" : map.Title.Length > 0 ? map.Title : Path.GetFileName(map.File))
+        + (map.Version.Length > 0 ? $" [{map.Version}]" : "");
     // stable's "active play": a live play from the first object's approach to the last object's end, not paused or failed
     // (not before the clock starts: it waits for the song select preview to fade, and the time reads 0 meanwhile)
     internal bool ActivePlay => fadeOut == null && !paused && !failed && !finished && playback == null && !auto
