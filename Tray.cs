@@ -10,18 +10,23 @@ static unsafe class Tray
     static volatile bool clicked;
     static Thread? thread;
     static IntPtr window;
+    static bool added;
 
     // true once after the icon was clicked
     public static bool TakeClick() { bool c = clicked; clicked = false; return c; }
 
-    public static void Show((string Title, string Text)? balloon)
+    // false if the icon couldn't be added (no notification area): then there'd be no way back from hiding
+    public static bool Show((string Title, string Text)? balloon)
     {
-        if (thread != null) return;
+        if (thread != null) return added;
         clicked = false;
+        added = false;
         using var ready = new ManualResetEventSlim();
         thread = new Thread(() => Run(balloon, ready)) { IsBackground = true, Name = "tray" };
         thread.Start();
         ready.Wait(1000);
+        if (!added) Hide();
+        return added;
     }
 
     public static void Hide()
@@ -53,7 +58,7 @@ static unsafe class Tray
             Copy(title, data.szInfoTitle, 64);
             Copy(text, data.szInfo, 256);
         }
-        Shell_NotifyIconW(NIM_ADD, &data);
+        added = Shell_NotifyIconW(NIM_ADD, &data);
         ready.Set();
         Msg msg;
         while (GetMessageW(&msg, 0, 0, 0) > 0) { TranslateMessage(&msg); DispatchMessageW(&msg); }

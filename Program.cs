@@ -84,10 +84,12 @@ static class Game
             Config.SetTemp("VolumeUniversal", "0");
             (Screen as Player)?.BossPause();
             MinimizeWindow();
-            ShowWindow((IntPtr)GetWindowHandle(), 0); // SW_HIDE: off the taskbar too
             bool first = Config.GetBool("BossKeyFirstActivation", true);
-            Tray.Show(first ? ("Hey, osu! is hidden down here!", "You pressed the Boss Key. This will hide osu! in the system tray with one key press. You will not see this popup again.") : null);
-            if (first) Config.SetOwn("BossKeyFirstActivation", "0");
+            if (Tray.Show(first ? ("Hey, osu! is hidden down here!", "You pressed the Boss Key. This will hide osu! in the system tray with one key press. You will not see this popup again.") : null))
+            {
+                ShowWindow((IntPtr)GetWindowHandle(), 0); // SW_HIDE: off the taskbar too (only minimised without an icon to come back by)
+                if (first) Config.SetOwn("BossKeyFirstActivation", "0");
+            }
         }
         else if (bossVolume != null && Tray.TakeClick())
         {
