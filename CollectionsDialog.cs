@@ -8,8 +8,8 @@ namespace OsuStableRemake;
 // (448 x 15.5 at y 35.7, bold 15) where typing a name and Enter makes a collection (25 characters at most); under it
 // the collections, 17 units apart from y 60 in a 250-unit scrolling area, each "name (maps on disk)" in a 448-wide
 // box (regular 12, grey 200; hovered white, or yellow-green when it holds the selected map; bold once picked), with
-// small 10-point buttons from 280 in: Rename (orange, 35 wide), ++ / + (green, 30 / 20: add the set / the map) and
-// -- / - (orange-red: remove them), the ones that would change nothing in grey. Then Delete the collection (red,
+// small 10-point buttons from 280 in: Rename (orange, 35 wide), +Set / + (green, 30 / 20: add the set / the map) and
+// -Set / - (orange-red: remove them), the ones that would change nothing in grey. Then Delete the collection (red,
 // asks first) and Close at y 320. Changes are written to stable's collection.db, only while stable is closed (it
 // writes its own copy when it closes).
 sealed partial class SongSelect
@@ -37,14 +37,15 @@ sealed partial class SongSelect
     }
 
     static float CollectionX => Game.W / 2f - 224 * Game.H / 480f;
+    static float RowX => CollectionX - Game.H / 480f; // (the rows sit a unit left of the name box, measured)
     static Rectangle CollectionButton(int k, float rowY)
     {
         float u = Game.H / 480f;
         (float x, float w) = k switch { 0 => (280f, 35f), 1 => (325f, 30f), 2 => (360f, 20f), 3 => (385f, 30f), _ => (420f, 20f) };
-        return new Rectangle(CollectionX + x * u, rowY + 2 * u, w * u, 11 * u);
+        return new Rectangle(RowX + x * u, rowY + 2 * u, w * u, 11 * u);
     }
 
-    float CollectionRowY(int i) => (60 + i * 17 - collectionScroll) * Game.H / 480f;
+    float CollectionRowY(int i) => (59.7f + i * 17 - collectionScroll) * Game.H / 480f;
 
     // true when the content took Enter (the name box)
     bool UpdateCollections()
@@ -89,7 +90,7 @@ sealed partial class SongSelect
                 else ChangeCollection(i, add: k <= 2, wholeSet: k is 1 or 3);
                 return false;
             }
-            if (CheckCollisionPointRec(mouse, new Rectangle(CollectionX, y, 448 * u, 15 * u))) { collectionPicked = i; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
+            if (CheckCollisionPointRec(mouse, new Rectangle(RowX, y, 448 * u, 15 * u))) { collectionPicked = i; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
         }
         return false;
     }
@@ -156,7 +157,7 @@ sealed partial class SongSelect
         float u = Game.H / 480f, x0 = CollectionX;
         var mouse = Input.GetMousePosition();
         // the name box
-        var box = new Rectangle(x0, 35.7f * u, 448 * u, 15.5f * u);
+        var box = new Rectangle(x0, 35.7f * u, 448 * u, 16 * u);
         DrawRectangleRec(box, ColorAlpha(BoxFill, alpha));
         DrawRectangleLinesEx(box, 1, ColorAlpha(BoxBorder, alpha));
         string shown = collectionName.Length > 0 ? collectionName : "Select a collection or create a new one here...";
@@ -171,31 +172,39 @@ sealed partial class SongSelect
             float y = CollectionRowY(i);
             if (y + 15 * u < 60 * u || y > 310 * u) continue;
             var (name, md5s) = list[i];
-            bool holds = b != null && md5s.Contains(b.Md5), hover = CheckCollisionPointRec(mouse, new Rectangle(x0, y, 448 * u, 15 * u));
-            var row = new Rectangle(x0, y, 448 * u, 15 * u);
-            DrawRectangleRec(row, ColorAlpha(BoxFill, alpha));
-            DrawRectangleLinesEx(row, 1, ColorAlpha(Color.Black, alpha));
+            float rx = RowX;
+            bool holds = b != null && md5s.Contains(b.Md5), hover = CheckCollisionPointRec(mouse, new Rectangle(rx, y, 448 * u, 15 * u));
+            // measured on stable: black box, 1px border white (yellow-green when the collection holds the selected map),
+            // the whole row at grey 200 (white while hovered; the hovered yellow-green border lightens about 45%)
+            var row = new Rectangle(rx, y, 448 * u, 15 * u);
+            var border = holds ? hover ? ColorLerp(XnaYellowGreen, Color.White, 0.45f) : Tint(XnaYellowGreen, 200) : hover ? Color.White : RowGrey;
+            DrawRectangleRec(row, ColorAlpha(Color.Black, alpha));
+            DrawRectangleLinesEx(row, 1, ColorAlpha(border, alpha));
             string label = collectionRenaming == i ? renameText : $"{(name.Length > 40 ? name[..40] + "..." : name)} ({md5s.Count(m => libraryMd5s?.Contains(m) != false)})";
-            var colour = collectionRenaming == i ? Color.Yellow : hover ? holds ? XnaYellowGreen : Color.White : RowGrey;
+            var colour = collectionRenaming == i ? Color.Yellow : hover ? Color.White : RowGrey;
             float ts = 12.4f * u, ty = y + 7.5f * u - ts / 2;
-            if (i == collectionPicked) Game.TextBold(label, x0 + 2 * u, ty, ts, ColorAlpha(colour, alpha));
-            else Game.TextRegular(label, x0 + 2 * u, ty, ts, ColorAlpha(colour, alpha));
-            string[] labels = ["Rename", "++", "+", "--", "-"];
+            if (i == collectionPicked) Game.TextBold(label, rx + 2 * u, ty, ts, ColorAlpha(colour, alpha));
+            else Game.TextRegular(label, rx + 2 * u, ty, ts, ColorAlpha(colour, alpha));
+            // buttons: their colour with a 1px border in the hover colour, all at grey 150 when they'd change nothing
+            string[] labels = ["Rename", "+Set", "+", "-Set", "-"];
             for (int k = 0; k < 5; k++)
             {
                 var r = CollectionButton(k, y);
                 bool over = CheckCollisionPointRec(mouse, r);
                 if (over && k > 0) tip = ButtonTips[k - 1];
-                Color bg = k == 0 ? XnaOrange : k <= 2 ? over ? XnaYellowGreen : XnaGreen : over ? XnaDarkOrange : OrangeRed;
-                bool live = k == 0 || (k <= 2 ? !holds : holds);
-                DrawRectangleRec(r, ColorAlpha(bg, alpha));
+                (Color bg, Color edge) = k == 0 ? (XnaOrange, XnaOrange) : k <= 2 ? (XnaGreen, XnaYellowGreen) : (OrangeRed, XnaDarkOrange);
+                byte shade = k == 0 || (k <= 2 ? !holds : holds) ? (byte)255 : (byte)150;
+                DrawRectangleRec(r, ColorAlpha(Tint(bg, shade), alpha));
+                DrawRectangleLinesEx(r, 1, ColorAlpha(Tint(edge, shade), alpha));
                 float s = 10.3f * u;
-                Game.TextRegular(labels[k], r.X + r.Width / 2 - Game.RegularWidth(labels[k], s) / 2, r.Y + r.Height / 2 - s / 2, s, ColorAlpha(live ? Color.White : ButtonGrey, alpha));
+                Game.TextRegular(labels[k], r.X + r.Width / 2 - Game.RegularWidth(labels[k], s) / 2, r.Y + r.Height / 2 - s / 2, s, ColorAlpha(Tint(Color.White, shade), alpha));
             }
         }
         EndScissorMode();
         if (tip != null) Options.DrawScreenTooltip(tip, mouse);
     }
+
+    static Color Tint(Color c, byte k) => new((byte)(c.R * k / 255), (byte)(c.G * k / 255), (byte)(c.B * k / 255), c.A);
 
     static readonly string[] ButtonTips = ["Add set to collection", "Add to collection", "Remove set from collection", "Remove from collection"];
 }
