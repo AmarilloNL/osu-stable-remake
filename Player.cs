@@ -1453,8 +1453,8 @@ sealed partial class Player : Screen
                 if (passed != n && !VirtualClock && PointPops) pointPops.Add((BallOf(o, time), time, tickScore)); // (not the end)
                 if (cp.Kind == CheckpointKind.Tick)
                 {
-                    var tp = map.PointAt(cp.Time);
-                    samples.Play(o.NormalSet > 0 ? o.NormalSet : tp.SampleSet, "slidertick", tp.SampleIndex, o.Volume > 0 ? o.Volume : tp.Volume);
+                    var tp = map.PointAt(cp.Time + 2); // stable: the timing point 2ms on, at its own volume
+                    samples.Play(o.NormalSet > 0 ? o.NormalSet : tp.SampleSet, "slidertick", tp.SampleIndex, tp.Volume, SamplePitch);
                 }
                 else PlayEdge(o, cp.Kind == CheckpointKind.End ? o.Slides : cp.Span + 1);
             }
@@ -1639,15 +1639,19 @@ sealed partial class Player : Screen
         else if (Math.Clamp(map.SliderTickRate, 0.5, 8) % 2 == 0) skin.Sound("nightcore-hat")?.Play(vol);
     }
 
+    // stable: hitsounds follow DT / HT (speed and pitch) only on maps that ask for it
+    float SamplePitch => map.SamplesMatchPlaybackRate ? (float)rate : 1;
+
     void PlayEdge(HitObject o, int edge)
     {
         int sound = edge < o.EdgeSounds.Length ? o.EdgeSounds[edge] : o.HitSound;
         var (normal, addition) = edge < o.EdgeSets.Length ? o.EdgeSets[edge] : (o.NormalSet, o.AdditionSet);
-        PlayHitsound(sound, normal, addition, o.SampleIndex, o.Volume, o.Time + edge * o.SpanDuration, o.SampleFile);
+        PlayHitsound(sound, normal, addition, o.SampleIndex, o.Volume, o.Time + edge * o.SpanDuration);
     }
 
     // A custom sample file found in the map's folder plays instead of the whole set (stable: none of the normal,
-    // whistle, finish or clap); storyboard triggers still see the set.
+    // whistle, finish or clap); storyboard triggers still see the set. Otherwise stable's mix: at least 8% volume, the
+    // normal at 0.8 of it, whistle and clap at 0.85, finish at full.
     void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at, string file = "")
     {
         var tp = map.PointAt(at + 5); // stable samples the timing point slightly ahead
@@ -1656,11 +1660,12 @@ sealed partial class Player : Screen
         int idx = index > 0 ? index : tp.SampleIndex;
         int vol = volume > 0 ? volume : tp.Volume;
         storyboard?.FireHitSound(time, set, add, bits, idx);
-        if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * vol / 100f); return; }
-        samples.Play(set, "hitnormal", idx, vol);
-        if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, vol);
-        if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol);
-        if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, vol);
+        if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * vol / 100f, SamplePitch); return; }
+        vol = Math.Max(8, vol);
+        samples.Play(set, "hitnormal", idx, (int)(vol * 0.8), SamplePitch);
+        if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, (int)(vol * 0.85), SamplePitch);
+        if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol, SamplePitch);
+        if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, (int)(vol * 0.85), SamplePitch);
     }
 
     // ---------------------------------------------------------------- drawing

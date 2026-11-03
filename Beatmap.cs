@@ -26,7 +26,7 @@ sealed class HitObject
     public int ComboSkip, ComboNumber, ColourIndex, Stack;
     public bool StartsCombo; // stable's new-combo flag after Finish (a spinner keeps its own; the object after one is forced)
     public int HitSound, NormalSet, AdditionSet, SampleIndex, Volume;
-    public string SampleFile = ""; // the hitsample's custom file (circles and sliders; stable ignores a spinner's)
+    public string SampleFile = ""; // the hitsample's custom file (stable plays it for circles only)
 
     // Sliders
     public Vector2[] Path = [];
@@ -123,6 +123,7 @@ sealed class Beatmap
     public int Countdown = 1, CountdownOffset; // 0 none, 1 normal, 2 half speed, 3 double speed
     public bool EpilepsyWarning;
     public double HP = 5, CS = 5, OD = 5, AR = -1, SliderMultiplier = 1.4, SliderTickRate = 1;
+    public bool SamplesMatchPlaybackRate; // [General]: hitsounds follow DT / HT's speed (and pitch)
     public int DefaultSampleSet = 1;
     public List<System.Drawing.Color> ComboColours = [];
     public List<TimingPoint> TimingPoints = [];
@@ -221,6 +222,7 @@ sealed class Beatmap
                 {
                     case "AudioFilename": AudioFilename = v; break;
                     case "AudioLeadIn": AudioLeadIn = D(v); break;
+                    case "SamplesMatchPlaybackRate": SamplesMatchPlaybackRate = v.StartsWith('1'); break;
                     case "Countdown": Countdown = (int)D(v); break;
                     case "EpilepsyWarning": EpilepsyWarning = v == "1"; break;
                     case "OverlayPosition": OverlayPosition = v switch { "Below" => 1, "Above" => 2, _ => 0 }; break;
@@ -336,7 +338,7 @@ sealed class Beatmap
             if (s.Length > 1) { o.NormalSet = I(s[0]); o.AdditionSet = I(s[1]); }
             if (s.Length > 2) o.SampleIndex = I(s[2]);
             if (s.Length > 3) o.Volume = I(s[3]);
-            if (s.Length > 4 && o.Type != ObjType.Spinner) o.SampleFile = s[4].Trim();
+            if (s.Length > 4 && o.Type == ObjType.Circle) o.SampleFile = s[4].Trim();
         }
         Objects.Add(o);
     }

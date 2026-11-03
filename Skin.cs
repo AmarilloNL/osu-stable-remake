@@ -436,7 +436,7 @@ sealed class BeatmapSamples
     // stable's IgnoreBeatmapSamples (and the per-map Hitsounds toggle): off = always the skin's samples.
     public bool UseMapSamples = !Config.GetBool("IgnoreBeatmapSamples", false);
 
-    public void Play(int set, string name, int index, int volumePercent) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f);
+    public void Play(int set, string name, int index, int volumePercent, float pitch = 1) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f, pitch);
 
     // A hit object's custom sample: that file in the map's folder, or (no extension, or not there) the name with
     // .wav / .ogg / .mp3; null when it isn't there either, or the map's samples are off.
