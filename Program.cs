@@ -332,11 +332,16 @@ static class Game
     static readonly System.Collections.Concurrent.ConcurrentQueue<string> Opened = new();
     static volatile bool raise;
 
-    // Hands files to the running game; false if it doesn't answer (then this one opens them itself).
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int processId);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
+
+    // Wakes the running game and hands it the files; false if it doesn't answer (then this one starts after all).
     static bool Forward(string[] files)
     {
         try
         {
+            AllowSetForegroundWindow(-1); // this launch is in front; Windows only lets the running game come forward if it says so
             using var pipe = new System.IO.Pipes.NamedPipeClientStream(".", PipeName, System.IO.Pipes.PipeDirection.Out);
             pipe.Connect(2000);
             using var w = new StreamWriter(pipe);
@@ -526,10 +531,10 @@ static class Game
         double[] songShots = Arg("--song-shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? []; // song ms, during play
         double exitAfter = Arg("--exit-after") is { } ea ? double.Parse(ea, System.Globalization.CultureInfo.InvariantCulture) : double.MaxValue;
         // Files opened with the game ("Open with", or dropped on the exe) open like files dropped on the window. Like
-        // stable, a game that's already running takes them and comes to the front instead of a second one starting.
+        // stable, starting it again while it runs brings the running game to the front instead (with those files).
         string[] opened = [.. args.TakeWhile(a => !a.StartsWith("--")).Where(File.Exists).Select(Path.GetFullPath)];
         using var single = new Mutex(false, PipeName, out bool firstInstance);
-        if (!firstInstance && opened.Length > 0 && Forward(opened)) return;
+        if (!firstInstance && !args.Any(a => a.StartsWith("--")) && Forward(opened)) return; // (test runs start anyway)
         if (firstInstance) Listen();
         foreach (var f in opened) Opened.Enqueue(f);
         if (Arg("--drop") is { } drop) Opened.Enqueue(drop); // test hook
@@ -613,9 +618,14 @@ static class Game
             Input.Update(now / 1000);
             if (!testRun) { ConfineCursor(); ApplySensitivity(); }
             if (IsFileDropped()) BeatmapImport.Open(GetDroppedFiles());
+            if (raise) // (raylib's RestoreWindow only works on resizable windows)
+            {
+                raise = false;
+                unsafe { if (IsIconic((IntPtr)GetWindowHandle())) ShowWindow((IntPtr)GetWindowHandle(), 9); } // SW_RESTORE
+                SetWindowFocused();
+            }
             if (!Opened.IsEmpty && SongSelect.Instance is { LibraryLoading: false }) // (a replay needs its map listed)
             {
-                if (raise) { raise = false; if (IsWindowMinimized()) RestoreWindow(); SetWindowFocused(); }
                 var files = new List<string>();
                 while (Opened.TryDequeue(out var f)) files.Add(f);
                 BeatmapImport.Open([.. files]);
