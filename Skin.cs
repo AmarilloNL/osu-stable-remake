@@ -318,8 +318,13 @@ sealed class Skin
         return new Sprite(tex, scale);
     }
 
+    // stable plays its interface clicks and hover sounds only while the window is active (the mouse passing over an
+    // unfocused window stays quiet)
+    static readonly HashSet<string> UiSounds = new(StringComparer.OrdinalIgnoreCase) { "click-short", "click-short-confirm", "menuclick", "select-expand" };
+
     public SoundPool? Sound(string name)
     {
+        if (UiSounds.Contains(name) && !IsWindowFocused() && !Input.ScriptOnly) return null;
         if (sounds.TryGetValue(name, out var s)) return s;
         SoundPool? pool = null;
         foreach (var ext in new[] { ".wav", ".ogg", ".mp3" })
