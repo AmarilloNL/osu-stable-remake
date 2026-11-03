@@ -56,9 +56,6 @@ static class Game
     // falls 4 a tick from 140 (so it holds black a moment). The old screen sits still meanwhile.
     public static bool Fading => fadeTo != null;
 
-    // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
-    // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
-    // again) brings it back, and the volume with it.
     // stable's "Minimise on alt-tab during fullscreen": a fullscreen game that loses focus minimises when the option is on
     // and the cursor would be confined or the game doesn't cover the monitor (stable also counts a display mode or refresh
     // rate it changed). raylib's GLFW doesn't do it by itself.
@@ -75,6 +72,9 @@ static class Game
         wasFocused = focused;
     }
 
+    // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
+    // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
+    // again) brings it back, and the volume with it.
     static string? bossVolume;
     static unsafe void UpdateBossKey(SongSelect songs)
     {
