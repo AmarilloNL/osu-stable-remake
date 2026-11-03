@@ -2453,16 +2453,19 @@ sealed class SongSelect : Screen
     string bgKey = "";
     Task<(string Key, Image Img)>? bgLoading;
     double bgShownAt;
+    Texture2D retiredBg; // the previous background, deleted a moment later: deleting it while the GPU may still use it stalled uploads ~15ms
+    double retiredAt;
 
     void UpdateBackground()
     {
+        if (retiredBg.Id != 0 && Game.NowMs - retiredAt > 100) { UnloadTexture(retiredBg); retiredBg = default; } // (deleted once the GPU is done with it)
         if (bgLoading is { IsCompleted: true })
         {
             var (key, img) = bgLoading.Result;
             bgLoading = null;
             if (key == bgKey && img.Width > 0)
             {
-                if (bgTex.Id != 0) UnloadTexture(bgTex);
+                if (bgTex.Id != 0) { if (retiredBg.Id != 0) UnloadTexture(retiredBg); (retiredBg, retiredAt) = (bgTex, Game.NowMs); }
                 bgTex = LoadTextureFromImage(img);
                 SetTextureFilter(bgTex, TextureFilter.Bilinear);
                 bgShownAt = Game.NowMs;
