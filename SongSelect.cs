@@ -48,6 +48,7 @@ sealed partial class SongSelect : Screen
             Toast.Show("Beatmaps are currently filtered by difficulty.\nClick here to change the range.", new Color(245, 245, 220, 255), 10000,
                 () => { if (Game.Screen == this) Game.Screen = new Options(this, this, "SONG SELECT"); });
         }
+        headerFor = default; // (a play may have changed the map's local offset)
         Game.Skin.PrefetchGameplay();
         if (Game.Previous is not Options) SlideIn(); // stable's options are an overlay; anything else re-enters song select
     }
@@ -1226,7 +1227,7 @@ sealed partial class SongSelect : Screen
     string[] header = [];
     // stable's tooltip on the difficulty line: approach time, the 300 / 100 / 50 windows (whole ms less half, as the
     // judging compares with <), spinner difficulty and the circle radius in osu! pixels, all with the mods
-    string diffTip = "";
+    string diffTip = "", offsetLine = "";
     bool diffTipShown;
     // stable colours the length line by the speed mod and the stats line by HR / EZ (salmon harder, light
     // blue easier), and marks AR, OD and HP with a small arrow when a speed mod changes them in play
@@ -1970,6 +1971,9 @@ sealed partial class SongSelect : Screen
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
                     $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? (Math.Floor(stars * 100) / 100).ToString("0.##") : "?")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after
+                // stable: a second line when the map has a local or online offset
+                int local = Config.GetInt($"LocalOffset_{b.Md5}", b.LocalOffset), online = b.OnlineOffset;
+                offsetLine = local != 0 || online != 0 ? $"Your Offset: {(local > 0 ? "+" : "")}{local}ms / Online Offset: {(online > 0 ? "+" : "")}{online}ms" : "";
                 double kd = mods.HasFlag(Mods.HardRock) ? 1.4 : mods.HasFlag(Mods.Easy) ? 0.5 : 1, kc = mods.HasFlag(Mods.HardRock) ? 1.3 : kd;
                 double ar = Math.Min(10, b.AR * kd), od = Math.Min(10, b.OD * kd);
                 double Window(double at0, double at5, double at10) => ((int)Beatmap.Range(od, at0, at5, at10) - 0.5) / rate;
@@ -1995,6 +1999,7 @@ sealed partial class SongSelect : Screen
                 statX += 3.5f * u;
             }
             Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
+            if (offsetLine.Length > 0) Game.Text(offsetLine, 2 * u, 57.7f * u, size, statsColour); // line spacing estimated (no stable capture with an offset yet)
             diffTipShown = CheckCollisionPointRec(Input.GetMousePosition(), new Rectangle(2 * u, 47 * u, statX - 2 * u, 10 * u));
         }
 
