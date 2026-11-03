@@ -69,7 +69,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Options panel as stable's: all nine sections with dropdowns, buttons, stable's tooltips and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
 - Stable's offset wizard (Options → Audio): ticks scroll to the beat of the song that's playing while you set the universal offset
 - Menu snow, kiai star fountains, break stars, combo bursts and kiai beat pulses, ported from stable
-- Volume overlay, stable's FPS / frame time counter, notifications
+- Volume overlay, stable's FPS / frame time counter and its frame time graph (`Ctrl+F11`: update, draw, present and limiter time per frame, plus garbage collections), notifications
 - Beatmap (`.osz`) and skin (`.osk`) imports and stable replays (`.osr`): drop them on the window or open them with the executable, like stable (a game that's already running takes them)
 - Stable's display modes: fullscreen at its own resolution, or letterboxed ("Render at native resolution": the monitor keeps its resolution and the game sits in a movable box)
 </details>

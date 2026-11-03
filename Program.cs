@@ -609,12 +609,14 @@ static class Game
         double cpuSum = 0; // test runs: the part before EndDrawing (present and any GPU wait excluded)
         if (Environment.GetEnvironmentVariable("ALLOC_PROFILE") == "1") AllocProfile.Instance = new AllocProfile();
 
+        double fUpdate = 0, fDraw = 0, fSwap = 0, fSleep = 0, fEnd = NowMs; // the last frame's phases, for the frame graph
         while (!Quit)
         {
             double now = NowMs;
             double dt = now - last;
             last = now;
             stats.Add(dt);
+            FrameGraph.Add(fUpdate, fDraw, fSwap, now - fEnd, fSleep);
 
             // like the options' toggle; stable takes Alt+Enter only in the main menu and song select (and the lobby)
             if (Input.AltEnterPressed && Screen is MainMenu or SongSelect or Options) SetFullscreen(DisplayMode() != "Fullscreen");
@@ -641,6 +643,7 @@ static class Game
             if (!double.IsNaN(QuitAt)) { if (now >= QuitAt) Quit = true; }
             else if (UpdateFade(dt) && (!IsWindowMinimized() || Screen is Player)) Screen.Update(dt);
 
+            double tDraw = NowMs;
             BeginDrawing();
             ClearBackground(Color.Black);
             if (!IsWindowMinimized()) // a minimised window is 0x0: nothing to draw (the game itself keeps running, like stable)
@@ -654,6 +657,7 @@ static class Game
                 if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
                 SongSelect.FlushCursor();
                 stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
+                FrameGraph.Draw();
                 if (Box is { } box)
                 {
                     EndTextureMode();
@@ -670,6 +674,7 @@ static class Game
                 TakeScreenshot($"shot-{shotIndex++}.png");
             }
             UpdateBossKey(songSelect);
+            if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
             // F7 (Toggle Framerate Limit): stable's cycle VSync / Power saving -> Optimal -> Unlimited -> Power saving
             if (Input.IsKeyPressed(Config.Key("keyToggleFrameLimiter", KeyboardKey.F7)))
             {
@@ -704,7 +709,9 @@ static class Game
             if (secs >= exitAfter) Quit = true;
             if (AllocProfile.Instance is { } ap) ap.On = secs > 8; // gameplay only, after loading
             if (exitAfter < double.MaxValue) cpuSum += NowMs - now;
+            double tSwap = NowMs;
             EndDrawing();
+            double tSwapped = NowMs;
             if (exitAfter < double.MaxValue) // test runs: update+draw+present time per frame, slow ones listed
             {
                 float w = (float)(NowMs - now);
@@ -715,6 +722,8 @@ static class Game
             // Unfocused/minimized: throttle like stable so the game doesn't burn a core in the background.
             double fps = IsWindowMinimized() ? 15 : !IsWindowFocused() && !testRun ? 60 : TargetFps(Config.Get("FrameSync", "Unlimited"), refresh);
             nextFrame = Limit(fps, nextFrame);
+            fEnd = NowMs;
+            (fUpdate, fDraw, fSwap, fSleep) = (tDraw - now, tSwap - tDraw, tSwapped - tSwap, fEnd - tSwapped);
         }
 
         if (work.Count > 0) // test runs report how long frames took to build (the limiter's wait excluded)
