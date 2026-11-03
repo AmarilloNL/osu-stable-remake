@@ -2449,7 +2449,7 @@ sealed partial class SongSelect : Screen
             ("Manage Collections", new Color(154, 205, 50, 255), OpenCollections),
             ("Delete...", OrangeRed, () => OpenDelete(b)),
             ("Remove from Unplayed", OptionsPurple, () => RemoveFromUnplayed(b)),
-            ("Clear local scores", OptionsPurple, () => OpenDialog("Are you sure you want to clear all local scores for this beatmap?", ("Let's do it!", YellowGreen, () => ClearScores(b)), ("Cancel", OrangeRed, null))),
+            ("Clear local scores", OptionsPurple, () => OpenDialog("Are you sure you want to delete all local scores on this beatmap?", ("Let's do it!", YellowGreen, () => ClearScores(b)), ("Cancel", OrangeRed, null))),
             ("Edit", OrangeRed, () => Notification.Show("The beatmap editor isn't part of this offline remake.", 3000)),
             ("Cancel", Xna.Gray, null));
     }

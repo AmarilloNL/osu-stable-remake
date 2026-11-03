@@ -153,8 +153,8 @@ sealed class MainMenu : Screen
     // stable's Now Playing controls (y measured): FontAwesome icons 20 units apart from 136 to 16 units
     // in from the right edge, growing to 1.2x on hover over 100ms, and a 134x3-unit seek bar (additive track and
     // fill) 143 units in at y 40. Each click plays a sound and shows a notice in the centre band.
-    // The notices << Prev, >> Next, Play, Pause / Unpause and Stop Playing are stable's (checked); the info toggle's wording
-    // is unverified. The list button opens the Jump To window.
+    // The notices << Prev, >> Next, Play, Pause / Unpause, Stop Playing and the info toggle's are stable's (checked).
+    // The list button opens the Jump To window.
     static readonly int[] MusicIcons = [0xf048, 0xf04b, 0xf04c, 0xf04d, 0xf051, 0xf129, 0xf0c9];
     static readonly string[] MusicTips = ["Previous track", "Play", "Pause", "Stop the music!", "Next track", "View song info", "Jump To window"]; // stable's
     readonly float[] musicHover = new float[MusicIcons.Length];
@@ -218,7 +218,7 @@ sealed class MainMenu : Screen
         bool on = !PermanentInfo;
         Config.SetOwn("PermanentSongInfo", on ? "1" : "0");
         songChangedAt = Game.NowMs;
-        return on ? "Song info will be displayed permanently." : "Song info will be displayed temporarily.";
+        return on ? "Song Info will be permanently displayed." : "Song Info will be temporarily displayed.";
     }
 
     void MusicAction(int over)
