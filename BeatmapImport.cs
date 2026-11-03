@@ -39,13 +39,26 @@ sealed class BeatmapImport : Screen
             string name = Path.GetFileName(file);
             incoming.Enqueue($"Importing {(name.Length > 50 ? name.Remove(50) + "..." : name)}");
             var dest = Path.Combine(Config.SongsDir, Path.GetFileNameWithoutExtension(file));
+            bool existed = Directory.Exists(dest);
             try
             {
                 ZipFile.ExtractToDirectory(file, dest, overwriteFiles: true); // refuses entries that would land outside dest
                 select ??= Directory.EnumerateFiles(dest, "*.osu").Order(StringComparer.OrdinalIgnoreCase)
                     .Select(f => SongSelect.ReadMap(f, stars: false)).FirstOrDefault(m => m is { Mode: 0 })?.Md5;
             }
-            catch (InvalidDataException) { Toast.Show("The beatmap file is corrupt or incomplete."); }
+            catch (InvalidDataException)
+            {
+                // stable moves a broken archive into the Songs folder's "Failed" folder (the name is assumed)
+                Toast.Show("The beatmap file is corrupt or incomplete. Moving to Failed folder.");
+                try
+                {
+                    if (!existed && Directory.Exists(dest)) Directory.Delete(dest, true); // what this import half extracted
+                    string failed = Path.Combine(Config.SongsDir, "Failed");
+                    Directory.CreateDirectory(failed);
+                    File.Move(file, Path.Combine(failed, name), overwrite: true);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+            }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Unable to move file {name}. It is probably in use by another application."); }
         }
         SongSelect.IgnoreSongsUntil = Game.NowMs + 2000;
