@@ -34,6 +34,7 @@ sealed partial class Player : Screen
     readonly List<HitObject> objs;
     readonly ObjState[] st;
     readonly Vector2[][] bodies;
+    readonly (Vector2 Min, Vector2 Max)[] bodyBounds; // each body's path bounds (osu! pixels)
     readonly bool snaking = Config.GetBool("SnakingSliders", true);
     readonly (Vector2 From, Vector2 Pos, float Rotation, double Time)[] followPoints;
     readonly int fpFrames;
@@ -178,6 +179,8 @@ sealed partial class Player : Screen
             pts.Add(o.PointAt(o.Length) + map.StackOffset(o));
             return pts.ToArray();
         }).ToArray();
+        bodyBounds = bodies.Select(b => b.Length == 0 ? default
+            : (b.Aggregate(b[0], Vector2.Min), b.Aggregate(b[0], Vector2.Max))).ToArray();
 
         // stable's follow points: every 32 units from 48 in, short of the last 32, over the whole-unit distance; each slides
         // in from 10% further back.
@@ -300,6 +303,8 @@ sealed partial class Player : Screen
         skin.SetMapSkin(null);
         storyboard?.Unload();
         UnloadRenderTexture(sliderRt);
+        foreach (var (mesh, _) in bodyMeshes.Values) UnloadMesh(mesh);
+        bodyMeshes.Clear();
         if (sliderGradient.Id != 0) UnloadTexture(sliderGradient);
         samples.Unload();
     }
@@ -1614,6 +1619,7 @@ sealed partial class Player : Screen
 
         visible.Clear();
         for (int i = firstActive; i < objs.Count && objs[i].Time - map.Preempt <= time; i++) visible.Add(i);
+        if (bodyMeshes.Count > 0) SweepBodyMeshes();
 
         float sbDim = 1 - bgDim / 100f;
         bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
@@ -2106,14 +2112,27 @@ sealed partial class Player : Screen
         {
             // Rendered into a texture (the body is translucent and self-overlapping), then faded as a whole.
             // rlgl would apply a pushed fall transform inside the texture pass too, so it is lifted for it.
-            if (Falling) Rlgl.PopMatrix();
-            BeginTextureMode(sliderRt);
-            ClearBackground(Color.Blank);
-            DrawBody(bodies[i], count, SliderGradient(skin.SliderBorder, track));
-            Game.EndTexture();
-            if (Falling) PushFall(i);
+            // Only the body's own box is cleared and composited (a full-screen clear and blend per slider was most of a
+            // dense map's frame); the body can't reach outside its path's bounds plus the radius.
             var tex = sliderRt.Texture;
-            DrawTextureRec(tex, new Rectangle(0, 0, tex.Width, -tex.Height), Vector2.Zero, ColorAlpha(Shade(Color.White, lit), alpha));
+            float pad = map.Radius * scale + 2;
+            var (lo, hi) = bodyBounds[i];
+            Vector2 a = ToScreen(lo) - new Vector2(pad), b = ToScreen(hi) + new Vector2(pad);
+            int x0 = Math.Max(0, (int)MathF.Floor(a.X)), y0 = Math.Max(0, (int)MathF.Floor(a.Y));
+            int x1 = Math.Min(tex.Width, (int)MathF.Ceiling(b.X)), y1 = Math.Min(tex.Height, (int)MathF.Ceiling(b.Y));
+            if (x1 > x0 && y1 > y0)
+            {
+                if (Falling) Rlgl.PopMatrix();
+                BeginTextureMode(sliderRt);
+                BeginScissorMode(x0, y0, x1 - x0, y1 - y0);
+                ClearBackground(Color.Blank);
+                EndScissorMode();
+                DrawBody(i, count, SliderGradient(skin.SliderBorder, track));
+                Game.EndTexture();
+                if (Falling) PushFall(i);
+                // (a render texture is stored bottom-up: rows counted from its bottom, drawn flipped)
+                DrawTextureRec(tex, new Rectangle(x0, tex.Height - y1, x1 - x0, -(y1 - y0)), new Vector2(x0, y0), ColorAlpha(Shade(Color.White, lit), alpha));
+            }
         }
 
         var off = map.StackOffset(o);
@@ -2321,39 +2340,40 @@ sealed partial class Player : Screen
 
     // Like stable: each path segment is a tent-shaped quad pair (centre line nearest, gradient straight across the
     // width) and each joint a cone filling the turn, so edges are smooth lines rather than overlapping polygons.
-    void DrawBody(Vector2[] pts, int count, Texture2D gradient)
+    // A body's triangles (screen space): per path point the tent quads from the previous point, then a 64-segment cone;
+    // the centre line sits near the viewer (depth -0.01), the edge far (-0.99), and the depth test keeps the nearest, so
+    // overlaps show the gradient's centre. Built once per slider and kept on the GPU while it's up (rebuilding ~10k
+    // vertices per body every frame was most of a dense map's CPU time); snaking draws the first part (Ends[k] = vertices
+    // through point k).
+    readonly Dictionary<int, (Mesh Mesh, int[] Ends)> bodyMeshes = [];
+    static Material bodyMaterial;
+    static bool bodyMaterialReady;
+
+    (Mesh Mesh, int[] Ends) BodyMesh(int i)
     {
+        if (bodyMeshes.TryGetValue(i, out var built)) return built;
         const int segments = 64;
+        var pts = bodies[i];
         float r = map.Radius * scale;
-        Rlgl.DrawRenderBatchActive();
-        Rlgl.EnableDepthTest();
-        Rlgl.DisableColorBlend(); // write the gradient's own alpha; the texture is composited afterwards
-        static void Centre(Vector2 p) { Rlgl.TexCoord2f(1, 0); Rlgl.Vertex3f(p.X, p.Y, -0.01f); }
-        static void Edge(Vector2 p) { Rlgl.TexCoord2f(0, 0); Rlgl.Vertex3f(p.X, p.Y, -0.99f); }
-        void Begin(int vertices)
-        {
-            Rlgl.CheckRenderBatchLimit(vertices);
-            Rlgl.Begin(DrawMode.Triangles);
-            Rlgl.SetTexture(gradient.Id); // after Begin: a mode change resets the batch texture
-            Rlgl.Color4ub(255, 255, 255, 255);
-        }
+        var pos = new List<Vector3>(pts.Length * (segments * 3 + 12));
+        var uv = new List<Vector2>(pos.Capacity);
+        var ends = new int[pts.Length];
+        void Centre(Vector2 p) { pos.Add(new Vector3(p, -0.01f)); uv.Add(new Vector2(1, 0)); }
+        void Edge(Vector2 p) { pos.Add(new Vector3(p, -0.99f)); uv.Add(new Vector2(0, 0)); }
         Vector2 prev = default;
-        for (int k = 0; k < count; k++)
+        for (int k = 0; k < pts.Length; k++)
         {
             var c = ToScreen(pts[k]);
             if (k > 0 && Vector2.DistanceSquared(prev, c) > 1e-6f)
             {
                 var n = Vector2.Normalize(new Vector2(prev.Y - c.Y, c.X - prev.X)) * r;
-                Begin(12);
-                for (int sgn = 1; sgn >= -1; sgn -= 2) // both sides, without a per-segment array
+                for (int sgn = 1; sgn >= -1; sgn -= 2)
                 {
                     var side = n * sgn;
                     Centre(prev); Edge(prev + side); Edge(c + side);
                     Centre(prev); Edge(c + side); Centre(c);
                 }
-                Rlgl.End();
             }
-            Begin(segments * 3);
             for (int j = 0; j < segments; j++)
             {
                 float a0 = j * MathF.Tau / segments, a1 = (j + 1) * MathF.Tau / segments;
@@ -2361,13 +2381,40 @@ sealed partial class Player : Screen
                 Edge(c + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * r);
                 Edge(c + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * r);
             }
-            Rlgl.End();
+            ends[k] = pos.Count;
             prev = c;
         }
-        Rlgl.SetTexture(0);
+        var mesh = new Mesh(pos.Count, pos.Count / 3);
+        mesh.AllocVertices();
+        mesh.AllocTexCoords();
+        System.Runtime.InteropServices.CollectionsMarshal.AsSpan(pos).CopyTo(mesh.VerticesAs<Vector3>());
+        System.Runtime.InteropServices.CollectionsMarshal.AsSpan(uv).CopyTo(mesh.TexCoordsAs<Vector2>());
+        UploadMesh(ref mesh, false);
+        if (!bodyMaterialReady) { bodyMaterial = LoadMaterialDefault(); bodyMaterialReady = true; }
+        return bodyMeshes[i] = (mesh, ends);
+    }
+
+    void DrawBody(int i, int count, Texture2D gradient)
+    {
+        var (mesh, ends) = BodyMesh(i);
+        mesh.VertexCount = ends[Math.Clamp(count, 1, ends.Length) - 1];
+        mesh.TriangleCount = mesh.VertexCount / 3;
         Rlgl.DrawRenderBatchActive();
+        Rlgl.EnableDepthTest();
+        Rlgl.DisableColorBlend(); // write the gradient's own alpha; the texture is composited afterwards
+        SetMaterialTexture(ref bodyMaterial, MaterialMapIndex.Albedo, gradient);
+        DrawMesh(mesh, bodyMaterial, Matrix4x4.Identity);
         Rlgl.EnableColorBlend();
         Rlgl.DisableDepthTest();
+    }
+
+    // once a frame: bodies of sliders that are done go
+    readonly List<int> bodyMeshesDone = [];
+    void SweepBodyMeshes()
+    {
+        foreach (var k in bodyMeshes.Keys) if (k < firstActive) bodyMeshesDone.Add(k);
+        foreach (var k in bodyMeshesDone) { UnloadMesh(bodyMeshes[k].Mesh); bodyMeshes.Remove(k); }
+        bodyMeshesDone.Clear();
     }
 
     // Follow points: dots along the gap between consecutive objects of the same combo, appearing in sequence.
