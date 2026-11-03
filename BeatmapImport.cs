@@ -20,7 +20,7 @@ sealed class BeatmapImport : Screen
     readonly ConcurrentQueue<string> incoming = new();
     readonly List<(string Text, double At)> lines = [];
     bool reloading;
-    readonly bool reload, minimum; // minimum: shown at least 300ms (imports and F5)
+    readonly bool reload, minimum; // minimum: shown at least 300ms (imports; F5 and the way in from the menu pass straight through, as on stable)
 
     // full: F5 (stable's full process: the whole library is read again)
     public BeatmapImport(SongSelect songs, IReadOnlyList<string> archives, bool full = false)
@@ -31,7 +31,7 @@ sealed class BeatmapImport : Screen
         // stable's way into song select passes through here too, with nothing to extract (the main menu only comes here
         // when the Songs folder changed or the library is still loading): the library is only read again for a change
         reload = files.Length > 0 || full || SongSelect.SongsPending;
-        minimum = files.Length > 0 || full;
+        minimum = files.Length > 0;
         if (files.Length == 0 && SongSelect.SongsPending) incoming.Enqueue("Loading new files only...");
         else if (files.Length == 0 && full) incoming.Enqueue("Reloading database...");
         work = Task.Run(() => Import(files));

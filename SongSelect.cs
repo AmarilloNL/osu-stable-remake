@@ -1088,7 +1088,7 @@ sealed partial class SongSelect : Screen
         if (Pressed(KeyboardKey.PageDown)) { if (Grouped) MoveFocus(10); else MoveDiff(10); }
         if (Pressed(KeyboardKey.PageUp)) { if (Grouped) MoveFocus(-10); else MoveDiff(-10); }
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
-        if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, [], full: true); return; } // stable: its import screen reads the library again
+        if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, [], full: true); return; } // stable: the library is read again (its import screen passes unseen) and the list slides back in
         // stable: Shift+Delete is the beatmap options' Delete...
         if (Input.IsKeyPressed(KeyboardKey.Delete) && Input.ShiftHeld && Selected is { } toDelete) { OpenDelete(toDelete); return; }
         // F2: random map (stable's spin; F2 again stops it); Shift+F2: back to the one before the last random pick.
