@@ -219,6 +219,14 @@ sealed partial class Player : Screen
         music = Track.Load(Path.Combine(map.Folder, map.AudioFilename), rate, mods.HasFlag(Mods.Nightcore), tempo: playback != null);
         if (music != null)
             music.Volume = Config.MusicVolume;
+        // stable: a play starting with the master or music volume at 0 says so; a click puts it back to the default
+        if (Config.GetInt("VolumeUniversal", 100) == 0 || Config.GetInt("VolumeMusic", 80) == 0)
+            Toast.Show("Your music volume is set to 0%! Click here to restore it.", Xna.Red, 5000, () =>
+            {
+                if (Config.GetInt("VolumeUniversal", 100) == 0) Config.SetOwn("VolumeUniversal", "100");
+                if (Config.GetInt("VolumeMusic", 80) == 0) Config.SetOwn("VolumeMusic", "80");
+                ApplyMusicVolume();
+            });
 
         float dimAlpha = 1 - LightestDim / 100f; // the storyboard can show through at the lightest dim reached
         if (!VirtualClock)

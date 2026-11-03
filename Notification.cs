@@ -82,6 +82,7 @@ static class Toast
         public float Height, Rise, RiseFrom; // units
         public double RiseAt = double.MinValue;
         public string Text = "";
+        public Action? Click; // stable's clickable notices ("Click here to ...")
     }
 
     static readonly List<Item> items = [];
@@ -89,19 +90,19 @@ static class Toast
 
     // Without "Show notification popups instantly during gameplay", stable holds them back during an active play
     // (and hides any showing), then lets them out one per 500ms.
-    static readonly Queue<(string Text, Color? Colour, int Ms)> held = new();
+    static readonly Queue<(string Text, Color? Colour, int Ms, Action? Click)> held = new();
     static double released;
     static bool Allowed => Config.GetBool("PopupDuringGameplay", true) || Game.Screen is not Player { ActivePlay: true };
 
-    public static void Show(string text, Color? colour = null, int ms = 0)
+    public static void Show(string text, Color? colour = null, int ms = 0, Action? click = null)
     {
         double now = Game.NowMs;
         if (items.Count > 0 && items[^1].Text == text && now < items[^1].Shown + items[^1].Duration) return;
-        if (!Allowed) { held.Enqueue((text, colour, ms)); return; }
+        if (!Allowed) { held.Enqueue((text, colour, ms, click)); return; }
         var lines = Wrap(text, TextWidth * Game.H / 480f);
         float height = Math.Max(26.875f, lines.Length * LineH + 2 * Pad);
         foreach (var it in items) { it.RiseFrom = Rise(it, now); it.Rise += height; it.RiseAt = now; }
-        items.Add(new Item { Lines = lines, Colour = colour ?? new Color(139, 0, 0, 255), Shown = now, Duration = ms > 0 ? ms : text.Length * 100, Height = height, Text = text });
+        items.Add(new Item { Lines = lines, Colour = colour ?? new Color(139, 0, 0, 255), Shown = now, Duration = ms > 0 ? ms : text.Length * 100, Height = height, Text = text, Click = click });
     }
 
     static float Rise(Item it, double now) => it.RiseFrom + (it.Rise - it.RiseFrom) * (float)Easing.Apply(27, Math.Clamp((now - it.RiseAt) / 800, 0, 1));
@@ -143,7 +144,7 @@ static class Toast
     {
         double now = Game.NowMs;
         if (!Allowed) { foreach (var it in items) if (double.IsNaN(it.Dismissed)) it.Dismissed = now; }
-        else if (held.Count > 0 && now > released + 500) { released = now; var (t, c, ms) = held.Dequeue(); Show(t, c, ms); }
+        else if (held.Count > 0 && now > released + 500) { released = now; var (t, c, ms, k) = held.Dequeue(); Show(t, c, ms, k); }
         if (items.Count == 0) return;
         int w = Game.W, h = Game.H;
         float u = h / 480f;
@@ -164,7 +165,7 @@ static class Toast
             bool over = double.IsNaN(it.Dismissed) && CheckCollisionPointRec(mouse, box);
             if (over && (double.IsNaN(it.Hovered) || !double.IsNaN(it.Unhovered))) { it.Hovered = now; it.Unhovered = double.NaN; }
             else if (!over && !double.IsNaN(it.Hovered) && double.IsNaN(it.Unhovered)) it.Unhovered = now;
-            if (over && Input.IsMouseButtonPressed(MouseButton.Left)) it.Dismissed = now;
+            if (over && Input.IsMouseButtonPressed(MouseButton.Left)) { it.Dismissed = now; it.Click?.Invoke(); }
             // the tint eases to white on hover and back over 60ms
             float white = double.IsNaN(it.Hovered) ? 0 : double.IsNaN(it.Unhovered) ? (float)Math.Min(1, (now - it.Hovered) / 60) : 1 - (float)Math.Min(1, (now - it.Unhovered) / 60);
             var tint = ColorAlpha(ColorLerp(it.Colour, Color.White, white), alpha);

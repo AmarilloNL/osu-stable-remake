@@ -400,6 +400,7 @@ sealed partial class Player
     readonly List<object> boardKeys = [];
 
     double hintFrom = double.NaN;
+    string hint = "";
     // stable cuts names wider than 90 units and adds "..." (cached: drawn every frame).
     readonly Dictionary<(string, float), string> panelNames = [];
     string PanelName(string name, float u)
@@ -420,15 +421,18 @@ sealed partial class Player
             {
                 scoreboardOn = !scoreboardOn;
                 if (playback == null && !auto) Config.SetOwn("ScoreboardVisible", scoreboardOn ? "1" : "0"); // stable keeps a live play's choice
+                // stable: during a break (or the intro / outro) the board shows anyway; the toggle says what happens after
+                if (Resting(time)) (hint, hintFrom) = (scoreboardOn ? "The scoreboard will be shown at all times!" : "The scoreboard will be hidden after this break ends!", Game.NowMs);
             }
         }
         // stable's "Hit <key> to toggle scoreboard!" (the bound key) when the board appears: bold 12 just above it, fading out over 6s.
-        hintFrom = double.IsNaN(hintFrom) ? Game.NowMs : hintFrom;
+        if (double.IsNaN(hintFrom)) (hint, hintFrom) = ($"Hit <{Config.Get("keyToggleScoreboard", "Tab")}> to toggle scoreboard!", Game.NowMs);
         double hintAge = Game.NowMs - hintFrom;
-        // stable: the board fades 0.08 a 60Hz tick, in from 0 at the start, out when hidden, failed or the map is complete.
-        boardAlpha = Math.Clamp(boardAlpha + (scoreboardOn && !failed && !Complete ? 0.08f : -0.08f) * GetFrameTime() * 60, 0, 1);
-        if (hintAge < 6000 && scoreboardOn && !overlayHidden) // part of the board in stable: fades with it
-            Game.TextBold($"Hit <{Config.Get("keyToggleScoreboard", "Tab")}> to toggle scoreboard!", 2 * u, 186.3f * u, 12.4f * u, ColorAlpha(Color.White, (float)(1 - hintAge / 6000) * boardAlpha));
+        // stable: the board fades 0.08 a 60Hz tick, in from 0 at the start, out when hidden (outside breaks, the intro and
+        // the outro), failed or the map is complete.
+        boardAlpha = Math.Clamp(boardAlpha + ((scoreboardOn || Resting(time)) && !failed && !Complete ? 0.08f : -0.08f) * GetFrameTime() * 60, 0, 1);
+        if (hintAge < 6000 && !overlayHidden) // part of the board in stable: fades with it
+            Game.TextBold(hint, 2 * u, 186.3f * u, 12.4f * u, ColorAlpha(Color.White, (float)(1 - hintAge / 6000) * boardAlpha));
         if (boardAlpha <= 0 || overlayHidden) return;
         mapMd5 ??= Replays.Md5Of(map.File);
         var others = back.ScoresFor(mapMd5); // includes the replay being watched, as stable lists it

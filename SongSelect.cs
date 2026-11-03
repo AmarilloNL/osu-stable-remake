@@ -37,8 +37,17 @@ sealed partial class SongSelect : Screen
     static float BottomH => 80 * S;
 
     // Gameplay's sprites decode in the background while a map is picked (and upload a frame at a time in Update).
+    static bool starRangeWarned;
+
     public override void Entered()
     {
+        // stable, once a session: a star range other than the full one says so; a click opens the setting
+        if (!starRangeWarned && (Config.GetDouble("DisplayStarsMinimum", 0) != 0 || Config.GetDouble("DisplayStarsMaximum", 10) != 10))
+        {
+            starRangeWarned = true;
+            Toast.Show("Beatmaps are currently filtered by difficulty.\nClick here to change the range.", new Color(245, 245, 220, 255), 10000,
+                () => { if (Game.Screen == this) Game.Screen = new Options(this, this, "SONG SELECT"); });
+        }
         Game.Skin.PrefetchGameplay();
         if (Game.Previous is not Options) SlideIn(); // stable's options are an overlay; anything else re-enters song select
     }
