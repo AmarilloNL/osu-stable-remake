@@ -12,7 +12,7 @@ sealed class BeatmapSet(List<DbBeatmap> diffs)
     public DbBeatmap First => Diffs[0];
 }
 
-sealed class SongSelect : Screen
+sealed partial class SongSelect : Screen
 {
     Task<List<BeatmapSet>>? loading;
     string? reselect; // F5: the selection to find again in the re-read library
@@ -948,7 +948,7 @@ sealed class SongSelect : Screen
         if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, this); return; }
 
         // F1: stable's mod select, with stable's hotkeys.
-        if (dialog != null) { while (Input.GetCharPressed() != 0) { } UpdateDialog(); return; }
+        if (dialog != null) { UpdateDialog(); while (Input.GetCharPressed() != 0) { } return; }
         if (Input.IsKeyPressed(KeyboardKey.F3) && !modSelect) { OpenBeatmapOptions(); return; }
         if (Input.IsKeyPressed(KeyboardKey.F1)) OpenModSelect(!modSelect);
         else if (modSelect)
@@ -2314,7 +2314,10 @@ sealed class SongSelect : Screen
     }
     // ---- stable's song select dialogs (F3 Beatmap Options and the ones it leads to): a title over numbered buttons;
     // number keys and clicks choose, Esc / F3 / Enter take the last one (stable's dialogs take Enter as a plain close).
-    sealed record DialogSpec(string Title, (string Label, Color Colour, Action? Act)[] Buttons);
+    // A dialog with content of its own (Manage Collections) draws it between title and buttons, takes the typing
+    // (number keys too) and may take Enter; its buttons can sit at a fixed height (units).
+    sealed record DialogSpec(string Title, (string Label, Color Colour, Action? Act)[] Buttons, float? ButtonsY = null,
+        Action<float>? Draw = null, Func<bool>? Update = null);
     DialogSpec? dialog;
     double dialogAt;
     float dialogY;
@@ -2328,9 +2331,11 @@ sealed class SongSelect : Screen
         var d = dialog!;
         var mouse = Input.GetMousePosition();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) || Input.IsKeyPressed(KeyboardKey.Enter) ? d.Buttons.Length - 1 : -1;
+        bool tookEnter = d.Update?.Invoke() == true;
+        if (dialog != d) return; // its content opened another one
+        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) || !tookEnter && Input.IsKeyPressed(KeyboardKey.Enter) ? d.Buttons.Length - 1 : -1;
         for (int i = 0; i < d.Buttons.Length && chosen < 0; i++)
-            if (Input.IsKeyPressed(KeyboardKey.One + i) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(dialogY + i * 50))) chosen = i;
+            if (d.Update == null && Input.IsKeyPressed(KeyboardKey.One + i) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(dialogY + i * 50))) chosen = i;
         if (chosen < 0) return;
         dialog = null;
         d.Buttons[chosen].Act?.Invoke();
@@ -2343,6 +2348,8 @@ sealed class SongSelect : Screen
         float fade = (float)Math.Clamp(age / 200, 0, 1);
         Dialog.Backdrop(fade);
         dialogY = Dialog.Title(d.Title, fade);
+        d.Draw?.Invoke(fade);
+        dialogY = d.ButtonsY ?? dialogY;
         var mouse = Input.GetMousePosition();
         for (int i = 0; i < d.Buttons.Length; i++)
             Dialog.Button(i, d.Buttons[i].Label, d.Buttons[i].Colour, dialogY + i * 50, age, mouse);
@@ -2353,7 +2360,7 @@ sealed class SongSelect : Screen
     {
         if (Selected is not { } b) return;
         OpenDialog($"{b.Artist} - {b.Title}\nWhat do you want to do with this beatmap?",
-            ("Manage Collections", new Color(154, 205, 50, 255), () => Notification.Show("Collections are read from stable; manage them in osu!stable.", 3000)),
+            ("Manage Collections", new Color(154, 205, 50, 255), OpenCollections),
             ("Delete...", OrangeRed, () => OpenDelete(b)),
             ("Remove from Unplayed", OptionsPurple, () => RemoveFromUnplayed(b)),
             ("Clear local scores", OptionsPurple, () => OpenDialog("Are you sure you want to clear all local scores for this beatmap?", ("Let's do it!", YellowGreen, () => ClearScores(b)), ("Cancel", OrangeRed, null))),

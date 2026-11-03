@@ -304,6 +304,31 @@ static class OsuDb
         return result;
     }
 
+    // collection.db as stable writes it: its version, then each collection's name and MD5s (to a temporary file first)
+    internal static bool SaveCollections(string path, List<(string Name, HashSet<string> Md5s)> list)
+    {
+        try
+        {
+            int version = 20250107;
+            if (File.Exists(path)) using (var r = new BinaryReader(File.OpenRead(path))) version = r.ReadInt32();
+            string tmp = path + ".tmp";
+            using (var w = new BinaryWriter(File.Create(tmp)))
+            {
+                w.Write(version);
+                w.Write(list.Count);
+                foreach (var (name, md5s) in list)
+                {
+                    w.Write((byte)0x0b); w.Write(name); // osu!'s string: 0x0b, then .NET's length-prefixed UTF-8
+                    w.Write(md5s.Count);
+                    foreach (var m in md5s) { w.Write((byte)0x0b); w.Write(m); }
+                }
+            }
+            File.Move(tmp, path, overwrite: true);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or EndOfStreamException) { return false; }
+    }
+
     // stable's Remove from Unplayed: the map's flag cleared in osu!.db in place (one byte). Only while stable is closed
     // (it writes its own copy when it closes) and while the file is still the one the list was read from; the file
     // keeps its time, which the library load compares with the Songs folders.
