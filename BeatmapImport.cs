@@ -48,7 +48,7 @@ sealed class BeatmapImport : Screen
             }
             catch (InvalidDataException)
             {
-                // stable moves a broken archive into the Songs folder's "Failed" folder (the name is assumed)
+                // stable moves a broken archive into the Songs folder's "Failed" folder
                 Toast.Show("The beatmap file is corrupt or incomplete. Moving to Failed folder.");
                 try
                 {
@@ -122,7 +122,10 @@ sealed class BeatmapImport : Screen
         {
             switch (Path.GetExtension(file).ToLowerInvariant())
             {
-                case ".osz" or ".olz": queued.Add(file); break;
+                case ".osz" or ".olz":
+                    queued.Add(file);
+                    if (Game.Screen is Player) Notification.Show("New beatmap available - visit song select to finish importing!", 1000); // stable's
+                    break;
                 case ".osr": OpenReplay(songs, file); break;
                 case ".osk": ImportSkin(songs, file); break;
             }

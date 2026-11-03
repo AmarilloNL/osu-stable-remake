@@ -863,9 +863,29 @@ sealed partial class SongSelect : Screen
         previewKey = null;
     }
 
-    void Play(Mods mods)
+    // stable's Preview gameplay (options, skin section): up to 99 random picks from the whole library for a map whose
+    // file is there and that has a length; Auto becomes the only selected mod and that map is selected and played. An
+    // empty library: the main menu and a notice.
+    internal void PreviewGameplay()
     {
-        if (Selected is not { } b) return;
+        var all = sets.SelectMany(s => s.Diffs).ToList();
+        DbBeatmap? pick = null;
+        for (int n = all.Count > 0 ? 99 : 0; n > 0 && (pick == null || pick.TotalMs <= 0 || !File.Exists(pick.FilePath)); n--)
+            pick = all[Random.Shared.Next(all.Count)];
+        if (pick == null)
+        {
+            if (Menu != null) Game.FadeTo(() => Menu);
+            Toast.Show("Failed to find a map to preview with! Please download more beatmaps!");
+            return;
+        }
+        mods = Mods.Autoplay;
+        ApplyFilter(pick);
+        Play(mods, pick);
+    }
+
+    void Play(Mods mods, DbBeatmap? only = null)
+    {
+        if ((only ?? Selected) is not { } b) return;
         // stable, however the play starts (Enter, the panel, the logo): Ctrl held makes it an Auto play and Ctrl+Shift
         // a Cinema one, for this play only (the selected mods stay as they are)
         if (Input.CtrlHeld) mods = mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay | (Input.ShiftHeld ? Mods.Cinema : Mods.None);

@@ -36,27 +36,28 @@ sealed class Options : Screen
         if (Directory.Exists(dir)) Process.Start(new ProcessStartInfo("explorer.exe", $"\"{dir}\"") { UseShellExecute = true });
     }
 
-    // stable's Export as .osk: the current skin's folder zipped into osu!'s Exports folder (replacing an earlier export),
-    // which then opens; its notice text is guessed (stable's shows the skin's name)
+    // stable's Export as .osk: the current skin's folder zipped into osu!'s Exports folder as <skin.ini Name>.osk
+    // (replacing an earlier export), which then opens
     static void ExportSkin()
     {
-        string name = Config.Get("Skin", ""), dir = Path.Combine(Config.OsuDir, "Skins", name);
-        if (name.Length == 0 || name.Equals("Default", StringComparison.OrdinalIgnoreCase) || !Directory.Exists(dir)) { Toast.Show("You cannot export the default skin!"); return; }
-        string exports = Path.Combine(Config.OsuDir, "Exports"), file = name;
+        string folder = Config.Get("Skin", ""), dir = Path.Combine(Config.OsuDir, "Skins", folder);
+        if (folder.Length == 0 || folder.Equals("Default", StringComparison.OrdinalIgnoreCase) || !Directory.Exists(dir)) { Toast.Show("You cannot export the default skin!"); return; }
+        string name = Game.Skin.Name + ".osk", exports = Path.Combine(Config.OsuDir, "Exports"), file = name;
         foreach (char c in Path.GetInvalidFileNameChars()) file = file.Replace(c.ToString(), "");
         try
         {
             Directory.CreateDirectory(exports);
-            string path = Path.Combine(exports, file + ".osk");
+            string path = Path.Combine(exports, file);
             File.Delete(path);
             System.IO.Compression.ZipFile.CreateFromDirectory(dir, path);
-            Toast.Show($"{name} has been exported to your Exports folder!", new Color(154, 205, 50, 255), 6000);
+            Toast.Show($"{name} has been exported.  Opening the Exports folder...", new Color(154, 205, 50, 255), 6000);
             Explore(exports);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Couldn't export {name}: {e.Message}"); }
     }
 
-    // stable's confirmation over the panel (Delete all unranked maps): Let's do it! / Cancel; 1 / 2, Esc or Enter cancel
+    // stable's confirmation over the panel (Preview gameplay, Delete all unranked maps): Let's do it! / Cancel; 1 / 2,
+    // Esc or Enter cancel
     (string Title, Action Yes)? confirm;
     double confirmAt;
     float confirmY;
@@ -210,7 +211,7 @@ sealed class Options : Screen
             H("SKIN"),
             new(Kind.Preview, ""),
             new(Kind.Choice, "Current skin:", "Skin", Values: skins),
-            B("Preview gameplay", ButtonPink),
+            B("Preview gameplay", ButtonPink, () => { confirm = ("Preview your current skin in gameplay?", songs.PreviewGameplay); confirmAt = Game.NowMs; }),
             B("Open current skin folder", Blue, () => Explore(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")))),
             B("Export as .osk", Blue, ExportSkin),
             T("Ignore all beatmap skins", "IgnoreBeatmapSkins"),

@@ -38,6 +38,7 @@ sealed class Skin
     public bool AllowSliderBallTint, ComboBurstRandom;
     public List<int> ComboSoundBursts = []; // [General] CustomComboBurstSounds, sorted
     public double Version = 1; // skin.ini Version; "latest" counts as newest. >1 switches stable's newer layouts
+    public string Name = "Unknown"; // skin.ini Name (stable names an exported .osk after it)
     public string ScorePrefix = "score", ComboPrefix = "score";
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
     public Color SongSelectActiveText = Color.Black, SongSelectInactiveText = Color.White;
@@ -172,6 +173,7 @@ sealed class Skin
                 case "CustomComboBurstSounds":
                     ComboSoundBursts = [.. v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => int.TryParse(x, out int c) ? c : -1).Where(c => c > 0).Distinct().Order()];
                     break;
+                case "Name": Name = v; break;
                 case "Version": Version = v.Equals("latest", StringComparison.OrdinalIgnoreCase) ? 99 : double.TryParse(v, CultureInfo.InvariantCulture, out var ver) ? ver : 1; break;
                 case "SongSelectActiveText": SongSelectActiveText = ParseColour(v) ?? SongSelectActiveText; break;
                 case "SpinnerBackground": SpinnerBackground = ParseColour(v) ?? SpinnerBackground; break;
@@ -437,7 +439,7 @@ sealed class BeatmapSamples
     public void Play(int set, string name, int index, int volumePercent) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f);
 
     // A hit object's custom sample: that file in the map's folder, or (no extension, or not there) the name with
-    // .wav / .mp3 / .ogg; null when it isn't there either, or the map's samples are off.
+    // .wav / .ogg / .mp3; null when it isn't there either, or the map's samples are off.
     public SoundPool? File(string name)
     {
         if (name.Length == 0 || !UseMapSamples) return null;
@@ -448,7 +450,7 @@ sealed class BeatmapSamples
         {
             string stem = Path.HasExtension(full) ? Path.ChangeExtension(full, null) : full;
             pool = (Path.HasExtension(full) ? SoundPool.Load(full) : null)
-                ?? SoundPool.Load(stem + ".wav") ?? SoundPool.Load(stem + ".mp3") ?? SoundPool.Load(stem + ".ogg");
+                ?? SoundPool.Load(stem + ".wav") ?? SoundPool.Load(stem + ".ogg") ?? SoundPool.Load(stem + ".mp3");
         }
         return cache["file:" + name] = pool;
     }

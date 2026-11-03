@@ -120,7 +120,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Visual Settings per map (stable's from `osu!.db`, changes kept in `remake.cfg`)
 - [x] Libraries without a readable `osu!.db`: the Songs folder is read in parallel and cached, star ratings come in the background
 - [x] Verify guessed details: the Qualified warning text, notice texts and menu tips (read from a running stable)
-- [ ] Options: Preview gameplay (stable's skin preview: Auto on a random map)
+- [x] Options: Preview gameplay (after stable's confirmation, Auto on a random map from your library)
 
 **Not planned**
 - Online features of any kind (login, multiplayer, online leaderboards, score submission)
