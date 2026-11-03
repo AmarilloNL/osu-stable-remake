@@ -49,6 +49,7 @@ sealed partial class SongSelect : Screen
                 () => { if (Game.Screen == this) Game.Screen = new Options(this, this, "SONG SELECT"); });
         }
         headerFor = default; // (a play may have changed the map's local offset)
+        fadeFor = null; // stable fades the header in on entering too
         Game.Skin.PrefetchGameplay();
         if (Game.Previous is not Options) SlideIn(); // stable's options are an overlay; anything else re-enters song select
     }
@@ -1311,6 +1312,8 @@ sealed partial class SongSelect : Screen
     });
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods, float) headerFor;
+    DbBeatmap? fadeFor; // the map the header last faded in for
+    double headerFadeAt = double.MinValue;
     string[] header = [];
     // stable's tooltip on the difficulty line: approach time, the 300 / 100 / 50 windows (whole ms less half, as the
     // judging compares with <), spinner difficulty and the circle radius in osu! pixels, all with the mods
@@ -1791,6 +1794,10 @@ sealed partial class SongSelect : Screen
         DrawScores(w, h, s); // over the top bar: stable's ranking box overlaps its lower edge
         DrawBottomBar(w, h, s);
         DrawRatingStatus(w);
+        // stable: a new map (not while the random spin runs) restarts the header fade and flashes the screen white,
+        // 10% fading out over 500ms
+        if (Selected != fadeFor && !spinning) { fadeFor = Selected; headerFadeAt = Game.NowMs; }
+        if (Game.NowMs - headerFadeAt < 500) DrawRectangle(0, 0, w, h, ColorAlpha(Color.White, 0.1f * (1 - (float)((Game.NowMs - headerFadeAt) / 500))));
         Snow.Update(this);
         Snow.Draw();
         if (webTip && !modSelect && dialog == null) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
@@ -2081,27 +2088,31 @@ sealed partial class SongSelect : Screen
                 diffTip = $"Approach time: {(int)Beatmap.Range(ar, 1800, 1200, 450) / rate:0.##}ms\n300: +-{Window(80, 50, 20):0.##}ms\n100: +-{Window(140, 100, 60):0.##}ms\n" +
                     $"50: +-{Window(200, 150, 100):0.##}ms\nSpinner difficulty: {Beatmap.Range(od, 3, 5, 7.5):0.##}\nHit object radius: {new Beatmap { CS = Math.Min(10, b.CS * kc) }.Radius:0.##}";
             }
-            Game.Text(header[0], 23.4f * u, -3 * u, 18.4f * u, Color.White); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
-            Game.Text(header[1], 24.6f * u, 12 * u, 12.45f * u, Color.White);
-            Game.TextBold(header[2], 2.5f * u, 24 * u, 12.5f * u, lengthColour);
-            Game.Text(header[3], 2.5f * u, 36.5f * u, 12.4f * u, Color.White);
+            // stable fades the lines in one after another whenever the map changes (and on entering): title 0-400ms,
+            // creator 100-500, length 200-600, counts 200-700, stats and offset 300-800
+            Color Faded(Color c, double from, double to) => ColorAlpha(c, (float)Math.Clamp((Game.NowMs - headerFadeAt - from) / (to - from), 0, 1) * c.A / 255f);
+            var statsTint = Faded(statsColour, 300, 800);
+            Game.Text(header[0], 23.4f * u, -3 * u, 18.4f * u, Faded(Color.White, 0, 400)); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
+            Game.Text(header[1], 24.6f * u, 12 * u, 12.45f * u, Faded(Color.White, 100, 500));
+            Game.TextBold(header[2], 2.5f * u, 24 * u, 12.5f * u, Faded(lengthColour, 200, 600));
+            Game.Text(header[3], 2.5f * u, 36.5f * u, 12.4f * u, Faded(Color.White, 200, 700));
             // the stats word by word: the arrow (3x2.2 units, top at the digits' top, 0.5 after the value) follows AR, OD, HP
             float statX = 2 * u, size = 8.2f * u, space = Game.TextWidth(" ", size);
             var parts = header[4].Split(' ', 5);
             for (int p = 0; p < parts.Length; p++)
             {
                 if (p > 0) statX += space;
-                Game.Text(parts[p], statX, 48 * u, size, statsColour);
+                Game.Text(parts[p], statX, 48 * u, size, statsTint);
                 statX += Game.TextWidth(parts[p], size);
                 if (statArrow == 0 || p is 0 or 4) continue;
                 float ax = statX + 0.5f * u, at = 50.2f * u, ab = at + 2.2f * u;
-                if (statArrow > 0) DrawTriangle(new(ax + 1.5f * u, at), new(ax, ab), new(ax + 3 * u, ab), statsColour);
-                else DrawTriangle(new(ax, at), new(ax + 1.5f * u, ab), new(ax + 3 * u, at), statsColour);
+                if (statArrow > 0) DrawTriangle(new(ax + 1.5f * u, at), new(ax, ab), new(ax + 3 * u, ab), statsTint);
+                else DrawTriangle(new(ax, at), new(ax + 1.5f * u, ab), new(ax + 3 * u, at), statsTint);
                 statX += 3.5f * u;
             }
-            if (parts.Length == 5) Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
+            if (parts.Length == 5) Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsTint); // Aller has no star: stable's comes from a fallback font
             // stable: its own text 8 units under the stats line, left white with HR / EZ
-            if (offsetLine.Length > 0) Game.Text(offsetLine, 2 * u, 56 * u, size, Color.White);
+            if (offsetLine.Length > 0) Game.Text(offsetLine, 2 * u, 56 * u, size, Faded(Color.White, 300, 800));
             diffTipShown = CheckCollisionPointRec(Input.GetMousePosition(), new Rectangle(2 * u, 47 * u, statX - 2 * u, 10 * u));
         }
 
