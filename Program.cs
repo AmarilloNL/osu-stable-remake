@@ -59,6 +59,22 @@ static class Game
     // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
     // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
     // again) brings it back, and the volume with it.
+    // stable's "Minimise on alt-tab during fullscreen": a fullscreen game that loses focus minimises when the option is on
+    // and the cursor would be confined or the game doesn't cover the monitor (stable also counts a display mode or refresh
+    // rate it changed). raylib's GLFW doesn't do it by itself.
+    static bool wasFocused;
+    static void MinimiseOnAltTab()
+    {
+        bool focused = IsWindowFocused();
+        if (wasFocused && !focused && DisplayMode() == "Fullscreen" && Config.GetBool("MinimiseOnAltTabFullscreen", true))
+        {
+            int m = GetCurrentMonitor();
+            if (Config.Get("ConfineMouse", "Fullscreen") != "Never" || GetScreenWidth() < GetMonitorWidth(m) || GetScreenHeight() < GetMonitorHeight(m))
+                MinimizeWindow();
+        }
+        wasFocused = focused;
+    }
+
     static string? bossVolume;
     static unsafe void UpdateBossKey(SongSelect songs)
     {
@@ -718,6 +734,7 @@ static class Game
                 TakeScreenshot($"shot-{shotIndex++}.png");
             }
             UpdateBossKey(songSelect);
+            if (!testRun) MinimiseOnAltTab();
             if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
             if (Input.CtrlHeld && Input.AltHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) ReloadSkinKey();
             // F10 (Disable mouse buttons) is global in stable, notice included (a play handles its own)
