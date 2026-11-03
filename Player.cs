@@ -653,6 +653,7 @@ sealed partial class Player : Screen
     }
 
     internal bool Playing => !paused && !finished;
+    internal bool Paused => paused;
     // stable's "active play": a live play from the first object's approach to the last object's end, not paused or failed
     internal bool ActivePlay => !paused && !failed && !finished && playback == null && !auto
         && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime;

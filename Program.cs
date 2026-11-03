@@ -721,8 +721,8 @@ static class Game
                 // stable's notice: "Frame limiter: Power Saving (330fps)", "Optimal (960fps)", "Unlimited (gameplay)"
                 Notification.Show(next switch
                 {
-                    "PowerSaving" => $"Frame limiter: Power Saving ({TargetFps(next, refresh):0}fps)",
-                    "Optimal" => $"Frame limiter: Optimal ({TargetFps(next, refresh):0}fps)",
+                    "PowerSaving" => $"Frame limiter: Power Saving ({SettingFps(next, refresh):0}fps)",
+                    "Optimal" => $"Frame limiter: Optimal ({SettingFps(next, refresh):0}fps)",
                     _ => "Frame limiter: Unlimited (gameplay)",
                 }, 1000);
             }
@@ -756,9 +756,7 @@ static class Game
                 if (w > 5) Console.Error.WriteLine($"slow frame: {w:0.0}ms at {secs:0.000}s ({Screen.GetType().Name}, GCs {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}; update {tDraw - now:0.0}, draw {tSwap - tDraw:0.0}, present {tSwapped - tSwap:0.0})");
             }
 
-            // Unfocused/minimized: throttle like stable so the game doesn't burn a core in the background.
-            double fps = IsWindowMinimized() ? 15 : !IsWindowFocused() && !testRun ? 60 : TargetFps(Config.Get("FrameSync", "Unlimited"), refresh);
-            nextFrame = Limit(fps, nextFrame);
+            nextFrame = Limit(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh, testRun), nextFrame);
             fEnd = NowMs;
             (fUpdate, fDraw, fSwap, fSleep) = (tDraw - now, tSwap - tDraw, tSwapped - tSwap, fEnd - tSwapped);
         }
@@ -1037,14 +1035,28 @@ static class Game
         CloseWindow();
     }
 
-    static double TargetFps(string frameSync, double refresh) => frameSync switch
+    // A frame limiter setting's own rate (what F7's notice shows); 0 = none (Unlimited, VSync).
+    static double SettingFps(string frameSync, double refresh) => frameSync switch
     {
         "Custom" => Config.GetInt("CustomFrameLimit", 0),
         "Optimal" or "Limit120" => Math.Min(960, refresh * 8),
         "PowerSaving" => refresh * 2,
-        "Unlimited" when Screen is not Player => refresh * 2, // stable: "Unlimited (gameplay)" only lifts the cap in play
-        _ => 0, // Unlimited / VSync: no software limit
+        _ => 0,
     };
+
+    // The rate the limiter runs at. Stable: outside a play and while paused, a quarter of the setting's rate (at most
+    // 960) but at least twice the refresh rate (Optimal and Unlimited become 2x refresh, Unlimited at least 240);
+    // an unfocused window runs at 30 unless a play is active, a minimised one at 15. VSync has no software limit.
+    static double TargetFps(string frameSync, double refresh, bool testRun = false)
+    {
+        if (IsWindowMinimized()) return 15;
+        if (frameSync == "VSync") return 0;
+        double fps = SettingFps(frameSync, refresh) is > 0 and var f ? f : double.PositiveInfinity;
+        var player = Screen as Player;
+        if (player is null || player.Paused) fps = Math.Min(fps, Math.Max(Math.Min(960, fps) / 4, refresh * 2));
+        if (!IsWindowFocused() && !testRun && player?.ActivePlay != true) fps = Math.Min(fps, 30);
+        return double.IsPositiveInfinity(fps) ? 0 : fps;
+    }
 
     // Deadline-based limiter: sleeps until ~1ms before the deadline, then spins. Unlike stable's
     // floor(ms) Thread.Sleep, frame pacing stays exact at any target and never drifts.
