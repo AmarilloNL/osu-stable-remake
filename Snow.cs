@@ -23,7 +23,7 @@ static class Snow
     {
         double now = Game.NowMs;
         if (double.IsNaN(tickAt)) tickAt = now;
-        float u = GetScreenHeight() / 480f, wu = GetScreenWidth() / u;
+        float u = Game.H / 480f, wu = Game.W / u;
         if (pile.Length != (int)wu + 1) pile = new float[(int)wu + 1];
         var tex = Tex();
         var cursor = Input.GetMousePosition() / u;
@@ -69,7 +69,7 @@ static class Snow
     public static void Draw()
     {
         if (flakes.Count == 0 || Tex() is not { } tex) return;
-        float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
+        float u = Game.H / 480f, sd = Game.H / 768f;
         double now = Game.NowMs;
         BeginBlendMode(BlendMode.Additive);
         foreach (var f in flakes)

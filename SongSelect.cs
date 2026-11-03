@@ -31,7 +31,7 @@ sealed class SongSelect : Screen
     bool themeFromStart;
 
     // Layout in stable's 768px-high units.
-    static float S => GetScreenHeight() / 768f;
+    static float S => Game.H / 768f;
     static float RowH => 76.8f * S; // stable's panel spacing: 144px at 1440p (measured on p057/p059)
     static float TopH => 100 * S;
     static float BottomH => 80 * S;
@@ -145,11 +145,10 @@ sealed class SongSelect : Screen
         var clock = Stopwatch.StartNew();
         List<DbBeatmap> all;
         try { all = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db")); Console.Error.WriteLine($"osu!.db: {all.Count} maps in {clock.ElapsedMilliseconds}ms"); }
-        catch (Exception e) when (e is not OutOfMemoryException) // unreadable or a format we don't know: read the folders instead
+        catch (Exception e) when (e is not OutOfMemoryException) // missing, unreadable or a format we don't know
         {
-            loadStage = $"osu!.db couldn't be read ({e.Message}); reading the Songs folder instead…";
-            Console.Error.WriteLine($"osu!.db: {e}");
-            all = ScanFolders(); // slow (minutes for big libraries)
+            Console.Error.WriteLine(e is FileNotFoundException ? "osu!.db: none" : $"osu!.db: {e}");
+            all = []; // then every Songs folder is new below: read in parallel, cached for the next start, rated in the background
         }
         // like stable after an import (or a folder copied in): Songs folders its osu!.db doesn't list yet are read too
         var known = new HashSet<string>(all.Select(b => b.Folder), StringComparer.OrdinalIgnoreCase);
@@ -331,29 +330,6 @@ sealed class SongSelect : Screen
         }
     }
 
-    internal static List<DbBeatmap> ScanFolders()
-    {
-        var list = new List<DbBeatmap>();
-        var songs = Config.SongsDir;
-        if (!Directory.Exists(songs)) return list;
-        foreach (var dir in Directory.EnumerateDirectories(songs))
-            foreach (var file in Directory.EnumerateFiles(dir, "*.osu"))
-            {
-                try
-                {
-                    var m = Beatmap.Load(file, metadataOnly: true);
-                    list.Add(new DbBeatmap
-                    {
-                        Artist = m.Artist, Title = m.Title, Creator = m.Creator, Version = m.Version, AudioFile = m.AudioFilename,
-                        OsuFile = Path.GetFileName(file), Folder = Path.GetFileName(dir), Mode = (byte)m.Mode, Md5 = Replays.Md5Of(file),
-                        AR = (float)m.AR, CS = (float)m.CS, OD = (float)m.OD, HP = (float)m.HP, PreviewMs = (int)m.PreviewTime,
-                    });
-                }
-                catch (Exception e) when (e is not OutOfMemoryException) { } // skip a malformed map
-            }
-        return list;
-    }
-
     // ---------------------------------------------------------------- filtering
 
     // ---- stable's search: the text splits on spaces (a value after '=' may be quoted to keep its spaces); every term
@@ -507,7 +483,7 @@ sealed class SongSelect : Screen
                 && !(c.Flag == Mods.DoubleTime && mods.HasFlag(Mods.Nightcore)) && !(c.Flag == Mods.SuddenDeath && mods.HasFlag(Mods.Perfect))).Select(c => c.Name));
         }
         if (caption.Length == 0) return;
-        float u = GetScreenHeight() / 480f;
+        float u = Game.H / 480f;
         Game.Text(caption, 64.4f * u, 397 * u, 30 * u, new Color(255, 255, 255, 64), 0.5f * u);
     }
 
@@ -1020,8 +996,8 @@ sealed class SongSelect : Screen
         }
         {
             var m = Input.GetMousePosition();
-            if (Input.IsMouseButtonPressed(MouseButton.Right) && m.X >= 200 * U && m.Y > TopH && m.Y < GetScreenHeight() - BottomH
-                && !CheckCollisionPointRec(m, GroupBox(GetScreenWidth())) && !CheckCollisionPointRec(m, SortBox(GetScreenWidth())))
+            if (Input.IsMouseButtonPressed(MouseButton.Right) && m.X >= 200 * U && m.Y > TopH && m.Y < Game.H - BottomH
+                && !CheckCollisionPointRec(m, GroupBox(Game.W)) && !CheckCollisionPointRec(m, SortBox(Game.W)))
             {
                 // stable: right-clicking a beatmap panel selects it and opens the beatmap options; elsewhere it scrolls
                 if (m.X >= PanelX(RowAt(m.Y)) && RightClickRow(m.Y)) { OpenBeatmapOptions(); return; }
@@ -1034,7 +1010,7 @@ sealed class SongSelect : Screen
         }
 
         var mouse = Input.GetMousePosition();
-        if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, GroupBox(GetScreenWidth())))
+        if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, GroupBox(Game.W)))
         {
             if (Input.IsMouseButtonPressed(MouseButton.Left)) { openDrop = openDrop == 1 ? 0 : 1; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); return; }
             int gi = Array.FindIndex(GroupList, m => m.Key == GroupMode);
@@ -1042,8 +1018,8 @@ sealed class SongSelect : Screen
             return;
         }
         for (int t = 0; t < GroupModes.Length; t++)
-            if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, TabRect(GetScreenWidth(), t))) { SetGroupMode(GroupModes[t].Key); return; }
-        if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, SortBox(GetScreenWidth())))
+            if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, TabRect(Game.W, t))) { SetGroupMode(GroupModes[t].Key); return; }
+        if ((Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) && CheckCollisionPointRec(mouse, SortBox(Game.W)))
         {
             if (Input.IsMouseButtonPressed(MouseButton.Left)) { openDrop = openDrop == 2 ? 0 : 2; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); }
             else CycleSort(-1);
@@ -1051,9 +1027,9 @@ sealed class SongSelect : Screen
         }
         if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, RankBox)) { openDrop = 3; Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); return; }
         if (Input.IsMouseButtonPressed(MouseButton.Left) && ClickBottomBar(mouse)) return;
-        if (Input.IsMouseButtonPressed(MouseButton.Left) && mouse.Y > TopH && mouse.Y < GetScreenHeight() - BottomH)
+        if (Input.IsMouseButtonPressed(MouseButton.Left) && mouse.Y > TopH && mouse.Y < Game.H - BottomH)
         {
-            if (mouse.X < GetScreenWidth() * 0.35f)
+            if (mouse.X < Game.W * 0.35f)
             {
                 int n = ScoreRowAt(mouse.Y);
                 if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { ShowScore(SelectedScores[n]); return; }
@@ -1064,7 +1040,7 @@ sealed class SongSelect : Screen
         // panel acts when the button is let go
         // velocities in 768-high pixels per ms; stable keeps a smoothed drag speed and lets it run on after release,
         // decaying by max(0.5, 0.996 - 0.002 / |v|) per ms
-        float k768 = 768f / GetScreenHeight();
+        float k768 = 768f / Game.H;
         if (leftDown)
         {
             if (!leftDragging && Vector2.DistanceSquared(mouse, leftPressAt) > 6400) leftDragging = true;
@@ -1275,7 +1251,7 @@ sealed class SongSelect : Screen
     static readonly (string Key, string Label)[] RankTypes = [("Local", "Local Ranking"), ("Country", "Country Ranking"), ("Top", "Global Ranking"), ("SelectedMod", "Global Ranking (Selected Mods)"), ("Friends", "Friend Ranking")];
     static Rectangle RankBox => new(5 * U, 73 * U, 191 * U, 15 * U);
     (string Key, string Label)[] DropItems => openDrop switch { 1 => GroupList, 2 => SortModes, _ => RankTypes };
-    Rectangle DropBox => openDrop switch { 1 => GroupBox(GetScreenWidth()), 2 => SortBox(GetScreenWidth()), _ => RankBox };
+    Rectangle DropBox => openDrop switch { 1 => GroupBox(Game.W), 2 => SortBox(Game.W), _ => RankBox };
     Rectangle DropRow(int i) { float u = U; var box = DropBox; float left = openDrop == 3 ? 0 : 1.6f * u; return new Rectangle(box.X - left, box.Y + box.Height + 2 * u + i * DropRowH * u, box.Width + left, DropRowH * u); }
     int DropHover() { var m = Input.GetMousePosition(); for (int i = 0; i < DropItems.Length; i++) if (CheckCollisionPointRec(m, DropRow(i))) return i; return -1; }
 
@@ -1559,10 +1535,10 @@ sealed class SongSelect : Screen
     {
         var (_, d, gi) = RowInfo(row);
         return (gi >= 0 || d >= 0 ? -50 : 0) + (row == hoveredRow ? -45 : 0)
-            + MathF.Min(200, MathF.Abs(RowCentre(row) / GetScreenHeight() - 0.5f) * 75);
+            + MathF.Min(200, MathF.Abs(RowCentre(row) / Game.H - 0.5f) * 75);
     }
 
-    float PanelX(int row) => (GetScreenWidth() / U - 340 + leaveShift + (rowEase.TryGetValue(row, out var e) ? e.X : TargetX(row))) * U;
+    float PanelX(int row) => (Game.W / U - 340 + leaveShift + (rowEase.TryGetValue(row, out var e) ? e.X : TargetX(row))) * U;
 
     // stable keeps song select on screen for a second after a map is started: everything in its upper half slides 110
     // units up and the lower half 110 down (800ms Out), the leaderboard fades over 500ms and the list is pushed 500
@@ -1572,7 +1548,7 @@ sealed class SongSelect : Screen
     internal void DrawLeaving(double ms)
     {
         if (ms >= 1000 || loading != null) return;
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float s = S;
         leaveShift = 500 * (1 - (float)Math.Pow(0.95, ms / (1000 / 60.0)));
         leaveSlide = 110 * U * (float)Easing.Apply(1, Math.Min(1, ms / 800));
@@ -1593,7 +1569,7 @@ sealed class SongSelect : Screen
 
     void UpdateCarousel(double dtMs, Vector2 mouse)
     {
-        int h = GetScreenHeight();
+        int h = Game.H;
         int under = mouse.Y > TopH && mouse.Y < h - BottomH && RowAt(mouse.Y) is var r && r >= 0 && r < RowCount && mouse.X >= PanelX(r) ? r : -1;
         if (under != hoveredRow)
         {
@@ -1666,7 +1642,7 @@ sealed class SongSelect : Screen
 
     public override void Draw()
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float s = S;
         DrawBackground(w, h);
         DrawBackdrop(w, h, s);
@@ -1852,15 +1828,15 @@ sealed class SongSelect : Screen
     // stable's song select header (stable's sizes/positions, in 640x480 units; the right-hand group was
     // measured from a stable capture): map info top left, Group/Sort boxes and the group tabs top right, search at
     // the top of the song list.
-    static Rectangle SortBox(int w) { float u = GetScreenHeight() / 480f; return new Rectangle(w - 129 * u, 18 * u, 119 * u, 14 * u); }
-    static Rectangle GroupBox(int w) => SortBox(w) with { X = SortBox(w).X - 168 * GetScreenHeight() / 480f };
+    static Rectangle SortBox(int w) { float u = Game.H / 480f; return new Rectangle(w - 129 * u, 18 * u, 119 * u, 14 * u); }
+    static Rectangle GroupBox(int w) => SortBox(w) with { X = SortBox(w).X - 168 * Game.H / 480f };
     // The group tabs: the selection-tab sprite at 0.6 units per texel (86 x 14), 73.9 apart so each overlaps the one
     // before, the first 392 units in from the right (measured).
-    static Rectangle TabRect(int w, int t) { float u = GetScreenHeight() / 480f; return new Rectangle(w - (392 - t * 73.9f) * u, 34 * u, 143 * 0.6f * u, 24 * 0.6f * u); }
+    static Rectangle TabRect(int w, int t) { float u = Game.H / 480f; return new Rectangle(w - (392 - t * 73.9f) * u, 34 * u, 143 * 0.6f * u, 24 * 0.6f * u); }
 
     void DrawTopBar(int w, float s)
     {
-        float u = GetScreenHeight() / 480f;
+        float u = Game.H / 480f;
         if (Game.Skin.Tex("songselect-top") is { } top) DrawTexturePro(top.Tex, new Rectangle(0, 0, top.Tex.Width, top.Tex.Height),
             new Rectangle(0, 0, Math.Max(w, top.Width * s), top.Height * s), Vector2.Zero, 0, Color.White);
         else DrawRectangle(0, 0, w, (int)TopH, new Color(0, 0, 0, 220));
@@ -2100,7 +2076,7 @@ sealed class SongSelect : Screen
 
     bool ClickBottomBar(Vector2 mouse)
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float s = S;
         if (CheckCollisionPointRec(mouse, BackButton.Rect(h)))
         {
@@ -2125,7 +2101,7 @@ sealed class SongSelect : Screen
     // stable's local leaderboard (measured from a stable capture, in 640x480 units): a ranking box at 73-88, then
     // up to eight rows of 33.3 from 96: rank, grade, name (16), "Score: N (Mx)" (12), and right-aligned mods /
     // accuracy / gap to the next score (10).
-    static float U => GetScreenHeight() / 480f;
+    static float U => Game.H / 480f;
     float ScoreTop => 96 * U;
     float ScoreRowH => 33.3f * U;
     int ScoreRowAt(float y) => (int)MathF.Floor((y - ScoreTop) / ScoreRowH);
@@ -2166,7 +2142,7 @@ sealed class SongSelect : Screen
         float f = (float)Math.Clamp((Game.NowMs - webShownAt) / 300, 0, 1), a = webShown ? f : 1 - f;
         if (a <= 0 || Game.Skin.Tex("rank-forum") is not { } tex) return;
         var at = new Vector2(214 * u, 81 * u);
-        float sd = GetScreenHeight() / 768f, half = 12.5f * sd;
+        float sd = Game.H / 768f, half = 12.5f * sd;
         bool hover = webShown && Math.Abs(Input.GetMousePosition().X - at.X) < half && Math.Abs(Input.GetMousePosition().Y - at.Y) < half;
         tex.Draw(at, sd * (hover ? 1.1f : 1), ColorAlpha(Color.White, a));
         if (hover) webTip = true;
@@ -2484,7 +2460,7 @@ sealed class SongSelect : Screen
     {
         ripples.RemoveAll(r => Game.NowMs - r.At > 700);
         if (ripples.Count == 0 || (Game.Skin.Own("cursor-ripple") ? Game.Skin.Tex("cursor-ripple") : Game.Skin.DefaultTex("menu-osu-shockwave")) is not { } tex) return;
-        float sd = GetScreenHeight() / 768f;
+        float sd = Game.H / 768f;
         BeginBlendMode(BlendMode.Additive);
         foreach (var (p, at) in ripples)
         {
@@ -2541,7 +2517,7 @@ sealed class SongSelect : Screen
     {
         if (Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right)) Ripple(pos);
         DrawRipples();
-        float s = GetScreenHeight() / 768f * (float)Config.GetDouble("CursorSize", 1) * CursorPlayScale;
+        float s = Game.H / 768f * (float)Config.GetDouble("CursorSize", 1) * CursorPlayScale;
         var skin = Game.Skin;
         // CursorCentre: 0 anchors the sprite's top-left at the cursor instead of its centre.
         Vector2 Anchor(Sprite sp) => skin.CursorCentre ? pos : pos + new Vector2(sp.Width, sp.Height) * s / 2;
@@ -2563,7 +2539,7 @@ sealed class SongSelect : Screen
             // added on, fading (1 - age/300ms)^1.7.
             var at = Anchor(smooth);
             float step = smooth.Width * s / 2.5f;
-            if (smoothFrom is not { } from || Vector2.Distance(from, at) > GetScreenWidth()) smoothFrom = at;
+            if (smoothFrom is not { } from || Vector2.Distance(from, at) > Game.W) smoothFrom = at;
             else
             {
                 var d = at - from;

@@ -276,7 +276,7 @@ sealed partial class Player
     internal void ColourMeterHit(int result)
     {
         if (!ColourMeter) return;
-        int n = ColourSquares(GetScreenWidth() / (GetScreenHeight() / 480f), out _, out _, out _);
+        int n = ColourSquares(Game.W / (Game.H / 480f), out _, out _, out _);
         if (colourA.Length != n) { colourA = Enumerable.Repeat(1f, n).ToArray(); colourC = Enumerable.Repeat(Color.Black, n).ToArray(); colourNext = 0; }
         if (n == 0) return;
         colourShown = 1;
@@ -485,7 +485,7 @@ sealed partial class Player
                 else if (now - p.ShownAt > 600) panels.Remove(key);
             }
 
-        float sd = GetScreenHeight() / 768f;
+        float sd = Game.H / 768f;
         foreach (var (key, p) in panels)
         {
             float fade = (float)Math.Clamp((now - p.ShownAt) / 600, 0, 1), a = p.Shown ? fade : 1 - fade;
@@ -538,7 +538,7 @@ sealed partial class Player
     // punctuation keeps its own width; overlap is in SD texels. alignX 0 = left edge at x, 1 = right.
     void EntryText(string text, float x, float y, float scale, bool fixedWidth, float overlap, float alignX, Color tint)
     {
-        float px = GetScreenHeight() / 768f * scale; // pixels per SD texel
+        float px = Game.H / 768f * scale; // pixels per SD texel
         var glyphs = entryGlyphs;
         glyphs.Clear();
         float cell = skin.Tex("scoreentry-0")?.Width ?? 0, pos = 0, lap = 0;

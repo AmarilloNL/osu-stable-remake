@@ -23,8 +23,8 @@ sealed partial class Player
 
     Rectangle OverlayRect(int i, Sprite s)
     {
-        float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
-        var c = new Vector2(GetScreenWidth() - 40 * u, ((mods != Mods.None ? 140 : 85) + 20 * i) * u); // below the mod icons when there are any (measured)
+        float u = Game.H / 480f, sd = Game.H / 768f;
+        var c = new Vector2(Game.W - 40 * u, ((mods != Mods.None ? 140 : 85) + 20 * i) * u); // below the mod icons when there are any (measured)
         return new Rectangle(c.X - s.Width * sd / 2, c.Y - s.Height * sd / 2, s.Width * sd, s.Height * sd);
     }
 
@@ -78,7 +78,7 @@ sealed partial class Player
         float bannerAlpha = (float)Math.Min(1, age / 4000);
         Game.Text(text, (float)(wu - pass * (wu + tw)) * u, 59 * u, 13 * u, ColorAlpha(Color.White, bannerAlpha));
 
-        float sd = GetScreenHeight() / 768f, fade = (float)Math.Min(1, age / 500);
+        float sd = Game.H / 768f, fade = (float)Math.Min(1, age / 500);
         var mouse = Input.GetMousePosition();
         for (int i = 0; i < OverlayButtons.Length; i++)
         {

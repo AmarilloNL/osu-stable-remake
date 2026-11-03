@@ -176,17 +176,17 @@ static class VolumeControl
 
     static Vector2 Centre(Meter m)
     {
-        float u = GetScreenHeight() / 480f;
-        return new(GetScreenWidth() - m.Pos.X * u, GetScreenHeight() - m.Pos.Y * u);
+        float u = Game.H / 480f;
+        return new(Game.W - m.Pos.X * u, Game.H - m.Pos.Y * u);
     }
 
-    static float Radius(Meter m, double now) => 50 * m.Size.Value(now) * GetScreenHeight() / 768f;
+    static float Radius(Meter m, double now) => 50 * m.Size.Value(now) * Game.H / 768f;
 
     public static void Draw()
     {
         double now = Game.NowMs;
         if (Master.Alpha.Value(now) <= 0 && Effect.Alpha.Value(now) <= 0 && Music.Alpha.Value(now) <= 0) return;
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f, sd = h / 768f;
 
         if (Game.Skin.DefaultTex("volume-background-gradient") is { } grad)

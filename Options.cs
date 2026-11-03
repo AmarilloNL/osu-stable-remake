@@ -98,11 +98,10 @@ sealed class Options : Screen
             T("Fullscreen mode", "Fullscreen", true),
             new(Kind.Warning, "Running without fullscreen mode will increase your input latency!", Visible: () => Game.DisplayMode() != "Fullscreen"),
             T("Minimise on alt-tab during fullscreen", "MinimiseOnAltTabFullscreen", true),
-            // stable's letterboxing (its cfg key): fullscreen below the monitor's resolution keeps the monitor's and
-            // places the game in a box. Ours switches the display mode instead, as stable does with it off.
+            // stable's letterboxing (its cfg key, Game.Letterboxing): the monitor's resolution with the game in a box
             T("Render at native resolution", "Letterboxing", true),
-            new(Kind.Slider, "Horizontal position", "LetterboxPositionX", -100, 100, 0, "0", "%", Visible: () => Config.GetBool("Letterboxing", true)),
-            new(Kind.Slider, "Vertical position", "LetterboxPositionY", -100, 100, 0, "0", "%", Visible: () => Config.GetBool("Letterboxing", true)),
+            new(Kind.Slider, "Horizontal position", "LetterboxPositionX", -100, 100, 0, "0", "%", Visible: () => Game.Letterboxing),
+            new(Kind.Slider, "Vertical position", "LetterboxPositionY", -100, 100, 0, "0", "%", Visible: () => Game.Letterboxing),
             H("DETAIL SETTINGS"),
             T("Snaking sliders", "SnakingSliders", true),
             T("Background video", "Video", true),
@@ -252,7 +251,7 @@ sealed class Options : Screen
     double Value(Item it) => Config.GetDouble(it.Key, it.Def);
 
     // Fullscreen follows the display mode in use rather than a stored flag.
-    bool On(Item it) => it.Key == "Fullscreen" ? Game.DisplayMode() == "Fullscreen" : Config.GetBool(it.Key, it.Def != 0);
+    bool On(Item it) => it.Key == "Fullscreen" ? Game.DisplayMode() == "Fullscreen" : it.Key == "Letterboxing" ? Game.Letterboxing : Config.GetBool(it.Key, it.Def != 0);
 
     string ChoiceValue(Item it) => Config.Get(it.Key, it.DefValue.Length > 0 ? it.DefValue : it.Values is { Length: > 0 } vs ? vs[0] : "");
 
@@ -272,6 +271,7 @@ sealed class Options : Screen
     // Default as stored, or null when there's none to go back to (display settings default to what's in use).
     static string? DefaultOf(Item it) => it.Kind switch
     {
+        Kind.Toggle when it.Key == "Letterboxing" => Game.DisplayMode() == "Fullscreen" ? "1" : "0", // stable: defaults to the Fullscreen setting
         Kind.Toggle => it.Def != 0 ? "1" : "0",
         Kind.Slider => Show(it.Def, it with { Unit = "" }),
         Kind.Choice when it.DefValue.Length > 0 && it.Key != "Resolution" => it.DefValue,
@@ -281,7 +281,7 @@ sealed class Options : Screen
 
     bool IsDefault(Item it) => DefaultOf(it) is not { } d || it.Kind switch
     {
-        Kind.Toggle => On(it) == (it.Def != 0),
+        Kind.Toggle => On(it) == (d == "1"),
         Kind.Slider => Math.Abs(Value(it) - it.Def) < 1e-6,
         Kind.Choice => Config.Get(it.Key, d).Equals(d, StringComparison.OrdinalIgnoreCase),
         _ => Config.Key(it.Key, (KeyboardKey)(int)it.Def) == (KeyboardKey)(int)it.Def,
@@ -308,6 +308,8 @@ sealed class Options : Screen
                 if (Game.DisplayMode() != "Fullscreen") Config.SetOwn("DisplayMode", MonitorSized() ? "Borderless" : "Windowed");
                 Game.ApplyDisplay();
                 break;
+            case "Letterboxing": Game.ApplyDisplay(); break;
+            case "LetterboxPositionX" or "LetterboxPositionY": Game.PlaceBox(); break;
             case "Skin":
                 Game.Skin.Unload();
                 Game.Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", value));
@@ -404,7 +406,7 @@ sealed class Options : Screen
 
     public override void Update(double dtMs)
     {
-        w = GetScreenWidth(); h = GetScreenHeight();
+        w = Game.W; h = Game.H;
         u = h / 480f;
         songs.Ambient();
         if (back is MainMenu menu) menu.UpdateCovered(dtMs); // the cookie keeps beating behind the panel
@@ -788,7 +790,7 @@ sealed class Options : Screen
         tipLast = now;
         float a = (float)Math.Clamp((now - tipSince - 120) / 200, 0, 1);
         if (a <= 0) return;
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f, px = u / 2.25f, ts = (9 - (h - 1024) / 256f) * 1.035f * u, lineH = ts * 0.98f; // stable: 20px apart at 1080p
         var lines = new List<string>();
         foreach (var line in text.Split('\n'))
@@ -815,7 +817,7 @@ sealed class Options : Screen
     // white edge; each further line adds 8.9 units.
     internal static void DrawTooltip(string text, Vector2 mouse)
     {
-        float u = GetScreenHeight() / 480f, ts = 7 * u, lineH = 8.9f * u;
+        float u = Game.H / 480f, ts = 7 * u, lineH = 8.9f * u;
         var lines = text.Split('\n');
         float bw = lines.Max(l => Game.TextWidth(l, ts)) + 4 * u;
         var box = new Rectangle(mouse.X + 4 * u, mouse.Y + 3.3f * u, bw, 8 * u + (lines.Length - 1) * lineH);

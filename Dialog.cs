@@ -11,16 +11,16 @@ namespace OsuStableRemake;
 // (alternating) and fade in over 800ms, 60ms apart. Units: 640x480 (u = h / 480).
 static class Dialog
 {
-    static float U => GetScreenHeight() / 480f;
+    static float U => Game.H / 480f;
     const float TitleSize = 24.9f, LineH = 25.65f; // stable's 24, measured
     static readonly List<string> lines = [];
 
-    public static void Backdrop(float alpha) => DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), new Color(0, 0, 0, (int)(240 * alpha)));
+    public static void Backdrop(float alpha) => DrawRectangle(0, 0, Game.W, Game.H, new Color(0, 0, 0, (int)(240 * alpha)));
 
     // Draws the wrapped title; returns where the content starts (units).
     public static float Title(string text, float alpha)
     {
-        float u = U, size = TitleSize * u, max = GetScreenWidth() - 4 * u;
+        float u = U, size = TitleSize * u, max = Game.W - 4 * u;
         lines.Clear();
         foreach (var paragraph in text.Split('\n'))
         {
@@ -40,7 +40,7 @@ static class Dialog
     public static Rectangle ButtonRect(float y)
     {
         float u = U;
-        return new Rectangle((GetScreenWidth() / u / 2 - 230) * u, y * u, 460 * u, 40 * u);
+        return new Rectangle((Game.W / u / 2 - 230) * u, y * u, 460 * u, 40 * u);
     }
 
     // One button at y (units); age = ms since the dialog opened, flashAt = when it was clicked. Returns whether hovered.

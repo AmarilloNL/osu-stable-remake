@@ -66,11 +66,11 @@ sealed partial class Player
     // Called from Update while paused/failed: slides the bar and handles its controls. Returns true if it took the click.
     bool UpdateVisualSettings(double dtMs)
     {
-        float u = GetScreenHeight() / 480f;
+        float u = Game.H / 480f;
         var mouse = Input.GetMousePosition();
         visualMouseAt ??= mouse;
         if (!visualMoved && Vector2.Distance(mouse, visualMouseAt.Value) > 30) visualMoved = true;
-        bool hover = VisualActive && visualMoved && mouse.Y > GetScreenHeight() - Math.Max(45, visualHeight) * u;
+        bool hover = VisualActive && visualMoved && mouse.Y > Game.H - Math.Max(45, visualHeight) * u;
         float target = !VisualActive ? 0 : hover || visualDragging >= 0 ? ExpandedHeight : 45;
         // stable's tweens: open 400ms Out, up to the strip 400ms In, down (closing or hiding) 600ms OutBounce
         if (target != visualTo)
@@ -81,7 +81,7 @@ sealed partial class Player
         visualHeight = visualFrom + (visualTo - visualFrom) * (float)Easing.Apply(visualEase, Math.Clamp((Game.NowMs - visualAt) / visualMs, 0, 1));
         if (!VisualActive || visualHeight < ExpandedHeight - 2) { visualDragging = -1; return false; }
 
-        float top = GetScreenHeight() - visualHeight * u;
+        float top = Game.H - visualHeight * u;
         var slider = new Rectangle(20 * u, top + 63 * u, 200 * u, 10 * u);
         if (!Input.IsMouseButtonDown(MouseButton.Left)) visualDragging = -1;
         if (Input.IsMouseButtonPressed(MouseButton.Left))
@@ -163,7 +163,7 @@ sealed partial class Player
             bool enabled = ToggleEnabled(i);
             var c = new Vector2(r.X + 8 * u, r.Y + 8 * u);
             var col = enabled ? pink : Xna.Gray;
-            if (Game.Skin.DefaultTex(rows[i].Ticked ? "circle-full" : "circle-empty") is { } sp) sp.Draw(c, 0.8f * GetScreenHeight() / 768f, col);
+            if (Game.Skin.DefaultTex(rows[i].Ticked ? "circle-full" : "circle-empty") is { } sp) sp.Draw(c, 0.8f * Game.H / 768f, col);
             else if (rows[i].Ticked) DrawCircleV(c, 3.6f * u, col);
             else DrawRing(c, 2.9f * u, 3.6f * u, 0, 360, 24, col);
             Game.Text(rows[i].Label, r.X + 17.4f * u, c.Y - 6.8f * u, 12.45f * u, enabled ? Color.White : Xna.Gray);

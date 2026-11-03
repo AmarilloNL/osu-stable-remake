@@ -68,6 +68,7 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 - Options panel as stable's: all nine sections with dropdowns, buttons, stable's tooltips and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
 - Menu snow, kiai star fountains, break stars, combo bursts and kiai beat pulses, ported from stable
 - Volume overlay, stable's FPS / frame time counter, notifications
+- Stable's display modes: fullscreen at its own resolution, or letterboxed ("Render at native resolution": the monitor keeps its resolution and the game sits in a movable box)
 </details>
 
 <details>
@@ -105,10 +106,10 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
 
 **Missing pieces**
-- [ ] Hit lighting (stable draws it only under a condition not yet identified)
+- [x] Hit lighting
 - [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
 - [x] Visual Settings per map (stable's from `osu!.db`, changes kept in `remake.cfg`)
-- [ ] Faster fallback when `osu!.db` is missing (folder scan is slow on big libraries)
+- [x] Libraries without a readable `osu!.db`: the Songs folder is read in parallel and cached, star ratings come in the background
 - [x] Verify guessed details: the Qualified warning text, notice texts and menu tips (read from a running stable)
 
 **Not planned**

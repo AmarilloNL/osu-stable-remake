@@ -503,7 +503,7 @@ sealed class MainMenu : Screen
 
     public override void Update(double dtMs)
     {
-        w = GetScreenWidth(); h = GetScreenHeight();
+        w = Game.W; h = Game.H;
         u = h / 480f; sd = h / 768f;
         songs.Ambient(menu: true);
         coverAlpha = Math.Min(1, coverAlpha + (float)(dtMs / 200));
@@ -634,7 +634,7 @@ sealed class MainMenu : Screen
             menuFountainAt = now;
             var rnd = Random.Shared;
             int dir = rnd.Next(-1, 2);
-            float wu = GetScreenWidth() / (GetScreenHeight() / 480f);
+            float wu = Game.W / (Game.H / 480f);
             for (int i = 0; i < 100; i++)
             {
                 double life = rnd.Next(300, 1300);
@@ -651,7 +651,7 @@ sealed class MainMenu : Screen
         }
         menuKiaiWas = kiai;
         if (double.IsNaN(menuStarTick)) menuStarTick = now;
-        float w = GetScreenWidth() / (GetScreenHeight() / 480f);
+        float w = Game.W / (Game.H / 480f);
         for (; now - menuStarTick >= 1000 / 60.0; menuStarTick += 1000 / 60.0)
             foreach (var s in menuStars)
             {
@@ -666,7 +666,7 @@ sealed class MainMenu : Screen
     void DrawMenuStars(double now)
     {
         if (menuStars.Count == 0 || skin.Tex("star2") is not { } tex) return;
-        float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
+        float u = Game.H / 480f, sd = Game.H / 768f;
         BeginBlendMode(BlendMode.Additive);
         foreach (var s in menuStars)
         {
@@ -791,7 +791,7 @@ sealed class MainMenu : Screen
 
     void DrawMenu()
     {
-        w = GetScreenWidth(); h = GetScreenHeight();
+        w = Game.W; h = Game.H;
         u = h / 480f; sd = h / 768f;
         double now = Game.NowMs;
         // Looked up per frame (not kept), so swapping skins in the options can't leave a freed texture here.

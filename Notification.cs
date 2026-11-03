@@ -28,7 +28,7 @@ static class Notification
         if (lines == null) return;
         double age = Game.NowMs - from;
         if (age > duration + 150) { lines = null; return; }
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f, sd = h / 768f;
         float outro = (float)Math.Clamp(1 - (age - duration) / 150, 0, 1);
 
@@ -98,7 +98,7 @@ static class Toast
         double now = Game.NowMs;
         if (items.Count > 0 && items[^1].Text == text && now < items[^1].Shown + items[^1].Duration) return;
         if (!Allowed) { held.Enqueue((text, colour, ms)); return; }
-        var lines = Wrap(text, TextWidth * GetScreenHeight() / 480f);
+        var lines = Wrap(text, TextWidth * Game.H / 480f);
         float height = Math.Max(26.875f, lines.Length * LineH + 2 * Pad);
         foreach (var it in items) { it.RiseFrom = Rise(it, now); it.Rise += height; it.RiseAt = now; }
         items.Add(new Item { Lines = lines, Colour = colour ?? new Color(139, 0, 0, 255), Shown = now, Duration = ms > 0 ? ms : text.Length * 100, Height = height, Text = text });
@@ -109,7 +109,7 @@ static class Toast
     // Word wrap at spaces, long words broken before path separators (like the GDI text stable draws).
     static string[] Wrap(string text, float maxPx)
     {
-        float size = Size * GetScreenHeight() / 480f;
+        float size = Size * Game.H / 480f;
         var lines = new List<string>();
         foreach (var para in text.Split('\n'))
         {
@@ -145,7 +145,7 @@ static class Toast
         if (!Allowed) { foreach (var it in items) if (double.IsNaN(it.Dismissed)) it.Dismissed = now; }
         else if (held.Count > 0 && now > released + 500) { released = now; var (t, c, ms) = held.Dequeue(); Show(t, c, ms); }
         if (items.Count == 0) return;
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f;
         var mouse = Input.GetMousePosition();
         var tex = Game.Skin.DefaultTex("notification");

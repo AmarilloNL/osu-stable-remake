@@ -93,7 +93,7 @@ static class Input
     public static bool IsKeyDown(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyDown(k) || keysDown.Contains((int)k);
     public static bool IsMouseButtonPressed(MouseButton b) => !ScriptOnly && Raylib.IsMouseButtonPressed(b) || buttonsPressed.Contains((int)b);
     public static bool IsMouseButtonDown(MouseButton b) => !ScriptOnly && Raylib.IsMouseButtonDown(b) || buttonsDown.Contains((int)b);
-    public static Vector2 GetMousePosition() => mouse ?? (ScriptOnly ? new(-1000, -1000) : Game.RawCursor ?? Raylib.GetMousePosition()); // off-screen until scripted
+    public static Vector2 GetMousePosition() => mouse ?? (ScriptOnly ? new(-1000, -1000) : (Game.RawCursor ?? Raylib.GetMousePosition()) - Game.BoxAt); // off-screen until scripted
     public static float GetMouseWheelMove() => (ScriptOnly ? 0 : Raylib.GetMouseWheelMove()) + wheel;
     public static int GetCharPressed() => !ScriptOnly && Raylib.GetCharPressed() is var c and not 0 ? c : chars.TryDequeue(out int s) ? s : 0;
     public static int GetKeyPressed() => !ScriptOnly && Raylib.GetKeyPressed() is var k and not 0 ? k : keyQueue.TryDequeue(out int s) ? s : 0;

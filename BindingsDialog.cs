@@ -17,8 +17,8 @@ sealed class BindingsDialog
     int binding = -1;
     public bool Closed { get; private set; }
 
-    static float U => GetScreenHeight() / 480f;
-    float X0 => GetScreenWidth() / U / 2 - 210; // the 640x480 frame is centred
+    static float U => Game.H / 480f;
+    float X0 => Game.W / U / 2 - 210; // the 640x480 frame is centred
     const float Top = 30, Height = 420, RowH = 17, RowW = 402;
     static float Edge => Math.Max(2, 1.4f * U); // measured: 3px at 1080p
     static int Count => KeyBindings.Rows.Length + 1; // + "Reset all bindings"
@@ -100,8 +100,8 @@ sealed class BindingsDialog
         EndScissorMode();
         if (binding >= 0)
         {
-            DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), new Color(0, 0, 0, 200));
-            float cx = GetScreenWidth() / 2f;
+            DrawRectangle(0, 0, Game.W, Game.H, new Color(0, 0, 0, 200));
+            float cx = Game.W / 2f;
             void Lines(string text, float y, float size, Color c)
             {
                 var lines = text.Split('\n');

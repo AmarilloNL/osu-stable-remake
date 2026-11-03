@@ -77,7 +77,7 @@ static class Game
 
     static void DrawFade()
     {
-        if (fadeLevel > 0) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ColorAlpha(Color.Black, (float)Math.Min(100, fadeLevel) / 100));
+        if (fadeLevel > 0) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, (float)Math.Min(100, fadeLevel) / 100));
     }
     public static Skin Skin = null!;
     public static Font Font, Bold, Light, Mono, Icons; // Icons: osu!ui's FontAwesome (options sidebar etc.)
@@ -99,7 +99,7 @@ static class Game
     // stable's text renderer: Aller Light by default but regular Aller below size 20 in its 640x480 units (not pixels:
     // at 1080p a size-16 line is still regular), and old-style digits (Aller's private-use glyphs at digit + 63500) in
     // every Aller weight.
-    static Font Ui(float size) => size / (GetScreenHeight() / 480f) < 20 ? Font : Light;
+    static Font Ui(float size) => size / (H / 480f) < 20 ? Font : Light;
 
     // Cached: UI text is mostly the same strings every frame (main thread only).
     static readonly Dictionary<string, string> oldStyle = [];
@@ -272,6 +272,7 @@ static class Game
     public static void SetFullscreen(bool on)
     {
         Config.SetOwn("DisplayMode", on ? "Fullscreen" : "Windowed");
+        Config.SetOwn("Letterboxing", on ? "1" : "0"); // stable sets letterboxing to match whenever fullscreen changes
         int m = GetCurrentMonitor();
         if (!on && Resolution() is var (w, h) && w >= GetMonitorWidth(m) && h >= GetMonitorHeight(m)) Config.SetOwn("DisplayMode", "Borderless");
         ApplyDisplay();
@@ -282,13 +283,64 @@ static class Game
     {
         var (w, h) = Resolution();
         int m = GetCurrentMonitor();
+        int mw = GetMonitorWidth(m), mh = GetMonitorHeight(m);
         string mode = DisplayMode();
         if (IsWindowFullscreen()) ToggleFullscreen();
         if (IsWindowState(ConfigFlags.BorderlessWindowMode)) ToggleBorderlessWindowed();
+        if (Letterboxing && (w > mw || h > mh)) Config.SetOwn("Letterboxing", "0"); // stable: off when the game doesn't fit
+        PlaceBox();
+        if (Box != null) // the window takes the monitor's resolution, the game its box
+        {
+            if (mode == "Fullscreen") { SetWindowSize(mw, mh); ToggleFullscreen(); }
+            else ToggleBorderlessWindowed();
+            return;
+        }
         if (mode == "Borderless") { ToggleBorderlessWindowed(); return; }
         SetWindowSize(w, h);
         if (mode == "Fullscreen") ToggleFullscreen();
-        else SetWindowPosition((GetMonitorWidth(m) - w) / 2, (GetMonitorHeight(m) - h) / 2);
+        else SetWindowPosition((mw - w) / 2, (mh - h) / 2);
+    }
+
+    // stable's letterboxing ("Render at native resolution", on by default in fullscreen): the window keeps the
+    // monitor's resolution and the game is drawn in a box of its own resolution, which the position sliders move
+    // through the free space (-100..100%; positive vertical is down). The cursor is confined to the box and the
+    // game's mouse coordinates are the box's. Screens draw through W and H, never the window's size.
+    internal static bool Letterboxing => Config.GetBool("Letterboxing", DisplayMode() == "Fullscreen");
+    internal static Rectangle? Box;
+    static RenderTexture2D boxRt;
+    internal static int W => Box is { } b ? (int)b.Width : GetScreenWidth();
+    internal static int H => Box is { } b ? (int)b.Height : GetScreenHeight();
+    internal static Vector2 BoxAt => Box is { } b ? new(b.X, b.Y) : Vector2.Zero;
+
+    internal static void PlaceBox()
+    {
+        var (w, h) = Resolution();
+        int m = GetCurrentMonitor();
+        int mw = GetMonitorWidth(m), mh = GetMonitorHeight(m);
+        if (!Letterboxing || w > mw || h > mh || w == mw && h == mh) { Box = null; return; }
+        float x = (mw - w) / 2f * (100 + Config.GetInt("LetterboxPositionX", 0)) / 100f;
+        float up = (mh - h) / 2f * (100 - Config.GetInt("LetterboxPositionY", 0)) / 100f; // from the bottom, like GL's viewport
+        Box = new Rectangle((int)x, mh - h - (int)up, w, h);
+        if (boxRt.Texture.Width != w || boxRt.Texture.Height != h)
+        {
+            if (boxRt.Id != 0) UnloadRenderTexture(boxRt);
+            boxRt = LoadRenderTexture(w, h);
+        }
+    }
+
+    // The frame as the framebuffer holds it. raylib's LoadImageFromScreen multiplies the size by Windows' display
+    // scale, which on a scaled display (125% etc.) reads past the frame: a bigger image with the game in one corner.
+    static unsafe Image ReadFrame()
+    {
+        int w = GetRenderWidth(), h = GetRenderHeight();
+        return new Image { Data = Rlgl.ReadScreenPixels(w, h), Width = w, Height = h, Mipmaps = 1, Format = PixelFormat.UncompressedR8G8B8A8 };
+    }
+
+    // For screens that render into a texture of their own: drawing then goes back into the box, not the window.
+    internal static void EndTexture()
+    {
+        EndTextureMode();
+        if (Box != null) BeginTextureMode(boxRt);
     }
 
     [DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
@@ -299,13 +351,13 @@ static class Game
     static ClipRect? clipped;
     static double clippedAt;
 
-    // The ConfineMouse option (Never / Fullscreen / Always): keeps the cursor inside the window while it has focus.
+    // The ConfineMouse option (Never / Fullscreen / Always): keeps the cursor inside the window (the letterbox box) while it has focus.
     static void ConfineCursor()
     {
         string mode = Config.Get("ConfineMouse", "Fullscreen");
         bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() != "Windowed");
         ClipRect? r = null;
-        if (want) { var p = GetWindowPosition(); r = new ClipRect { L = (int)p.X, T = (int)p.Y, R = (int)p.X + GetScreenWidth(), B = (int)p.Y + GetScreenHeight() }; }
+        if (want) { var p = GetWindowPosition(); p += BoxAt; r = new ClipRect { L = (int)p.X, T = (int)p.Y, R = (int)p.X + W, B = (int)p.Y + H }; }
         // Windows drops the clip on focus changes and the like, so it's re-applied every 250ms while wanted
         if (r.Equals(clipped) && (r == null || NowMs - clippedAt < 250)) return;
         clipped = r;
@@ -336,16 +388,17 @@ static class Game
         }
         if (RawCursor is { } at)
         {
-            RawCursor = Vector2.Clamp(at + GetMouseDelta() * s, Vector2.Zero, new Vector2(GetScreenWidth() - 1, GetScreenHeight() - 1));
+            RawCursor = Vector2.Clamp(at + GetMouseDelta() * s, BoxAt, BoxAt + new Vector2(W - 1, H - 1));
             return;
         }
         if (s == 1) { sensInside = false; return; }
         GetCursorPos(out var c);
         var p = new Vector2(c.X, c.Y) - GetWindowPosition();
-        bool inside = IsWindowFocused() && p.X >= 0 && p.Y >= 0 && p.X < GetScreenWidth() && p.Y < GetScreenHeight();
+        var q = p - BoxAt;
+        bool inside = IsWindowFocused() && q.X >= 0 && q.Y >= 0 && q.X < W && q.Y < H;
         if (!inside || !sensInside) { sensAt = p; sensInside = inside; return; }
         sensAt += (p - new Vector2(MathF.Round(sensAt.X), MathF.Round(sensAt.Y))) * s;
-        if (clipped != null) sensAt = Vector2.Clamp(sensAt, Vector2.Zero, new Vector2(GetScreenWidth() - 1, GetScreenHeight() - 1));
+        if (clipped != null) sensAt = Vector2.Clamp(sensAt, BoxAt, BoxAt + new Vector2(W - 1, H - 1));
         var to = new Vector2(MathF.Round(sensAt.X), MathF.Round(sensAt.Y));
         if (to != p) SetMousePosition((int)to.X, (int)to.Y);
     }
@@ -534,14 +587,23 @@ static class Game
             ClearBackground(Color.Black);
             if (!IsWindowMinimized()) // a minimised window is 0x0: nothing to draw (the game itself keeps running, like stable)
             {
+                if (Box != null) { BeginTextureMode(boxRt); ClearBackground(Color.Black); }
                 Screen.Draw();
                 DrawFade();
                 VolumeControl.Draw();
                 Notification.Draw();
                 Toast.Draw();
-                if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
+                if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
                 SongSelect.FlushCursor();
                 stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
+                if (Box is { } box)
+                {
+                    EndTextureMode();
+                    Rlgl.DisableColorBlend(); // a copy: translucent sprites leave the texture's alpha below 1
+                    DrawTexturePro(boxRt.Texture, new Rectangle(0, 0, box.Width, -box.Height), box, Vector2.Zero, 0, Color.White);
+                    Rlgl.DrawRenderBatchActive();
+                    Rlgl.EnableColorBlend();
+                }
             }
             double secs = now / 1000;
             if (shotIndex < shots.Length && secs >= shots[shotIndex] || shotIndex < songShots.Length && Screen is Player sp && sp.SongTime >= songShots[shotIndex])
@@ -574,7 +636,8 @@ static class Game
                 int n = 1;
                 string ext = Config.Get("ScreenshotFormat", "Jpg") == "Png" ? "png" : "jpg";
                 while (File.Exists(Path.Combine(dir, $"screenshot{n:000}.{ext}"))) n++;
-                var img = LoadImageFromScreen();
+                var img = ReadFrame();
+                if (Box is { } box) ImageCrop(ref img, box); // the game, not the letterbox around it
                 string file = Path.Combine(dir, $"screenshot{n:000}.{ext}");
                 ExportImage(img, file);
                 UnloadImage(img);
@@ -768,7 +831,7 @@ static class Game
         Player.VirtualClock = true;
 
         string db = Path.Combine(Config.OsuDir, "osu!.db");
-        var maps = (File.Exists(db) ? OsuDb.Load(db) : SongSelect.ScanFolders())
+        var maps = (File.Exists(db) ? OsuDb.Load(db) : Directory.EnumerateDirectories(Config.SongsDir).SelectMany(d => Directory.EnumerateFiles(d, "*.osu")).Select(f => SongSelect.ReadMap(f, stars: false)).OfType<DbBeatmap>())
             .GroupBy(b => b.Md5).ToDictionary(g => g.Key, g => g.First());
         var only = Environment.GetEnvironmentVariable("VERIFY_MD5");
         var stable = Replays.Index().Values.SelectMany(l => l).Where(r => r.FromStable && (only == null || r.BeatmapMd5 == only)).ToList();
@@ -943,8 +1006,8 @@ sealed class FrameStats
         // stable draws it from osu!ui sprites: fps-box (tinted) boxes centred 23 units from the right at 25 and 10
         // up, the frame time in the big "fps-" font with its "ms" glyph, the fps centred 35 in with "/limit" in the
         // small "fpss-" font after it, and fps-dropped dots for stutters.
-        float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
-        float W = GetScreenWidth(), H = GetScreenHeight();
+        float u = Game.H / 480f, sd = Game.H / 768f;
+        float W = Game.W, H = Game.H;
         double settled = double.IsNaN(atLimitSince) ? 0 : now - atLimitSince;
 
         string ms = msText.Of(frameMs >= 10 ? Math.Round(frameMs) : frameMs >= 1 ? Math.Round(frameMs, 1) : Math.Round(frameMs, 2));

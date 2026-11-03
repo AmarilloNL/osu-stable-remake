@@ -146,7 +146,7 @@ sealed partial class Player : Screen
 
     public Player(Beatmap map, SongSelect back, Mods mods, ReplayFrame[]? playback = null, ReplayInfo? watching = null)
     {
-        if (!VirtualClock) Beatmap.PlayfieldHeight = GetScreenHeight(); // headless runs keep stable's configured height
+        if (!VirtualClock) Beatmap.PlayfieldHeight = Game.H; // headless runs keep stable's configured height
         this.playback = playback;
         if (playback is { Length: > 0 }) pbCursor = new(playback[0].X, playback[0].Y); // stable: the first frame's spot until frames start (its lead frames sit off-screen at 256,-500)
         this.watching = watching;
@@ -222,7 +222,7 @@ sealed partial class Player : Screen
             try { storyboard = Storyboard.Load(map, textures: dimAlpha > 0); }
             catch (IOException e) { Console.Error.WriteLine($"storyboard not loaded: {e.Message}"); }
         if (dimAlpha > 0) LoadBackground();
-        sliderRt = LoadRenderTexture(GetScreenWidth(), GetScreenHeight());
+        sliderRt = LoadRenderTexture(Game.W, Game.H);
         if (!VirtualClock) ApplyToggles();
         if (!VirtualClock)
         {
@@ -691,7 +691,7 @@ sealed partial class Player : Screen
 
     void UpdateResume()
     {
-        float u = GetScreenHeight() / 480f;
+        float u = Game.H / 480f;
         bool over = Vector2.Distance(Input.GetMousePosition(), ToScreen(pauseCursor)) <= 12 * u; // 1.2 x 20 units / 2
         if (over && (Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsKeyPressed(key1) || Input.IsKeyPressed(key2)))
         {
@@ -702,7 +702,7 @@ sealed partial class Player : Screen
 
     void DrawResume()
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f, sd = h / 768f;
         var at = ToScreen(pauseCursor);
         if (skin.DefaultTex("cursor") is { } ring) // stable's default cursor (osu!ui), tinted orange
@@ -735,7 +735,7 @@ sealed partial class Player : Screen
 
     public override void Update(double dtMs)
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         scale = h / 480f;
         origin = new Vector2((w - 512 * scale) / 2, (h - 384 * scale) / 2 + 8 * scale);
 
@@ -1586,7 +1586,7 @@ sealed partial class Player : Screen
 
     public override void Draw()
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         if (bg.Id == 0 && !bgTried) LoadBackground(); // even at 100% dim: it fades in from the previous screen
         // stable: once the video has started it replaces the background image, fitted inside the screen
         // the decoder keeps following while the toggle is off, so turning it back on shows the right frame at once
@@ -1730,7 +1730,7 @@ sealed partial class Player : Screen
         for (; now - smokeTick >= 1000 / 60.0; smokeTick += 1000 / 60.0)
         {
             if (!held || tex is null) { ReleaseSmoke(); smokeLast = null; continue; }
-            float gap = Math.Max(2, tex.Value.Width * 0.625f * GetScreenHeight() / 480f / 4);
+            float gap = Math.Max(2, tex.Value.Width * 0.625f * Game.H / 480f / 4);
             if (smokeLast is not { } last || last != at)
             {
                 float dist = smokeLast is { } l ? Vector2.Distance(l, at) : 0;
@@ -1754,7 +1754,7 @@ sealed partial class Player : Screen
     {
         if (smoke.Count == 0 || skin.Tex("cursor-smoke") is not { } tex) return;
         double now = Game.NowMs;
-        float sd = GetScreenHeight() / 768f;
+        float sd = Game.H / 768f;
         BeginBlendMode(BlendMode.Additive);
         foreach (var s in smoke)
         {
@@ -1793,7 +1793,7 @@ sealed partial class Player : Screen
     {
         double now = Game.NowMs;
         if (double.IsNaN(starTickAt)) starTickAt = now;
-        float u = GetScreenHeight() / 480f;
+        float u = Game.H / 480f;
         var at = ToScreen(cursor) / u;
         var rnd = Random.Shared;
         bool kiai = KiaiAt(time);
@@ -1806,7 +1806,7 @@ sealed partial class Player : Screen
                     stars.Add(new Star
                     {
                         Fountain = true, Born = time + i * 10, Life = life, Gravity = 8 * 1.6f,
-                        Pos = new Vector2(right ? GetScreenWidth() / u - 30 : 30, 490),
+                        Pos = new Vector2(right ? Game.W / u - 30 : 30, 490),
                         Vel = new Vector2(rnd.Next(300, 450) * (right ? -1 : 1), rnd.Next(-800, -700)),
                         Scale = scale, Rot0 = rot0, Rot1 = rot1,
                     });
@@ -1965,7 +1965,7 @@ sealed partial class Player : Screen
     void DrawBreakStars()
     {
         if (stars.Count == 0 || skin.Tex("star2") is not { } tex) return;
-        float u = GetScreenHeight() / 480f, sd = GetScreenHeight() / 768f;
+        float u = Game.H / 480f, sd = Game.H / 768f;
         foreach (bool fountain in (bool[])[true, false])
         {
             if (!fountain) BeginBlendMode(BlendMode.Additive);
@@ -2103,7 +2103,7 @@ sealed partial class Player : Screen
             BeginTextureMode(sliderRt);
             ClearBackground(Color.Blank);
             DrawBody(bodies[i], count, SliderGradient(skin.SliderBorder, track));
-            EndTextureMode();
+            Game.EndTexture();
             if (Falling) PushFall(i);
             var tex = sliderRt.Texture;
             DrawTextureRec(tex, new Rectangle(0, 0, tex.Width, -tex.Height), Vector2.Zero, ColorAlpha(Shade(Color.White, lit), alpha));
@@ -2400,7 +2400,7 @@ sealed partial class Player : Screen
             Sprite? sprite = skin.Frame("followpoint", Math.Min(fpFrames - 1, (int)(age / fpFrameMs)));
             var p = ToScreen(Vector2.Lerp(fp.From, fp.Pos, e));
             float sc = 1.5f - 0.5f * e;
-            if (sprite is { } sp) sp.Draw(p, GetScreenHeight() / 768f * sc, ColorAlpha(Color.White, a), fp.Rotation);
+            if (sprite is { } sp) sp.Draw(p, Game.H / 768f * sc, ColorAlpha(Color.White, a), fp.Rotation);
             else DrawCircleV(p, 2.5f * scale * sc, ColorAlpha(Color.White, a * 0.8f));
         }
     }
@@ -2419,7 +2419,7 @@ sealed partial class Player : Screen
         alpha *= playfieldAlpha;
         if (alpha <= 0) return;
 
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f, sd = h / 768f, cx = w / 2f;
         Vector2 U(float x, float y) => new(cx + x * u, y * u);
         // stable lays the spinner out from a base of 45, less 16 on widescreen: centred on the playfield (248).
@@ -2718,7 +2718,7 @@ sealed partial class Player : Screen
         if (skin.AnimFrame("scorebar-colour", Game.NowMs) is { } colour)
         {
             float bq = (float)Math.Clamp((Game.NowMs - hudBreakAt) / 500, 0, 1);
-            float ba = hudBreak ? 1 - bq : bq, by = -20 * GetScreenHeight() / 480f * (hudBreak ? bq : 1 - bq);
+            float ba = hudBreak ? 1 - bq : bq, by = -20 * Game.H / 480f * (hudBreak ? bq : 1 - bq);
             float markerBreak = hudBreak ? 1 + 0.6f * bq : 1.6f - 0.6f * bq;
             ba *= hudFade;
             if (ba <= 0) return;
@@ -2787,7 +2787,7 @@ sealed partial class Player : Screen
 
     Rectangle MenuRect(string name)
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         if (skin.Tex(name) is not { } sp) return default;
         float sw = sp.Width * h / 768f, sh = sp.Height * h / 768f;
         return new Rectangle(w / 2f - sw / 2, h / 2f + MenuY(name) * h / 480f - sh / 2, sw, sh);
@@ -2829,7 +2829,7 @@ sealed partial class Player : Screen
 
     float MenuArrowY()
     {
-        int h = GetScreenHeight();
+        int h = Game.H;
         float to = h / 2f + MenuY(MenuSelName) * h / 480f;
         double t = (Game.NowMs - menuSelMovedAt) / 100;
         return t >= 1 ? to : menuSelFromY + (to - menuSelFromY) * (float)Easing.Apply(1, t);
@@ -2840,7 +2840,7 @@ sealed partial class Player : Screen
         if (menuSel < 0) return;
         var own = skin.Tex("arrow-pause");
         if ((own ?? skin.Tex("play-warningarrow")) is not { } arrow) return;
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f;
         double t = Game.NowMs - menuSelAt;
         float dx; // units outwards
@@ -2879,7 +2879,7 @@ sealed partial class Player : Screen
 
     void DrawPauseMenu(bool fail)
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float s = h / 768f;
         // the Visual Settings panel fades the whole menu (darkening included) out as it opens
         float fade = (float)Math.Clamp((Game.NowMs - menuShownAt) / 300, 0, 1) * MenuAlpha;
@@ -2921,7 +2921,7 @@ sealed partial class Player : Screen
     Rectangle? SkipRect()
     {
         if (SkipSprite() is not { } sp) return null;
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float sw = sp.Width * h / 768f, sh = sp.Height * h / 768f;
         return new Rectangle(w - sw, h - sh, sw, sh);
     }
@@ -2932,11 +2932,11 @@ sealed partial class Player : Screen
         if (double.IsNaN(skipShownAt)) skipShownAt = Game.NowMs;
         if (SkipSprite() is not { } sp || SkipRect() is not { } r)
         {
-            Game.Text("Press Space to skip", GetScreenWidth() - 360, GetScreenHeight() - 120, 36, Color.White);
+            Game.Text("Press Space to skip", Game.W - 360, Game.H - 120, 36, Color.White);
             return;
         }
         float a = (float)Math.Clamp((Game.NowMs - skipShownAt) / (outroSkip ? 300 : 400), 0, 1); // stable: the outro skip fades in faster
         bool over = playback == null && CheckCollisionPointRec(Input.GetMousePosition(), r);
-        sp.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), GetScreenHeight() / 768f, ColorAlpha(Color.White, a * (over ? 1 : 0.6f)));
+        sp.Draw(new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2), Game.H / 768f, ColorAlpha(Color.White, a * (over ? 1 : 0.6f)));
     }
 }

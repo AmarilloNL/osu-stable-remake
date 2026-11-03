@@ -61,7 +61,7 @@ sealed class BeatmapImport : Screen
 
     public override void Draw()
     {
-        int w = GetScreenWidth(), h = GetScreenHeight();
+        int w = Game.W, h = Game.H;
         float u = h / 480f, sd = h / 768f;
         double now = Game.NowMs;
         songs.DrawBackground(w, h);

@@ -185,7 +185,7 @@ sealed partial class Player
 
         public override void Update(double dtMs)
         {
-            w = GetScreenWidth(); h = GetScreenHeight();
+            w = Game.W; h = Game.H;
             u = h / 480f; sd = h / 768f;
             var mouse = Input.GetMousePosition();
 
