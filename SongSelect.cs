@@ -2100,7 +2100,8 @@ sealed partial class SongSelect : Screen
                 statX += 3.5f * u;
             }
             if (parts.Length == 5) Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
-            if (offsetLine.Length > 0) Game.Text(offsetLine, 2 * u, 57.7f * u, size, statsColour); // line spacing estimated (no stable capture with an offset yet)
+            // stable: the next line of the same text (after a newline), so its line pitch: 0.98 x the size, as measured on its tooltips
+            if (offsetLine.Length > 0) Game.Text(offsetLine, 2 * u, 48 * u + size * 0.98f, size, statsColour);
             diffTipShown = CheckCollisionPointRec(Input.GetMousePosition(), new Rectangle(2 * u, 47 * u, statX - 2 * u, 10 * u));
         }
 

@@ -156,6 +156,7 @@ sealed class Beatmap
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static double D(string s) => double.Parse(s.Trim(), Inv);
+    static double Diff(string s) => Math.Min(10f, Math.Max(0f, float.Parse(s.Trim(), Inv)));
     static int I(string s) => (int)double.Parse(s.Trim(), Inv);
 
     public static Beatmap Load(string path, bool metadataOnly = false, Mods mods = Mods.None)
@@ -182,7 +183,6 @@ sealed class Beatmap
             catch (IndexOutOfRangeException) { }
         }
         if (map.AR < 0) map.AR = map.OD; // old maps had no separate AR
-        map.AR = (float)map.AR; map.OD = (float)map.OD; map.CS = (float)map.CS; // stable stores them as floats
         if (map.Objects.Count > 0) // stable's score multiplier: unmodded values, drain = whole seconds of first to last start minus breaks
         {
             int drain = ((int)map.Objects[^1].Time - (int)map.Objects[0].Time - map.Breaks.Sum(b => (int)b.End - (int)b.Start)) / 1000;
@@ -241,10 +241,11 @@ sealed class Beatmap
                     case "Tags": Tags = v; break;
                     case "BeatmapID": BeatmapId = I(v); break;
                     case "BeatmapSetID": SetId = I(v); break;
-                    case "HPDrainRate": HP = D(v); break;
-                    case "CircleSize": CS = D(v); break;
-                    case "OverallDifficulty": OD = D(v); break;
-                    case "ApproachRate": AR = D(v); break;
+                    // stable reads these as floats clamped to 0-10 (AR 9.4 is 9.3999996: preempt 540ms, not 539)
+                    case "HPDrainRate": HP = Diff(v); break;
+                    case "CircleSize": CS = Diff(v); break;
+                    case "OverallDifficulty": OD = Diff(v); break;
+                    case "ApproachRate": AR = Diff(v); break;
                     case "SliderMultiplier": SliderMultiplier = D(v); break;
                     case "SliderTickRate": SliderTickRate = D(v); break;
                 }
