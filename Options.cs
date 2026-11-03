@@ -172,7 +172,7 @@ sealed class Options : Screen
 
             S("INPUT", 0xf11b),
             H("MOUSE"),
-            new(Kind.Slider, "Sensitivity:", "MouseSpeed", 0.4, 6, 1, "0.##", "x"),
+            new(Kind.Slider, "Sensitivity:", "MouseSpeed", 0.1, 6, 1, "0.##", "x"), // stable: 0.1 - 6 in 0.01 steps
             T("Raw input", "RawInput"),
             T("Map absolute raw input to the osu! window", "AbsoluteToOsuWindow"),
             new(Kind.Choice, "Confine mouse cursor:", "ConfineMouse", Values: ["Never", "Fullscreen", "Always"],
