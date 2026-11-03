@@ -1224,6 +1224,10 @@ sealed partial class SongSelect : Screen
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods) headerFor;
     string[] header = [];
+    // stable's tooltip on the difficulty line: approach time, the 300 / 100 / 50 windows (whole ms less half, as the
+    // judging compares with <), spinner difficulty and the circle radius in osu! pixels, all with the mods
+    string diffTip = "";
+    bool diffTipShown;
     // stable colours the length line by the speed mod and the stats line by HR / EZ (salmon harder, light
     // blue easier), and marks AR, OD and HP with a small arrow when a speed mod changes them in play
     static readonly Color Harder = new(246, 154, 161, 255), Easier = new(173, 216, 230, 255);
@@ -1689,6 +1693,8 @@ sealed partial class SongSelect : Screen
         Snow.Draw();
         if (webTip && !modSelect && dialog == null) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
         else if (scoreTip != null && !modSelect && dialog == null) Options.DrawScreenTooltip(ScoreTip(scoreTip), Input.GetMousePosition());
+        else if (diffTipShown && !modSelect && dialog == null && openDrop == 0) Options.DrawScreenTooltip(diffTip, Input.GetMousePosition());
+        diffTipShown = false;
         webTip = false;
         scoreTip = null;
         DrawModeMenu();
@@ -1964,6 +1970,11 @@ sealed partial class SongSelect : Screen
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
                     $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? (Math.Floor(stars * 100) / 100).ToString("0.##") : "?")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after
+                double kd = mods.HasFlag(Mods.HardRock) ? 1.4 : mods.HasFlag(Mods.Easy) ? 0.5 : 1, kc = mods.HasFlag(Mods.HardRock) ? 1.3 : kd;
+                double ar = Math.Min(10, b.AR * kd), od = Math.Min(10, b.OD * kd);
+                double Window(double at0, double at5, double at10) => ((int)Beatmap.Range(od, at0, at5, at10) - 0.5) / rate;
+                diffTip = $"Approach time: {(int)Beatmap.Range(ar, 1800, 1200, 450) / rate:0.##}ms\n300: +-{Window(80, 50, 20):0.##}ms\n100: +-{Window(140, 100, 60):0.##}ms\n" +
+                    $"50: +-{Window(200, 150, 100):0.##}ms\nSpinner difficulty: {Beatmap.Range(od, 3, 5, 7.5):0.##}\nHit object radius: {new Beatmap { CS = Math.Min(10, b.CS * kc) }.Radius:0.##}";
             }
             Game.Text(header[0], 23.4f * u, -3 * u, 18.4f * u, Color.White); // stable's sizes 18, 12, 12 bold, 12, 8 render this wide (measured)
             Game.Text(header[1], 24.6f * u, 12 * u, 12.45f * u, Color.White);
@@ -1984,6 +1995,7 @@ sealed partial class SongSelect : Screen
                 statX += 3.5f * u;
             }
             Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
+            diffTipShown = CheckCollisionPointRec(Input.GetMousePosition(), new Rectangle(2 * u, 47 * u, statX - 2 * u, 10 * u));
         }
 
         // Group / Sort: label, then a boxed value. Only sorting is functional; grouping shows stable's default.
