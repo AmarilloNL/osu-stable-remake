@@ -126,6 +126,24 @@ sealed partial class Player
         if (Config.GetBool("KeyOverlay", false) || playback != null || auto) DrawKeyOverlay(w, u, sd, now); // stable always shows it when watching
 
         DrawSkip();
+        DrawRetries(u, now);
+    }
+
+    // stable, from the second retry in a row: "N retries and counting..." in bold 14 at (0, 30), sliding in from 20 units
+    // left and fading in a second after the play loads (500ms), fading out from 3.5s (1s)
+    internal static int RetryStreak;
+    readonly double loadedAt = Game.NowMs;
+    string? retriesText;
+
+    void DrawRetries(float u, double now)
+    {
+        if (RetryStreak < 2 || playback != null || auto) return;
+        double age = now - loadedAt;
+        if (age < 1000 || age > 4500) return;
+        float t = (float)Easing.Apply(1, Math.Clamp((age - 1000) / 500, 0, 1));
+        float alpha = (float)(age < 3500 ? Math.Clamp((age - 1000) / 500, 0, 1) : 1 - (age - 3500) / 1000);
+        retriesText ??= $"{RetryStreak} retries and counting...";
+        Game.TextBold(retriesText, -20 * (1 - t) * u, 30 * u, 14.4f * u, ColorAlpha(Color.White, alpha));
     }
 
     // Score rolls toward the real value (x0.75 per 60Hz frame), accuracy eases (x0.5); the pie sits 24 units left

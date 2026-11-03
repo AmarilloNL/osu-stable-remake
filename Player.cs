@@ -216,6 +216,9 @@ sealed partial class Player : Screen
         diffMul = map.DifficultyMultiplier;
         InitScoreV2();
 
+        // stable counts retries in a row of a live play (any other way in starts over)
+        if (playback == null && !auto) RetryStreak = retrying ? RetryStreak + 1 : 0;
+        retrying = false;
         music = Track.Load(Path.Combine(map.Folder, map.AudioFilename), rate, mods.HasFlag(Mods.Nightcore), tempo: playback != null);
         if (music != null)
             music.Volume = Config.MusicVolume;
@@ -372,8 +375,11 @@ sealed partial class Player : Screen
     internal void Restart(Action whileBlack) => Game.FadeTo(() => new Player(map, back, mods, playback, watching), () => { Dispose(); whileBlack(); });
 
     // stable restarts through black too; a quick retry (held key) is black already
+    static bool retrying; // set by Retry for the play it starts
+
     void Retry(bool quick = false)
     {
+        retrying = true;
         if (VirtualClock) { Leave(new Player(map, back, mods, playback, watching) { Retried = true }); return; }
         Game.FadeTo(() => new Player(map, back, mods, playback, watching) { Retried = true }, Dispose, quick);
     }
