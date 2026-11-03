@@ -934,7 +934,7 @@ sealed partial class SongSelect : Screen
         while (songsChanged.TryDequeue(out var path))
         {
             if (Game.NowMs < IgnoreSongsUntil) continue;
-            if (Path.GetRelativePath(Config.SongsDir, path).StartsWith("Failed", StringComparison.OrdinalIgnoreCase)) continue; // broken imports
+            if (Path.GetRelativePath(Config.SongsDir, path).Split(Path.DirectorySeparatorChar)[0].Equals("Failed", StringComparison.OrdinalIgnoreCase)) continue; // broken imports
             string parent = Path.GetDirectoryName(path.TrimEnd(Path.DirectorySeparatorChar)) ?? "";
             string key = parent.Equals(Path.GetFullPath(Config.SongsDir).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(".osu", StringComparison.OrdinalIgnoreCase) ? path : parent;
