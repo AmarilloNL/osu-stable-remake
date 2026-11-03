@@ -50,6 +50,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Loved/Qualified map warning, local beatmap offset with `+` / `-` (`Alt` for 1ms steps; read from stable's `osu!.db`)
 - Stable's keyboard bindings (Options → Change keyboard bindings), F7 frame limiter (with stable's menu, pause and background rates), F10 mouse buttons, F12 screenshots, the Boss key (hides to a notification-area icon)
 - Mouse back / forward buttons as Escape / Skip; the cursor kept in the window during a play, raw input included
+- Stable's window behaviour: minimise on alt-tab in fullscreen, display kept awake while focused, Windows pen gestures off, the map in the window title during a play
 </details>
 
 <details>
