@@ -603,7 +603,7 @@ sealed class MainMenu : Screen
         double ticks = dtMs / (1000 / 60.0);
         int level = 32768;
         if (songs.Music is { } m) { var (l, r) = m.Level; level = l + r; }
-        float now = level / 65536f * (float)(Config.GetDouble("VolumeMusic", 100) / 100);
+        float now = level / 65536f * (float)(Config.GetDouble("VolumeMusic", 80) / 100);
         float a = (float)Math.Pow(0.9, ticks);
         levelAvg = levelAvg * a + now * (1 - a);
         double phase = songs.BeatPhase() is var p && !double.IsNaN(p) ? p : 0.5;

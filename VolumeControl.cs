@@ -20,7 +20,7 @@ static class VolumeControl
         public double ShownAt;
         public float Arc; // eased toward the value
         public Tween Alpha, Size = new(0.6f * scale), Text, LabelAlpha, Glow, Tint = new(80 / 255f);
-        public int Value => Math.Clamp(Config.GetInt(Key, 100), 0, 100);
+        public int Value => Math.Clamp(Config.GetInt(Key, Key == "VolumeUniversal" ? 100 : 80), 0, 100); // stable: music and effect start at 80
         public float Target => (Selected ? 1 : 0.95f) * Scale;
     }
 

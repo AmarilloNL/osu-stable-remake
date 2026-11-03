@@ -421,7 +421,7 @@ sealed class BeatmapSamples
     }
 
     public static float EffectVolume =>
-        Config.GetInt("VolumeUniversal", 100) / 100f * Config.GetInt("VolumeEffect", 100) / 100f;
+        Config.GetInt("VolumeUniversal", 100) / 100f * Config.GetInt("VolumeEffect", 80) / 100f;
 
     // stable's IgnoreBeatmapSamples (and the per-map Hitsounds toggle): off = always the skin's samples.
     public bool UseMapSamples = !Config.GetBool("IgnoreBeatmapSamples", false);

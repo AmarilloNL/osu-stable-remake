@@ -25,7 +25,7 @@ static class Config
         Read(Path.Combine(OsuDir, "osu!.cfg"), values);
         Read(Path.Combine(OsuDir, $"osu!.{Environment.UserName}.cfg"), values);
         foreach (var kv in own) values[kv.Key] = kv.Value;
-        Beatmap.PlayfieldHeight = GetBool("Fullscreen", false) ? GetInt("HeightFullscreen", GetInt("Height", 720)) : GetInt("Height", 720);
+        Beatmap.PlayfieldHeight = GetBool("Fullscreen", true) ? GetInt("HeightFullscreen", GetInt("Height", 720)) : GetInt("Height", 720);
     }
 
     static void Read(string path, Dictionary<string, string> into)
@@ -47,7 +47,8 @@ static class Config
     public static double GetDouble(string key, double def) =>
         double.TryParse(Get(key, ""), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : def;
 
-    public static float MusicVolume => GetInt("VolumeUniversal", 100) / 100f * GetInt("VolumeMusic", 100) / 100f;
+    // stable's defaults: universal 100, music and effect 80
+    public static float MusicVolume => GetInt("VolumeUniversal", 100) / 100f * GetInt("VolumeMusic", 80) / 100f;
 
     public static bool GetBool(string key, bool def) => Get(key, def ? "1" : "0") is "1" or "True" or "true";
 

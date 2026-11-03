@@ -279,9 +279,9 @@ static class Game
     {
         var r = Config.Get("Resolution", "").Split('x');
         if (r.Length == 2 && int.TryParse(r[0], out int w) && int.TryParse(r[1], out int h)) return (w, h);
-        bool full = Config.Get("DisplayMode", Config.GetBool("Fullscreen", false) ? "Fullscreen" : "Windowed") == "Fullscreen";
-        w = Config.GetInt(full ? "WidthFullscreen" : "Width", full ? 9999 : 1280);
-        h = Config.GetInt(full ? "HeightFullscreen" : "Height", full ? 9999 : 720);
+        bool full = Config.Get("DisplayMode", Config.GetBool("Fullscreen", true) ? "Fullscreen" : "Windowed") == "Fullscreen";
+        w = Config.GetInt(full ? "WidthFullscreen" : "Width", 9999); // stable's defaults: 9999 = the monitor's size
+        h = Config.GetInt(full ? "HeightFullscreen" : "Height", 9999);
         int m = GetCurrentMonitor();
         return (w == 9999 ? GetMonitorWidth(m) : w, h == 9999 ? GetMonitorHeight(m) : h);
     }
@@ -292,7 +292,7 @@ static class Game
     {
         var (w, h) = Resolution();
         int m = GetCurrentMonitor();
-        return Config.Get("DisplayMode", Config.GetBool("Fullscreen", false) ? "Fullscreen"
+        return Config.Get("DisplayMode", Config.GetBool("Fullscreen", true) ? "Fullscreen"
             : w >= GetMonitorWidth(m) && h >= GetMonitorHeight(m) ? "Borderless" : "Windowed");
     }
 
@@ -580,7 +580,7 @@ static class Game
         timeBeginPeriod(1);
 
         SetTraceLogLevel(TraceLogLevel.Warning);
-        string frameSync = Config.Get("FrameSync", "Unlimited");
+        string frameSync = Config.Get("FrameSync", "Optimal");
         if (frameSync == "VSync") SetConfigFlags(ConfigFlags.VSyncHint);
         // like stable, keep running while minimised (raylib would otherwise stop the loop until the window comes back,
         // while the music plays on); the loop throttles itself to 15fps there
@@ -686,7 +686,7 @@ static class Game
                 Toast.Draw();
                 if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
                 SongSelect.FlushCursor();
-                stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
+                stats.Draw(TargetFps(Config.Get("FrameSync", "Optimal"), refresh));
                 if (Box is { } box)
                 {
                     EndTextureMode();
@@ -715,7 +715,7 @@ static class Game
             // F7 (Toggle Framerate Limit): stable's cycle VSync / Power saving -> Optimal -> Unlimited -> Power saving
             if (Input.IsKeyPressed(Config.Key("keyToggleFrameLimiter", KeyboardKey.F7)))
             {
-                string next = Config.Get("FrameSync", "Unlimited") switch { "VSync" or "PowerSaving" => "Optimal", "Optimal" or "Limit120" => "Unlimited", _ => "PowerSaving" };
+                string next = Config.Get("FrameSync", "Optimal") switch { "VSync" or "PowerSaving" => "Optimal", "Optimal" or "Limit120" => "Unlimited", _ => "PowerSaving" };
                 Config.SetOwn("FrameSync", next);
                 ClearWindowState(ConfigFlags.VSyncHint);
                 // stable's notice: "Frame limiter: Power Saving (330fps)", "Optimal (960fps)", "Unlimited (gameplay)"
@@ -756,7 +756,7 @@ static class Game
                 if (w > 5) Console.Error.WriteLine($"slow frame: {w:0.0}ms at {secs:0.000}s ({Screen.GetType().Name}, GCs {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}; update {tDraw - now:0.0}, draw {tSwap - tDraw:0.0}, present {tSwapped - tSwap:0.0})");
             }
 
-            nextFrame = Limit(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh, testRun), nextFrame);
+            nextFrame = Limit(TargetFps(Config.Get("FrameSync", "Optimal"), refresh, testRun), nextFrame);
             fEnd = NowMs;
             (fUpdate, fDraw, fSwap, fSleep) = (tDraw - now, tSwap - tDraw, tSwapped - tSwap, fEnd - tSwapped);
         }
@@ -1038,7 +1038,7 @@ static class Game
     // A frame limiter setting's own rate (what F7's notice shows); 0 = none (Unlimited, VSync).
     static double SettingFps(string frameSync, double refresh) => frameSync switch
     {
-        "Custom" => Config.GetInt("CustomFrameLimit", 0),
+        "Custom" => Config.GetInt("CustomFrameLimit", 240),
         "Optimal" or "Limit120" => Math.Min(960, refresh * 8),
         "PowerSaving" => refresh * 2,
         _ => 0,

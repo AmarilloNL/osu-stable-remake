@@ -207,7 +207,7 @@ sealed class SongSelect : Screen
     // stable's sort modes (TreeSortMode2 in its cfg; ours is saved to remake.cfg).
     static readonly (string Key, string Label)[] SortModes =
         [("Artist", "By Artist"), ("Bpm", "By BPM"), ("Creator", "By Creator"), ("Date", "By Date Added"), ("Difficulty", "By Difficulty"), ("Length", "By Length"), ("Rank", "By Rank Achieved"), ("Title", "By Title")];
-    static string SortMode => Config.Get("TreeSortMode2", "Artist");
+    static string SortMode => Config.Get("TreeSortMode2", "Title"); // stable's default
     internal static int TotalBeatmaps; // every mode, as stable's menu counts them
 
     // By Rank Achieved: the difficulty's best local grade (song select fills the lookup in)
