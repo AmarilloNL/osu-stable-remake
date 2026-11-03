@@ -1294,7 +1294,7 @@ sealed partial class SongSelect : Screen
         "My_Maps" => "MyMaps", "RankedStatus" => "Status", "Last_Played" => "Recent", _ => "None",
     });
     // Header text and match count, rebuilt only when they change.
-    (DbBeatmap?, Mods) headerFor;
+    (DbBeatmap?, Mods, float) headerFor;
     string[] header = [];
     // stable's tooltip on the difficulty line: approach time, the 300 / 100 / 50 windows (whole ms less half, as the
     // judging compares with <), spinner difficulty and the circle radius in osu! pixels, all with the mods
@@ -2036,9 +2036,9 @@ sealed partial class SongSelect : Screen
             string status = b.Status switch { 4 => "selection-ranked", 5 or 6 => "selection-approved", 7 => "selection-loved", 2 or 3 => "selection-notranked", _ => "selection-question" };
             if (status == "selection-question" && Game.Skin.Tex(status) is { } q) q.Draw(new Vector2(12 * u, 12 * u), s, Color.White);
             else if (Game.Skin.Tex(status) is { } icon) icon.Draw(new Vector2(11 * u, 11 * u), 15 * u / Math.Max(1, icon.Width), Color.White);
-            if (headerFor != (b, mods)) // the header text only changes with the selection or mods
+            if (headerFor != (b, mods, b.StarsFor(mods))) // the header text only changes with the selection, mods or star rating
             {
-                headerFor = (b, mods);
+                headerFor = (b, mods, b.StarsFor(mods));
                 double rate = mods.Rate();
                 string bpm = b.MaxBpm <= 0 || b.MaxBpm > 100000 ? "?"
                     : Math.Abs(b.MaxBpm - b.MinBpm) < 0.5 ? $"{b.MaxBpm * rate:0}"
@@ -2055,7 +2055,7 @@ sealed partial class SongSelect : Screen
                     $"Mapped by {b.Creator}",
                     $"Length: {secs / 60:00}:{secs % 60:00} BPM: {bpm} Objects: {b.Circles + b.Sliders + b.Spinners}",
                     $"Circles: {b.Circles} Sliders: {b.Sliders} Spinners: {b.Spinners}",
-                    $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#} Star Rating: {(stars is > 0 and < 1000 ? (Math.Floor(stars * 100) / 100).ToString("0.##") : "?")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after
+                    $"CS:{Math.Min(10, b.CS * kcs):0.#} AR:{Math.Min(10, b.AR * k):0.#} OD:{Math.Min(10, b.OD * k):0.#} HP:{Math.Min(10, b.HP * k):0.#}{(stars is > 0 and < 1000 ? $" Star Rating: {Math.Floor(stars * 100) / 100:0.##}" : "")}"]; // stable truncates (3.628 shows 3.62); the star glyph is drawn after. Not calculated yet: no rating (stable's)
                 // stable: a second line when the map has a local or online offset
                 int local = Config.GetInt($"LocalOffset_{b.Md5}", b.LocalOffset), online = b.OnlineOffset;
                 offsetLine = local != 0 || online != 0 ? $"Your Offset: {(local > 0 ? "+" : "")}{local}ms / Online Offset: {(online > 0 ? "+" : "")}{online}ms" : "";
@@ -2083,7 +2083,7 @@ sealed partial class SongSelect : Screen
                 else DrawTriangle(new(ax, at), new(ax + 1.5f * u, ab), new(ax + 3 * u, at), statsColour);
                 statX += 3.5f * u;
             }
-            Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
+            if (parts.Length == 5) Options.DrawIcon(0xf005, statX + 4.5f * u, 52.5f * u, 8 * u, statsColour); // Aller has no star: stable's comes from a fallback font
             if (offsetLine.Length > 0) Game.Text(offsetLine, 2 * u, 57.7f * u, size, statsColour); // line spacing estimated (no stable capture with an offset yet)
             diffTipShown = CheckCollisionPointRec(Input.GetMousePosition(), new Rectangle(2 * u, 47 * u, statX - 2 * u, 10 * u));
         }
