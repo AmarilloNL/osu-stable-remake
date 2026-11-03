@@ -1596,7 +1596,7 @@ sealed partial class Player : Screen
         int spins = s.SpinsCounted;
         // stable's grading (current version): miss below a quarter, 300 above the requirement, 100 within 2.
         int result = req == 0 ? 300 : spins < Math.Max(0, req / 4) ? 0 : spins > req ? 300 : spins > req - 2 ? 100 : 50;
-        if (result > 0) PlayHitsound(o.HitSound, o.NormalSet, o.AdditionSet, o.SampleIndex, o.Volume, o.EndTime);
+        if (result > 0) PlayHitsound(o.HitSound, o.NormalSet, o.AdditionSet, o.SampleIndex, o.Volume, o.EndTime, ahead: 0);
         Final(i, result, new Vector2(256, 192));
     }
 
@@ -1661,9 +1661,9 @@ sealed partial class Player : Screen
     // A custom sample file found in the map's folder plays instead of the whole set (stable: none of the normal,
     // whistle, finish or clap); storyboard triggers still see the set. Otherwise stable's mix: at least 8% volume, the
     // normal at 0.8 of it, whistle and clap at 0.85, finish at full.
-    void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at, string file = "")
+    void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at, string file = "", double ahead = 5)
     {
-        var tp = map.PointAt(at + 5); // stable samples the timing point slightly ahead
+        var tp = map.PointAt(at + ahead); // stable samples the timing point slightly ahead (a spinner's end: right at it)
         int set = normalSet > 0 ? normalSet : tp.SampleSet;
         int add = additionSet > 0 ? additionSet : set;
         int idx = index > 0 ? index : tp.SampleIndex;
