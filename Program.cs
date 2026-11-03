@@ -651,13 +651,13 @@ static class Game
                 if (Box != null) { BeginTextureMode(boxRt); ClearBackground(Color.Black); }
                 Screen.Draw();
                 DrawFade();
+                FrameGraph.Draw(); // (under toasts and the FPS counter, like stable's)
                 VolumeControl.Draw();
                 Notification.Draw();
                 Toast.Draw();
                 if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
                 SongSelect.FlushCursor();
                 stats.Draw(TargetFps(Config.Get("FrameSync", "Unlimited"), refresh));
-                FrameGraph.Draw();
                 if (Box is { } box)
                 {
                     EndTextureMode();

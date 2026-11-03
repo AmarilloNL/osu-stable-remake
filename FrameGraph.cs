@@ -31,6 +31,7 @@ static class FrameGraph
     public static void Toggle()
     {
         On = !On;
+        if (On) Toast.Show("Frame time graph is now visible. Press Ctrl+F11 to hide.", new Color(255, 255, 0, 255), 300000); // stable's (Yellow, 5 minutes)
         if (!On || tex.Id != 0) return;
         var all = new Color[Width * Height];
         for (int y = 0; y < Height; y++) for (int x = 0; x < Width; x++) all[y * Width + x] = Empty(y);
@@ -69,11 +70,11 @@ static class FrameGraph
         Game.Text("20ms", x0, y0, size, Color.White);
         Game.Text("0ms", x0, y0 + Height - size, size, Color.White);
         if (!Input.CtrlHeld) return;
-        float x = x0 + Game.TextWidth("20ms", size), big = 27 * 1.035f;
+        float x = x0 + Game.TextWidth("20ms", size) + 0.6f * size, big = 27 * 1.035f; // (stable's padded text bitmaps space them)
         foreach (var (name, colour) in Phases)
         {
             Game.Text(name, x, y0, big, colour);
-            x += Game.TextWidth(name, big);
+            x += Game.TextWidth(name, big) + 0.28f * big;
         }
     }
 }
