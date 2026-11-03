@@ -32,6 +32,7 @@ sealed class BeatmapImport : Screen
     // Extracts each archive; returns an imported osu! map's MD5 to select.
     string? Import(string[] files)
     {
+        SongSelect.IgnoreSongsUntil = double.MaxValue; // (its own extracting isn't news)
         string? select = null;
         foreach (var file in files)
         {
@@ -47,6 +48,7 @@ sealed class BeatmapImport : Screen
             catch (InvalidDataException) { Toast.Show("The beatmap file is corrupt or incomplete."); }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Unable to move file {name}. It is probably in use by another application."); }
         }
+        SongSelect.IgnoreSongsUntil = Game.NowMs + 2000;
         return select;
     }
 

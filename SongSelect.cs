@@ -907,13 +907,50 @@ sealed partial class SongSelect : Screen
 
     // Library/score loading, preview music and background. The main menu runs this too, so its music and
     // background are song select's. Returns false while the library is still loading.
+    // stable watches the Songs folder (subfolders too) while it runs: the first change in a folder, to an .osu file or
+    // at the top level says "New beatmap detected.  Hit F5 to refresh." while song select is up; F5 starts over. The
+    // game's own deletes and imports don't count.
+    static FileSystemWatcher? songsWatcher;
+    static readonly System.Collections.Concurrent.ConcurrentQueue<string> songsChanged = new();
+    static readonly HashSet<string> songsSeen = new(StringComparer.OrdinalIgnoreCase);
+    internal static double IgnoreSongsUntil;
+
+    static void WatchSongs()
+    {
+        if (songsWatcher != null || !Directory.Exists(Config.SongsDir)) return;
+        try
+        {
+            songsWatcher = new FileSystemWatcher(Config.SongsDir) { IncludeSubdirectories = true };
+            songsWatcher.Created += (_, e) => songsChanged.Enqueue(e.FullPath);
+            songsWatcher.Deleted += (_, e) => songsChanged.Enqueue(e.FullPath);
+            songsWatcher.Renamed += (_, e) => songsChanged.Enqueue(e.FullPath);
+            songsWatcher.EnableRaisingEvents = true;
+        }
+        catch (Exception e) when (e is IOException or ArgumentException or PlatformNotSupportedException) { songsWatcher = null; }
+    }
+
+    void PollSongsWatcher()
+    {
+        while (songsChanged.TryDequeue(out var path))
+        {
+            if (Game.NowMs < IgnoreSongsUntil) continue;
+            string parent = Path.GetDirectoryName(path.TrimEnd(Path.DirectorySeparatorChar)) ?? "";
+            string key = parent.Equals(Path.GetFullPath(Config.SongsDir).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".osu", StringComparison.OrdinalIgnoreCase) ? path : parent;
+            if (songsSeen.Add(key) && Game.Screen == this) Notification.Show("New beatmap detected.  Hit F5 to refresh.", 2000);
+        }
+    }
+
     internal bool Ambient(bool menu = false)
     {
+        PollSongsWatcher();
         if (loading != null)
         {
             if (!loading.IsCompleted) return false;
             sets = loading.Result;
             loading = null;
+            songsSeen.Clear();
+            WatchSongs();
             var again = reselect == null ? null : sets.SelectMany(s => s.Diffs).FirstOrDefault(d => d.Md5 == reselect);
             // every non-Latin character the library's names use, into the fallback glyph atlases at once (one build
             // instead of one each time a new title scrolls into view)
@@ -2414,12 +2451,14 @@ sealed partial class SongSelect : Screen
     {
         Toast.Show($"{name} has been moved to Recycle Bin!", Xna.Red, 3000);
         ReleaseMusic();
+        IgnoreSongsUntil = Game.NowMs + 3000;
         Recycle([Path.Combine(Config.SongsDir, b.Folder)]);
         Forget(sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs.ToList() ?? [b]);
     }
 
     void DeleteMaps(List<DbBeatmap> maps)
     {
+        IgnoreSongsUntil = Game.NowMs + 3000;
         Recycle(maps.Select(m => m.FilePath));
         Forget(maps);
     }
@@ -2467,6 +2506,7 @@ sealed partial class SongSelect : Screen
         var folders = maps.Select(m => m.Folder).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (folders.Count == 0) return;
         ReleaseMusic();
+        IgnoreSongsUntil = Game.NowMs + 3000;
         Recycle(folders.Select(f => Path.Combine(Config.SongsDir, f)));
         Forget([.. sets.Where(s => folders.Contains(s.First.Folder)).SelectMany(s => s.Diffs)]);
     }
