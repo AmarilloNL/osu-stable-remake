@@ -20,7 +20,7 @@ in a new client written from the ground up in C#. The goal is to judge, look and
 while running with sub-millisecond frame times and handling frames better.
 
 It is **offline only**: it never talks to any osu! server. Everything it saves (its own settings, replays,
-screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, delete a beatmap (to the Recycle Bin, like stable), export your skin (`Exports`), change collections (`collection.db`) or use Remove from Unplayed (one flag in `osu!.db`); the last two only while stable is closed.
+screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, delete a beatmap (to the Recycle Bin, like stable), export your skin (`Exports`), change collections (`collection.db`) or use Remove from Unplayed / Mark all maps as played (flags in `osu!.db`); the last ones only while stable is closed.
 
 > [!NOTE]
 > This is a personal hobby project. It is not affiliated with, endorsed by, or connected to ppy Pty Ltd
@@ -115,7 +115,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Missing pieces**
 - [x] Hit lighting
 - [x] Beatmap options (`F3`): deleting a set, a difficulty or everything listed (to the Recycle Bin, like stable; also `Shift+Delete`), Remove from Unplayed, Clear local scores (the replays stay; the list leaves those scores out)
-- [x] Options: Export as .osk (into osu!'s `Exports` folder, like stable)
+- [x] Options: Export as .osk (into osu!'s `Exports` folder, like stable), Delete all unranked maps (to the Recycle Bin, after stable's confirmation) and Mark all maps as played
 - [x] Beatmap options (`F3`): Manage Collections (make, rename and delete collections, add or remove the map or its set; written to stable's `collection.db` while stable is closed)
 - [x] Visual Settings per map (stable's from `osu!.db`, changes kept in `remake.cfg`)
 - [x] Libraries without a readable `osu!.db`: the Songs folder is read in parallel and cached, star ratings come in the background

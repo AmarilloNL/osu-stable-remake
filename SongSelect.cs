@@ -2409,10 +2409,40 @@ sealed partial class SongSelect : Screen
     // stable's Remove from Unplayed (written into osu!.db, see OsuDb.SetPlayed)
     void RemoveFromUnplayed(DbBeatmap b)
     {
-        if (!OsuDb.SetPlayed(b)) { Toast.Show(b.UnplayedAt > 0 && b.Unplayed ? "Close osu!stable first: it rewrites osu!.db when it closes." : $"{b.Artist} - {b.Title} isn't in osu!.db as unplayed."); return; }
+        if (b.UnplayedAt > 0 && OsuDb.SetPlayed(b) < 0) { Toast.Show(CloseStableFirst); return; }
         b.Unplayed = false;
         Toast.Show($"Removed {b.Artist} - {b.Title} from unplayed songs.", Xna.SkyBlue, 3000);
         ApplyFilter(b);
+    }
+
+    const string CloseStableFirst = "Close osu!stable first: it rewrites osu!.db when it closes.";
+
+    // Options > Maintenance > Mark all maps as played (stable's): every unplayed flag in osu!.db cleared
+    internal void MarkAllPlayed()
+    {
+        if (OsuDb.SetAllPlayed() < 0) { Toast.Show(CloseStableFirst); return; }
+        foreach (var set in sets) foreach (var b in set.Diffs) b.Unplayed = false;
+        Toast.Show("All maps have been marked as 'Played'.", new Color(154, 205, 50, 255), 4000);
+        ApplyFilter(Selected);
+    }
+
+    // Options > Maintenance > Delete all unranked maps (stable's): maps not submitted or pending (status 1 or 2) that
+    // someone else made, in sets with no ranked map and none of the player's own; each one's whole set goes to the
+    // Recycle Bin
+    internal List<DbBeatmap> UnrankedMaps()
+    {
+        string me = Config.Get("Username", "");
+        bool Mine(DbBeatmap d) => me.Length > 0 && d.Creator == me;
+        return [.. sets.Where(s => !s.Diffs.Any(d => d.Status == 4 || Mine(d))).SelectMany(s => s.Diffs).Where(d => d.Status is 1 or 2 && !Mine(d))];
+    }
+
+    internal void DeleteSetsOf(List<DbBeatmap> maps)
+    {
+        var folders = maps.Select(m => m.Folder).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (folders.Count == 0) return;
+        ReleaseMusic();
+        Recycle(folders.Select(f => Path.Combine(Config.SongsDir, f)));
+        Forget([.. sets.Where(s => folders.Contains(s.First.Folder)).SelectMany(s => s.Diffs)]);
     }
 
     // stable's Clear local scores empties the map's list in its scores.db. The remake's list comes from the replays

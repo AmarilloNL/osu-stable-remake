@@ -56,6 +56,36 @@ sealed class Options : Screen
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Couldn't export {name}: {e.Message}"); }
     }
 
+    // stable's confirmation over the panel (Delete all unranked maps): Let's do it! / Cancel; 1 / 2, Esc or Enter cancel
+    (string Title, Action Yes)? confirm;
+    double confirmAt;
+    float confirmY;
+
+    bool UpdateConfirm()
+    {
+        if (confirm is not { } c) return false;
+        var m = Input.GetMousePosition();
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        int chosen = Input.IsKeyPressed(KeyboardKey.One) ? 0 : Input.IsKeyPressed(KeyboardKey.Two) || Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.Enter) ? 1 : -1;
+        for (int i = 0; i < 2 && chosen < 0; i++) if (click && CheckCollisionPointRec(m, Dialog.ButtonRect(confirmY + i * 50))) chosen = i;
+        while (Input.GetCharPressed() != 0) { }
+        if (chosen < 0) return true;
+        confirm = null;
+        if (chosen == 0) c.Yes();
+        return true;
+    }
+
+    void DrawConfirm(Vector2 mouse)
+    {
+        if (confirm is not { } c) return;
+        double age = Game.NowMs - confirmAt;
+        float fade = (float)Math.Clamp(age / 200, 0, 1);
+        Dialog.Backdrop(fade);
+        confirmY = Dialog.Title(c.Title, fade);
+        Dialog.Button(0, "Let's do it!", new Color(154, 205, 50, 255), confirmY, age, mouse);
+        Dialog.Button(1, "Cancel", new Color(255, 69, 0, 255), confirmY + 50, age, mouse);
+    }
+
     readonly Screen back;
     internal Screen Back => back;
     readonly SongSelect songs;
@@ -246,9 +276,9 @@ sealed class Options : Screen
 
             S("MAINTENANCE", 0xf0ad),
             H("GENERAL"),
-            B("Delete all unranked maps", Blue),
+            B("Delete all unranked maps", Blue, () => { var maps = songs.UnrankedMaps(); confirm = ($"{maps.Count} maps will be deleted.", () => songs.DeleteSetsOf(maps)); confirmAt = Game.NowMs; }),
             B("Repair folder permissions", Blue),
-            B("Mark all maps as played", Blue),
+            B("Mark all maps as played", Blue, songs.MarkAllPlayed),
             B("Run osu! updater", Blue),
             new(Kind.Version, build),
         ];
@@ -441,6 +471,7 @@ sealed class Options : Screen
             if (Game.NowMs - closingAt > 200) Game.Screen = back;
             return;
         }
+        if (UpdateConfirm()) return;
 
         if (bindings != null)
         {
@@ -769,7 +800,8 @@ sealed class Options : Screen
 
         bindings?.Draw();
         backButton.Draw(h, mouse); // stable: above the bindings dialog too
-        if (tooltip != null && bindings == null) DrawTooltip(tooltip, mouse);
+        if (tooltip != null && bindings == null && confirm == null) DrawTooltip(tooltip, mouse);
+        DrawConfirm(mouse);
         SongSelect.DrawCursor();
     }
 

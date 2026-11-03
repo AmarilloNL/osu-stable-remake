@@ -126,11 +126,13 @@ static class OsuDb
     static string? loadedPath;
     static long loadedLength;
     static DateTime loadedWrite;
+    static readonly List<long> unplayedAt = []; // every unplayed map's flag in that file, all modes (Mark all maps as played)
 
     public static List<DbBeatmap> Load(string path)
     {
         var info = new FileInfo(path);
         (loadedPath, loadedLength, loadedWrite) = (path, info.Length, info.LastWriteTimeUtc);
+        unplayedAt.Clear();
         using var stream = new BufferedStream(File.OpenRead(path), 1 << 20);
         using var r = new BinaryReader(stream);
         var rd = new Reader(r);
@@ -209,6 +211,7 @@ static class OsuDb
         rd.Skip();                        // title font
         b.UnplayedAt = r.BaseStream.Position;
         b.Unplayed = r.ReadBoolean();
+        if (b.Unplayed) unplayedAt.Add(b.UnplayedAt);
         b.LastPlayed = r.ReadInt64();     // DateTime ticks (UTC)
         r.ReadBoolean();                  // osz2
         b.Folder = rd.String(8);
@@ -332,24 +335,32 @@ static class OsuDb
     // stable's Remove from Unplayed: the map's flag cleared in osu!.db in place (one byte). Only while stable is closed
     // (it writes its own copy when it closes) and while the file is still the one the list was read from; the file
     // keeps its time, which the library load compares with the Songs folders.
-    internal static bool SetPlayed(DbBeatmap b)
+    // Returns how many flags it cleared, or -1 when it may not write (stable running, or osu!.db changed since).
+    internal static int SetPlayed(DbBeatmap b) => ClearFlags([b.UnplayedAt]);
+    internal static int SetAllPlayed() => ClearFlags(unplayedAt);
+
+    static int ClearFlags(IEnumerable<long> offsets)
     {
-        if (b.UnplayedAt <= 0 || loadedPath == null || System.Diagnostics.Process.GetProcessesByName("osu!").Length > 0) return false;
+        if (loadedPath == null || System.Diagnostics.Process.GetProcessesByName("osu!").Length > 0) return -1;
         try
         {
             var info = new FileInfo(loadedPath);
-            if (!info.Exists || info.Length != loadedLength || info.LastWriteTimeUtc != loadedWrite) return false;
+            if (!info.Exists || info.Length != loadedLength || info.LastWriteTimeUtc != loadedWrite) return -1;
+            int n = 0;
             using (var f = new FileStream(loadedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
-            {
-                f.Position = b.UnplayedAt;
-                if (f.ReadByte() != 1) return false; // not the flag as it was read
-                f.Position = b.UnplayedAt;
-                f.WriteByte(0);
-            }
+                foreach (long at in offsets)
+                {
+                    if (at <= 0) continue;
+                    f.Position = at;
+                    if (f.ReadByte() != 1) continue; // not (or no longer) the flag as it was read
+                    f.Position = at;
+                    f.WriteByte(0);
+                    n++;
+                }
             File.SetLastWriteTimeUtc(loadedPath, loadedWrite);
-            return true;
+            return n;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return -1; }
     }
 
     static string ReadString(BinaryReader r)
