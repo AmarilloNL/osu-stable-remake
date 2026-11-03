@@ -129,7 +129,7 @@ sealed class Options : Screen
             new(Kind.Choice, "Progress display:", "ProgressBarType", Values: ["Pie", "TopRight", "BottomRight", "Bottom"],
                 Names: ["Top-Right (Pie)", "Top-Right (Bar)", "Bottom-Right", "Bottom (long)"], DefValue: "Pie"),
             new(Kind.Choice, "Score meter type:", "ScoreMeter", Values: ["None", "Colour", "Error"], Names: ["None", "Colour", "Hit error"], DefValue: "Error"),
-            new(Kind.Slider, "Score meter size:", "ScoreMeterScale", 0.5, 2, 1, "0.##", "x"),
+            new(Kind.Slider, "Score meter size:", "ScoreMeterScale", 0.5, 5, 1, "0.##", "x"),
             T("Always show key overlay", "KeyOverlay"),
             T("Show approach circle on first \"Hidden\" object", "HiddenShowFirstApproach", true),
             T("Scale osu!mania scroll speed with BPM", "ManiaSpeedBPMScale"),
@@ -166,7 +166,7 @@ sealed class Options : Screen
             T("Use skin's sound samples", "SkinSamples", true),
             T("Use Taiko skin for Taiko mode", "UseTaikoSkin"),
             T("Always use skin cursor", "UseSkinCursor"),
-            new(Kind.Slider, "Cursor size:", "CursorSize", 0.5, 2, 1, "0.##", "x"),
+            new(Kind.Slider, "Cursor size:", "CursorSize", 0.1, 2, 1, "0.##", "x"),
             T("Automatic cursor size", "AutomaticCursorSizing"),
             T("Use combo colour as tint for slider ball", "ComboColourSliderBall", true),
 
