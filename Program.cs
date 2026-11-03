@@ -471,7 +471,8 @@ static class Game
 
     // stable's Softening filter (Graphics > Softening filter): the finished frame, cursor and overlays included, is
     // drawn again over itself at 15% through a blur: 13 samples (the pixel and 12 on a Poisson disc 0.4% of the
-    // screen's width and height across) averaged in squared colour, then the square root.
+    // screen's width and height across) averaged in squared colour, then the square root. The same pass draws a
+    // play's effects (Player.Bloom), with their own spread, alpha, red tint and blending.
     static RenderTexture2D? frameRt;
     static RenderTexture2D softRt;
     static Shader? softShader;
@@ -482,6 +483,7 @@ static class Game
         uniform sampler2D texture0;
         uniform float mag;
         uniform float alpha;
+        uniform float redtint;
         out vec4 finalColor;
         const vec2 disc[12] = vec2[](
             vec2(-0.326212, -0.405805), vec2(-0.840144, -0.073580), vec2(-0.695914, 0.457137), vec2(-0.203345, 0.620716),
@@ -491,22 +493,27 @@ static class Game
         {
             vec4 sum = pow(texture(texture0, fragTexCoord), vec4(2.0));
             for (int i = 0; i < 12; i++) sum += pow(texture(texture0, fragTexCoord + disc[i] * mag), vec4(2.0));
-            finalColor = fragColor * vec4(sqrt(sum.rgb / 13.0), alpha);
+            finalColor = fragColor * vec4(sqrt(sum.rgb / 13.0) + vec3(redtint, 0.0, 0.0), alpha);
         }
         """;
 
-    static void DrawSoftening(Texture2D tex, Rectangle src, Rectangle dest)
+    static int softMag, softAlpha, softRed;
+    static void DrawSoftening(Texture2D tex, Rectangle src, Rectangle dest, float mag, float alpha, float red = 0, bool additive = false)
     {
         if (softShader is not { } sh)
         {
             softShader = sh = LoadShaderFromMemory(null, SoftFs);
-            SetShaderValue(sh, GetShaderLocation(sh, "mag"), 0.004f, ShaderUniformDataType.Float);
-            SetShaderValue(sh, GetShaderLocation(sh, "alpha"), 0.15f, ShaderUniformDataType.Float);
+            (softMag, softAlpha, softRed) = (GetShaderLocation(sh, "mag"), GetShaderLocation(sh, "alpha"), GetShaderLocation(sh, "redtint"));
         }
         SetTextureFilter(tex, TextureFilter.Bilinear);
         SetTextureWrap(tex, TextureWrap.Clamp);
         BeginShaderMode(sh);
+        SetShaderValue(sh, softMag, mag, ShaderUniformDataType.Float);
+        SetShaderValue(sh, softAlpha, alpha, ShaderUniformDataType.Float);
+        SetShaderValue(sh, softRed, red, ShaderUniformDataType.Float);
+        if (additive) BeginBlendMode(BlendMode.Additive);
         DrawTexturePro(tex, src, dest, Vector2.Zero, 0, Color.White);
+        if (additive) EndBlendMode();
         EndShaderMode();
     }
 
@@ -806,7 +813,8 @@ static class Game
                     DrawTexturePro(rt.Texture, src, dest, Vector2.Zero, 0, Color.White);
                     Rlgl.DrawRenderBatchActive();
                     Rlgl.EnableColorBlend();
-                    if (soft) DrawSoftening(rt.Texture, src, dest);
+                    if (soft) DrawSoftening(rt.Texture, src, dest, 0.004f, 0.15f);
+                    if (soft && Screen is Player && Player.Bloom is { On: true } b) DrawSoftening(rt.Texture, src, dest, b.Mag, b.Alpha, b.Red, b.Additive);
                     frameRt = null;
                 }
             }

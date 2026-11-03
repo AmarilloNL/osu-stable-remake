@@ -254,6 +254,40 @@ sealed partial class Player : Screen
     {
         float target = Resting(time) ? LightestDim : Config.GetInt("DimLevel", 80);
         bgDim += (target - bgDim) * (1 - (float)Math.Pow(14 / 15.0, dtMs / (1000 / 60.0)));
+        UpdateBloom(dtMs);
+    }
+
+    // stable's play effects, drawn by the Softening filter's pass (so only with it on): below 20% health the frame is
+    // redrawn with (40 - shown HP) / 160 added to red; a spinner reaching its last spin before the bonus glows
+    // (spread 0.008, additive, up to 50% at 60% of the required spins past that), but only on updates where none of
+    // these was on (so every other one); a combo burst flashes (additive, 20% fading out over 20 60Hz ticks).
+    internal static (bool On, float Mag, float Alpha, float Red, bool Additive) Bloom;
+    float bloomFlash;
+
+    void UpdateBloom(double dtMs)
+    {
+        if (!Config.GetBool("BloomSoftening", false) || failed) { Bloom.On = false; return; }
+        var spinner = paused ? null : ActiveSpinner();
+        if (health.Value < 40 && !paused && !Resting(time) && !finished)
+            Bloom = (true, 0.0001f, 1, (float)Math.Max(0, (40 - hpShown) / 160), false);
+        else if (spinner is { } sp && !Bloom.On)
+        {
+            int req = SpinsRequired(sp.O);
+            Bloom = (true, 0.008f, req > 0 ? Math.Clamp((sp.S.SpinsCounted - req + 1) / (req * 0.6f), 0, 0.5f) : 0, 0, true);
+        }
+        else if (bloomFlash > 0)
+        {
+            Bloom = (true, 0.0001f, bloomFlash * 0.2f, 0, true);
+            bloomFlash -= (float)(0.05 * dtMs / (1000 / 60.0));
+        }
+        else Bloom.On = false;
+    }
+
+    (HitObject O, ObjState S)? ActiveSpinner()
+    {
+        for (int i = firstActive; i < objs.Count && objs[i].Time <= time; i++)
+            if (objs[i].Type == ObjType.Spinner && time <= objs[i].EndTime && !st[i].Done) return (objs[i], st[i]);
+        return null;
     }
 
     // Map time: real time scaled by the mod rate (DT 1.5x, HT 0.75x), like stable, and the replay speed.
@@ -1936,6 +1970,13 @@ sealed partial class Player : Screen
         if (!milestone || burstLastCombo >= combo || SpinnerActive()) return;
         burstLastCombo = combo;
         if (skin.ComboSoundBursts.Count == 0) PlayBurstSound();
+        // stable: unless the dim is at 100%, a burst also lifts the background toward its lightest dim (80% of the way
+        // with burst images on, 40% without; it eases back) and flashes the play effects (Bloom)
+        if (Config.GetInt("DimLevel", 80) != 100)
+        {
+            bgDim -= MathF.Ceiling((bgDim - LightestDim) * (Config.GetBool("ComboBurst", false) ? 0.8f : 0.4f));
+            bloomFlash = 1;
+        }
         if (!Config.GetBool("ComboBurst", false)) return;
         if (burstFrames == null)
         {
