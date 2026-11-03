@@ -16,16 +16,21 @@ sealed class BeatmapImport : Screen
 {
     readonly SongSelect songs;
     readonly Task<string?> work;
-    readonly double start = Game.NowMs;
+    double start = Game.NowMs;
     readonly ConcurrentQueue<string> incoming = new();
     readonly List<(string Text, double At)> lines = [];
     bool reloading;
+    readonly bool reload;
 
     public BeatmapImport(SongSelect songs, IReadOnlyList<string> archives)
     {
         this.songs = songs;
         incoming.Enqueue("Checking for new files...");
         var files = archives.ToArray();
+        // stable's first visit to song select in a session (and one after the Songs folder changed) passes through here
+        // too, with nothing to extract: the library is only read again when something changed
+        reload = files.Length > 0 || SongSelect.SongsPending;
+        if (files.Length == 0 && reload) incoming.Enqueue("Loading new files only...");
         work = Task.Run(() => Import(files));
     }
 
@@ -65,12 +70,14 @@ sealed class BeatmapImport : Screen
         return select;
     }
 
+    public override void Entered() => start = Game.NowMs; // (after a fade, the screen only shows from here)
+
     public override void Update(double dtMs)
     {
         songs.Ambient(); // the music and background carry on
         while (incoming.TryDequeue(out var text)) lines.Add((text, Game.NowMs));
         if (!work.IsCompleted) return;
-        if (!reloading) { reloading = true; songs.Reload(work.Result); return; }
+        if (!reloading) { reloading = true; if (reload) songs.Reload(work.Result); return; }
         if (!songs.LibraryLoading && Game.NowMs - start >= 300) Game.Screen = songs; // shown at least 300ms (stable took about that for one small archive)
     }
 

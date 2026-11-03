@@ -341,6 +341,7 @@ sealed partial class SongSelect : Screen
     }
 
     internal bool LibraryLoading => loading != null;
+    internal static bool SongsPending => songsSeen.Count > 0; // the Songs folder changed since the library was read
 
     // test hook (--count-search): the number of difficulties each search finds, like stable's "N matches found"
     internal IEnumerable<(string Query, int Matches)> CountMatches(IEnumerable<string> queries)
