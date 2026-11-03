@@ -1648,11 +1648,14 @@ sealed partial class Player : Screen
     // stable: hitsounds follow DT / HT (speed and pitch) only on maps that ask for it
     float SamplePitch => map.SamplesMatchPlaybackRate ? (float)rate : 1;
 
+    // stable's slider edges: the edge's sound and sets (the head's normal set of 0 falls back to the slider's own before
+    // v14), at the timing point's sample index and volume (the slider's own hitsample volume and index don't count)
     void PlayEdge(HitObject o, int edge)
     {
         int sound = edge < o.EdgeSounds.Length ? o.EdgeSounds[edge] : o.HitSound;
         var (normal, addition) = edge < o.EdgeSets.Length ? o.EdgeSets[edge] : (o.NormalSet, o.AdditionSet);
-        PlayHitsound(sound, normal, addition, o.SampleIndex, o.Volume, o.Time + edge * o.SpanDuration);
+        if (edge == 0 && normal == 0 && map.FormatVersion < 14) normal = o.NormalSet;
+        PlayHitsound(sound, normal, addition, 0, 0, o.Time + edge * o.SpanDuration);
     }
 
     // A custom sample file found in the map's folder plays instead of the whole set (stable: none of the normal,
