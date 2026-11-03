@@ -74,6 +74,18 @@ static class Game
         wasFocused = focused;
     }
 
+    // stable keeps the display and the system awake while it has focus (a long replay or Cinema play has no input to
+    // keep the screen saver away)
+    [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
+    static bool? awake;
+    static void KeepAwake()
+    {
+        bool focused = IsWindowFocused();
+        if (focused == awake) return;
+        awake = focused;
+        SetThreadExecutionState(focused ? 0x80000003u : 0x80000000u); // ES_CONTINUOUS (| ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)
+    }
+
     // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
     // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
     // again) brings it back, and the volume with it.
@@ -739,6 +751,7 @@ static class Game
             }
             UpdateBossKey(songSelect);
             if (!testRun) MinimiseOnAltTab();
+            KeepAwake();
             if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
             if (Input.CtrlHeld && Input.AltHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) ReloadSkinKey();
             // F10 (Disable mouse buttons) is global in stable, notice included (a play handles its own)
