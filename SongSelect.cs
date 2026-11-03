@@ -975,9 +975,6 @@ sealed class SongSelect : Screen
         // stable: PageUp / PageDown move 10 panels
         if (Pressed(KeyboardKey.PageDown)) { if (Grouped) MoveFocus(10); else MoveDiff(10); }
         if (Pressed(KeyboardKey.PageUp)) { if (Grouped) MoveFocus(-10); else MoveDiff(-10); }
-        // Home / End (the remake's own): the first / last entry
-        if (Input.IsKeyPressed(KeyboardKey.Home)) { if (Grouped) { if (groups.Count > 0) SelectEntry(0, 0); } else if (view.Count > 0) SelectRun(0); }
-        if (Input.IsKeyPressed(KeyboardKey.End)) { if (Grouped) { if (groups.Count > 0) SelectEntry(groups.Count - 1, groups[^1].Entries.Count - 1); } else if (view.Count > 0) SelectRun(view.Count - 1); }
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
         if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, []); return; } // stable: its import screen checks for new files
         // stable: Shift+Delete is the beatmap options' Delete...
@@ -1070,10 +1067,10 @@ sealed class SongSelect : Screen
             if (Math.Abs(dragVelocity) < 0.01) dragVelocity = 0;
         }
         else dragVelocity = 0;
-        // Ctrl+1..9 watches that local score.
+        // stable: Ctrl+1..4 switch the game mode (osu!, taiko, catch, mania); only osu! is here
         if (Input.CtrlHeld)
-            for (int n = 0; n < 9; n++)
-                if (Input.IsKeyPressed(KeyboardKey.One + n) && n < SelectedScores.Count) { Watch(SelectedScores[n]); return; }
+            for (int n = 1; n < ModeRows.Length; n++)
+                if (Input.IsKeyPressed(KeyboardKey.One + n)) Notification.Show($"{ModeRows[n].Name} isn't part of this osu! remake.", 1000);
         // Ctrl+Enter: this one play with Auto, like stable (the selected mods stay as they are).
         if (Input.IsKeyPressed(KeyboardKey.Enter))
         {
