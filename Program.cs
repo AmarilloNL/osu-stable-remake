@@ -753,7 +753,7 @@ static class Game
             {
                 float w = (float)(NowMs - now);
                 work.Add(w);
-                if (w > 5) Console.Error.WriteLine($"slow frame: {w:0.0}ms at {secs:0.000}s ({Screen.GetType().Name}, GCs {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)})");
+                if (w > 5) Console.Error.WriteLine($"slow frame: {w:0.0}ms at {secs:0.000}s ({Screen.GetType().Name}, GCs {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}; update {tDraw - now:0.0}, draw {tSwap - tDraw:0.0}, present {tSwapped - tSwap:0.0})");
             }
 
             // Unfocused/minimized: throttle like stable so the game doesn't burn a core in the background.
