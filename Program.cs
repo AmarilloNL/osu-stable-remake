@@ -56,10 +56,11 @@ static class Game
     // falls 4 a tick from 140 (so it holds black a moment). The old screen sits still meanwhile.
     public static bool Fading => fadeTo != null;
 
-    // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight (stable hides it to a tray
-    // icon; here it's minimised), pausing a play first. The volume comes back with the window.
+    // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
+    // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
+    // again) brings it back, and the volume with it.
     static string? bossVolume;
-    static void UpdateBossKey(SongSelect songs)
+    static unsafe void UpdateBossKey(SongSelect songs)
     {
         if (bossVolume == null && Input.IsKeyPressed(Config.Key("keyBossKey", KeyboardKey.Insert)))
         {
@@ -67,9 +68,20 @@ static class Game
             Config.SetTemp("VolumeUniversal", "0");
             (Screen as Player)?.BossPause();
             MinimizeWindow();
+            ShowWindow((IntPtr)GetWindowHandle(), 0); // SW_HIDE: off the taskbar too
+            bool first = Config.GetBool("BossKeyFirstActivation", true);
+            Tray.Show(first ? ("Hey, osu! is hidden down here!", "You pressed the Boss Key. This will hide osu! in the system tray with one key press. You will not see this popup again.") : null);
+            if (first) Config.SetOwn("BossKeyFirstActivation", "0");
+        }
+        else if (bossVolume != null && Tray.TakeClick())
+        {
+            ShowWindow((IntPtr)GetWindowHandle(), 9); // SW_RESTORE
+            SetWindowFocused();
+            return;
         }
         else if (bossVolume != null && !IsWindowMinimized() && IsWindowFocused())
         {
+            Tray.Hide();
             Config.SetTemp("VolumeUniversal", bossVolume);
             bossVolume = null;
         }
@@ -774,6 +786,7 @@ static class Game
         CloseWindow();
         timeEndPeriod(1);
         ClipCursorOff(IntPtr.Zero); // the cursor clip is system-wide
+        Tray.Hide(); // (an icon left behind lingers until hovered)
     }
 
     // --fuzz-osr <file.osu> <seed> <out.osr> [mods]: plays the map with the test bot (Auto's cursor, jittered presses),
