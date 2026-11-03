@@ -22,15 +22,17 @@ sealed class BeatmapImport : Screen
     bool reloading;
     readonly bool reload;
 
-    public BeatmapImport(SongSelect songs, IReadOnlyList<string> archives)
+    // full: F5 (stable's full process: the whole library is read again)
+    public BeatmapImport(SongSelect songs, IReadOnlyList<string> archives, bool full = false)
     {
         this.songs = songs;
         incoming.Enqueue("Checking for new files...");
         var files = archives.ToArray();
         // stable's first visit to song select in a session (and one after the Songs folder changed) passes through here
         // too, with nothing to extract: the library is only read again when something changed
-        reload = files.Length > 0 || SongSelect.SongsPending;
-        if (files.Length == 0 && reload) incoming.Enqueue("Loading new files only...");
+        reload = files.Length > 0 || full || SongSelect.SongsPending;
+        if (files.Length == 0 && SongSelect.SongsPending) incoming.Enqueue("Loading new files only...");
+        else if (files.Length == 0 && full) incoming.Enqueue("Reloading database...");
         work = Task.Run(() => Import(files));
     }
 
