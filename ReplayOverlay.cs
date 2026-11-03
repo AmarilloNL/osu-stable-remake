@@ -8,7 +8,8 @@ namespace OsuStableRemake;
 // edge, centred 40 units in from it at y 85 + 20 per button, fading in over 500ms and tinting (255,247,197) on
 // hover. Offline, stable skips the Discussion button, so there are three. F cycles the speed like the button;
 // H hides the overlay and the leaderboard.
-// TODO: Collections shows but does nothing (stable opens its collection editor; we never write collection.db).
+// TODO: Collections shows but does nothing yet (stable opens its Manage Collections dialog over the replay; ours lives
+// in song select).
 sealed partial class Player
 {
     double overlayFrom = double.NaN;
