@@ -164,6 +164,7 @@ sealed partial class SongSelect
         // the collections
         var list = Collections;
         var b = Selected;
+        string? tip = null;
         BeginScissorMode(0, (int)(60 * u), Game.W, (int)(250 * u));
         for (int i = 0; i < list.Count; i++)
         {
@@ -184,6 +185,7 @@ sealed partial class SongSelect
             {
                 var r = CollectionButton(k, y);
                 bool over = CheckCollisionPointRec(mouse, r);
+                if (over && k > 0) tip = ButtonTips[k - 1];
                 Color bg = k == 0 ? XnaOrange : k <= 2 ? over ? XnaYellowGreen : XnaGreen : over ? XnaDarkOrange : OrangeRed;
                 bool live = k == 0 || (k <= 2 ? !holds : holds);
                 DrawRectangleRec(r, ColorAlpha(bg, alpha));
@@ -192,5 +194,8 @@ sealed partial class SongSelect
             }
         }
         EndScissorMode();
+        if (tip != null) Options.DrawScreenTooltip(tip, mouse);
     }
+
+    static readonly string[] ButtonTips = ["Add set to collection", "Add to collection", "Remove set from collection", "Remove from collection"];
 }

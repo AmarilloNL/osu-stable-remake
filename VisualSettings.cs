@@ -34,14 +34,18 @@ sealed partial class Player
             }
             return mapToggles[mapMd5] = t;
         }
-        set
-        {
-            mapMd5 ??= Replays.Md5Of(map.File);
-            mapToggles[mapMd5] = value;
-            static char C(bool b) => b ? '1' : '0';
-            Config.SetOwn($"Visual_{mapMd5}", $"{C(value.Storyboard)},{C(value.Video)},{C(value.Skin)},{C(value.Hitsounds)}");
-            ApplyToggles();
-        }
+        set => SetToggles(value, apply: true);
+    }
+
+    // apply: false keeps the skin and hitsounds as they are until the map is played again (storyboard and video are
+    // read as they're drawn)
+    void SetToggles((bool Storyboard, bool Video, bool Skin, bool Hitsounds) value, bool apply)
+    {
+        mapMd5 ??= Replays.Md5Of(map.File);
+        mapToggles[mapMd5] = value;
+        static char C(bool b) => b ? '1' : '0';
+        Config.SetOwn($"Visual_{mapMd5}", $"{C(value.Storyboard)},{C(value.Video)},{C(value.Skin)},{C(value.Hitsounds)}");
+        if (apply) ApplyToggles();
     }
 
     void ApplyToggles()
@@ -95,11 +99,15 @@ sealed partial class Player
             for (int i = 0; i < 4 && hit < 0; i++) if (ToggleEnabled(i) && CheckCollisionPointRec(mouse, ToggleRect(top, i, u))) hit = i;
             if (hit >= 0)
             {
-                Toggles = hit switch
+                // stable: once the play has begun, skin and hitsound changes wait for the next play, and every toggle
+                // but video says so (the storyboard changes at once all the same)
+                bool begun = fadeOut == null;
+                SetToggles(hit switch
                 {
                     0 => t with { Storyboard = !t.Storyboard }, 1 => t with { Video = !t.Video },
                     2 => t with { Skin = !t.Skin }, _ => t with { Hitsounds = !t.Hitsounds },
-                };
+                }, apply: !begun);
+                if (begun && hit != 1) Notification.Show("Please restart the map for changes to take effect", 1000);
                 // the boxes say "Disable ..." / "Ignore ...": ticked when the thing is off
                 bool ticked = hit switch { 0 => !Toggles.Storyboard, 1 => !Toggles.Video, 2 => !Toggles.Skin, _ => !Toggles.Hitsounds };
                 skin.Sound(ticked ? "check-on" : "check-off")?.Play(BeatmapSamples.EffectVolume);
@@ -172,5 +180,7 @@ sealed partial class Player
             Game.Text(rows[i].Label, r.X + 17.4f * u, c.Y - 6.8f * u, 12.45f * u, enabled ? Color.White : Xna.Gray);
         }
         if (overDim) Options.DrawScreenTooltip($"{dim}% dimmed", mouseAt); // stable's slider tooltip
+        else if (CheckCollisionPointRec(mouseAt, ToggleRect(top, 2, u))) Options.DrawScreenTooltip("Skins bundled with beatmaps will never be applied.", mouseAt);
+        else if (CheckCollisionPointRec(mouseAt, ToggleRect(top, 3, u))) Options.DrawScreenTooltip("Custom hitsounds bundled with beatmaps will be ignored.", mouseAt);
     }
 }
