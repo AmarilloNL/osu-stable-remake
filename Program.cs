@@ -99,6 +99,22 @@ static class Game
         SetThreadExecutionState(focused ? 0x80000003u : 0x80000000u); // ES_CONTINUOUS (| ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED)
     }
 
+    // stable's power check (every 10 seconds): a PC with a battery that runs on it, and didn't at the last check (or this
+    // is the first), gets an orange notice
+    [StructLayout(LayoutKind.Sequential)] struct PowerStatus { public byte AcLine, BatteryFlag, BatteryPercent, Reserved; public int LifeTime, FullLifeTime; }
+    [DllImport("kernel32.dll")] static extern bool GetSystemPowerStatus(out PowerStatus status);
+    static byte? lastAcLine;
+    static double nextPowerCheck;
+    static void CheckPower()
+    {
+        if (NowMs < nextPowerCheck) return;
+        nextPowerCheck = NowMs + 10000;
+        if (!GetSystemPowerStatus(out var p)) return;
+        if ((p.BatteryFlag & 0x80) == 0 && p.AcLine == 0 && lastAcLine != 0)
+            Toast.Show("Your PC is not plugged in and may experience degraded performance.", new Color(255, 165, 0, 255), 10000);
+        lastAcLine = p.AcLine;
+    }
+
     // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
     // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
     // again) brings it back, and the volume with it.
@@ -830,6 +846,7 @@ static class Game
             UpdateBossKey(songSelect);
             if (!testRun) MinimiseOnAltTab();
             KeepAwake();
+            if (!testRun) CheckPower();
             if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
             if (Input.CtrlHeld && Input.AltHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) ReloadSkinKey();
             // F10 (Disable mouse buttons) is global in stable, notice included (a play handles its own)
