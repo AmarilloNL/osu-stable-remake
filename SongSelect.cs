@@ -707,14 +707,16 @@ sealed class SongSelect : Screen
 
     // Beat source: timing points of the song that's playing, loaded off the main thread.
     string timingKey = "";
-    Task<List<TimingPoint>>? timingLoading;
+    Task<(List<TimingPoint>, int)>? timingLoading;
     List<TimingPoint> timing = [];
+    internal IReadOnlyList<TimingPoint> Timing => timing; // (the offset wizard's beat)
+    internal int TimingFormat = 14; // that map's file format (stable's clock takes 24ms off before v5)
 
     void UpdateTiming()
     {
         if (timingLoading is { IsCompleted: true })
         {
-            timing = timingLoading.Result;
+            (timing, TimingFormat) = timingLoading.Result;
             timingLoading = null;
         }
         if (Current is not { } b || timingLoading != null || b.FilePath == timingKey) return;
@@ -723,10 +725,10 @@ sealed class SongSelect : Screen
     }
 
     // Its own method so the closure is only made when a load starts (UpdateTiming runs every frame).
-    static Task<List<TimingPoint>> LoadTiming(string file) => Task.Run(() =>
+    static Task<(List<TimingPoint>, int)> LoadTiming(string file) => Task.Run(() =>
     {
-        try { return Beatmap.Load(file).TimingPoints; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+        try { var m = Beatmap.Load(file); return (m.TimingPoints, m.FormatVersion); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (new List<TimingPoint>(), 14); }
     });
 
     // Where the music is in its beat: index within the current red line, phase 0 (on the beat) .. 1.

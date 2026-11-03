@@ -149,7 +149,11 @@ sealed class Options : Screen
             T("Ignore beatmap hitsounds", "IgnoreBeatmapSamples"),
             H("OFFSET ADJUSTMENT"),
             new(Kind.Slider, "Universal offset:", "Offset", -300, 300, 0, "0", "ms"),
-            B("Offset wizard", Grey),
+            B("Offset wizard", Grey, () =>
+            {
+                if (songs.Current == null || songs.Timing.Count == 0) Notification.Show("Please select a beatmap with its timing set up correctly before using the offset wizard!", 3000);
+                else Game.FadeTo(() => new OffsetWizard(back, songs));
+            }),
 
             S("SKIN", 0xf1fc),
             H("SKIN"),
