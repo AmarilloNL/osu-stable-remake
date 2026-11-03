@@ -787,13 +787,16 @@ static class Game
             ClearBackground(Color.Black);
             if (!IsWindowMinimized()) // a minimised window is 0x0: nothing to draw (the game itself keeps running, like stable)
             {
-                bool soft = Config.GetBool("BloomSoftening", false);
-                if (soft && Box == null && (softRt.Texture.Width != W || softRt.Texture.Height != H))
+                // stable draws through the frame texture with its "Shaders" setting on (softening turns it on): the
+                // softening pass needs both, a play's effects only Shaders
+                bool shaders = Config.GetBool("Shaders", false), soft = shaders && Config.GetBool("BloomSoftening", false);
+                bool effects = shaders && Screen is Player && Player.Bloom.On;
+                if ((soft || effects) && Box == null && (softRt.Texture.Width != W || softRt.Texture.Height != H))
                 {
                     if (softRt.Id != 0) UnloadRenderTexture(softRt);
                     softRt = LoadRenderTexture(W, H);
                 }
-                frameRt = Box != null ? boxRt : soft ? softRt : null;
+                frameRt = Box != null ? boxRt : soft || effects ? softRt : null;
                 if (frameRt is { } rt0) { BeginTextureMode(rt0); ClearBackground(Color.Black); }
                 Screen.Draw();
                 DrawFade();
@@ -814,7 +817,7 @@ static class Game
                     Rlgl.DrawRenderBatchActive();
                     Rlgl.EnableColorBlend();
                     if (soft) DrawSoftening(rt.Texture, src, dest, 0.004f, 0.15f);
-                    if (soft && Screen is Player && Player.Bloom is { On: true } b) DrawSoftening(rt.Texture, src, dest, b.Mag, b.Alpha, b.Red, b.Additive);
+                    if (effects && Player.Bloom is { On: true } b) DrawSoftening(rt.Texture, src, dest, b.Mag, b.Alpha, b.Red, b.Additive);
                     frameRt = null;
                 }
             }

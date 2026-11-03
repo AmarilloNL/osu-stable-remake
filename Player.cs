@@ -268,7 +268,7 @@ sealed partial class Player : Screen
         UpdateBloom(dtMs);
     }
 
-    // stable's play effects, drawn by the Softening filter's pass (so only with it on): below 20% health the frame is
+    // stable's play effects, drawn by the Softening filter's pass (with stable's Shaders setting on, which softening turns on): below 20% health the frame is
     // redrawn with (40 - shown HP) / 160 added to red; a spinner reaching its last spin before the bonus glows
     // (spread 0.008, additive, up to 50% at 60% of the required spins past that), but only on updates where none of
     // these was on (so every other one); a combo burst flashes (additive, 20% fading out over 20 60Hz ticks).
@@ -277,7 +277,7 @@ sealed partial class Player : Screen
 
     void UpdateBloom(double dtMs)
     {
-        if (!Config.GetBool("BloomSoftening", false) || failed) { Bloom.On = false; return; }
+        if (!Config.GetBool("Shaders", false) || failed) { Bloom.On = false; return; }
         var spinner = paused ? null : ActiveSpinner();
         if (health.Value < 40 && !paused && !Resting(time) && !finished)
             Bloom = (true, 0.0001f, 1, (float)Math.Max(0, (40 - hpShown) / 160), false);

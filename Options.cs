@@ -561,6 +561,7 @@ sealed class Options : Screen
                 case Kind.Toggle:
                     bool on = !On(it);
                     Set(it, on ? "1" : "0");
+                    if (it.Key == "BloomSoftening" && on) Config.SetOwn("Shaders", "1"); // stable turns its shader rendering on with it
                     Game.Skin.Sound("check-" + (on ? "on" : "off"))?.Play(BeatmapSamples.EffectVolume);
                     break;
                 case Kind.Slider: dragging = row; break;
