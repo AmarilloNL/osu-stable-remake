@@ -325,25 +325,39 @@ sealed class Storyboard
 
     void LoadTextures()
     {
+        static string FileOf(Element e, int i) => e.Frames == 1 ? e.Path : System.IO.Path.ChangeExtension(e.Path, null) + i + System.IO.Path.GetExtension(e.Path);
+        var files = elements.SelectMany(e => Enumerable.Range(0, e.Frames).Select(i => FileOf(e, i))).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        // Decoding was most of the time a play took to start on a big storyboard: it's done on all cores while the
+        // images are uploaded here as they come (a few waiting at most, to keep memory down).
+        using var decoded = new System.Collections.Concurrent.BlockingCollection<(int, Image)>(Environment.ProcessorCount);
+        var decoding = Task.Run(() =>
+        {
+            try
+            {
+                Parallel.For(0, files.Length, k =>
+                {
+                    var full = System.IO.Path.Combine(folder, files[k]);
+                    decoded.Add((k, File.Exists(full) ? LoadImage(full) : default));
+                });
+            }
+            finally { decoded.CompleteAdding(); }
+        });
+        foreach (var (k, img) in decoded.GetConsumingEnumerable())
+        {
+            var tex = img.Width > 0 ? LoadTextureFromImage(img) : default;
+            UnloadImage(img);
+            if (tex.Id != 0)
+            {
+                SetTextureFilter(tex, TextureFilter.Bilinear);
+                SetTextureWrap(tex, TextureWrap.Clamp);
+            }
+            textures[files[k]] = tex;
+        }
+        decoding.Wait(); // rethrows a failure
         foreach (var e in elements)
         {
             e.Textures = new Texture2D[e.Frames];
-            for (int i = 0; i < e.Frames; i++)
-            {
-                string file = e.Frames == 1 ? e.Path : System.IO.Path.ChangeExtension(e.Path, null) + i + System.IO.Path.GetExtension(e.Path);
-                if (!textures.TryGetValue(file, out var tex))
-                {
-                    var full = System.IO.Path.Combine(folder, file);
-                    tex = File.Exists(full) ? LoadTexture(full) : default;
-                    if (tex.Id != 0)
-                    {
-                        SetTextureFilter(tex, TextureFilter.Bilinear);
-                        SetTextureWrap(tex, TextureWrap.Clamp);
-                    }
-                    textures[file] = tex;
-                }
-                e.Textures[i] = tex;
-            }
+            for (int i = 0; i < e.Frames; i++) e.Textures[i] = textures[FileOf(e, i)];
         }
     }
 
