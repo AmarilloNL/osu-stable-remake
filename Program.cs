@@ -461,11 +461,53 @@ static class Game
         return new Image { Data = Rlgl.ReadScreenPixels(w, h), Width = w, Height = h, Mipmaps = 1, Format = PixelFormat.UncompressedR8G8B8A8 };
     }
 
-    // For screens that render into a texture of their own: drawing then goes back into the box, not the window.
+    // For screens that render into a texture of their own: drawing then goes back into the frame's texture (the box,
+    // or the softening filter's), not the window.
     internal static void EndTexture()
     {
         EndTextureMode();
-        if (Box != null) BeginTextureMode(boxRt);
+        if (frameRt is { } rt) BeginTextureMode(rt);
+    }
+
+    // stable's Softening filter (Graphics > Softening filter): the finished frame, cursor and overlays included, is
+    // drawn again over itself at 15% through a blur: 13 samples (the pixel and 12 on a Poisson disc 0.4% of the
+    // screen's width and height across) averaged in squared colour, then the square root.
+    static RenderTexture2D? frameRt;
+    static RenderTexture2D softRt;
+    static Shader? softShader;
+    const string SoftFs = """
+        #version 330
+        in vec2 fragTexCoord;
+        in vec4 fragColor;
+        uniform sampler2D texture0;
+        uniform float mag;
+        uniform float alpha;
+        out vec4 finalColor;
+        const vec2 disc[12] = vec2[](
+            vec2(-0.326212, -0.405805), vec2(-0.840144, -0.073580), vec2(-0.695914, 0.457137), vec2(-0.203345, 0.620716),
+            vec2(0.962340, -0.194983), vec2(0.473434, -0.480026), vec2(0.519456, 0.767022), vec2(0.185461, -0.893124),
+            vec2(0.507431, 0.064425), vec2(0.896420, 0.412458), vec2(-0.321940, -0.932615), vec2(-0.791559, -0.597705));
+        void main()
+        {
+            vec4 sum = pow(texture(texture0, fragTexCoord), vec4(2.0));
+            for (int i = 0; i < 12; i++) sum += pow(texture(texture0, fragTexCoord + disc[i] * mag), vec4(2.0));
+            finalColor = fragColor * vec4(sqrt(sum.rgb / 13.0), alpha);
+        }
+        """;
+
+    static void DrawSoftening(Texture2D tex, Rectangle src, Rectangle dest)
+    {
+        if (softShader is not { } sh)
+        {
+            softShader = sh = LoadShaderFromMemory(null, SoftFs);
+            SetShaderValue(sh, GetShaderLocation(sh, "mag"), 0.004f, ShaderUniformDataType.Float);
+            SetShaderValue(sh, GetShaderLocation(sh, "alpha"), 0.15f, ShaderUniformDataType.Float);
+        }
+        SetTextureFilter(tex, TextureFilter.Bilinear);
+        SetTextureWrap(tex, TextureWrap.Clamp);
+        BeginShaderMode(sh);
+        DrawTexturePro(tex, src, dest, Vector2.Zero, 0, Color.White);
+        EndShaderMode();
     }
 
     [DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
@@ -738,7 +780,14 @@ static class Game
             ClearBackground(Color.Black);
             if (!IsWindowMinimized()) // a minimised window is 0x0: nothing to draw (the game itself keeps running, like stable)
             {
-                if (Box != null) { BeginTextureMode(boxRt); ClearBackground(Color.Black); }
+                bool soft = Config.GetBool("BloomSoftening", false);
+                if (soft && Box == null && (softRt.Texture.Width != W || softRt.Texture.Height != H))
+                {
+                    if (softRt.Id != 0) UnloadRenderTexture(softRt);
+                    softRt = LoadRenderTexture(W, H);
+                }
+                frameRt = Box != null ? boxRt : soft ? softRt : null;
+                if (frameRt is { } rt0) { BeginTextureMode(rt0); ClearBackground(Color.Black); }
                 Screen.Draw();
                 DrawFade();
                 FrameGraph.Draw(); // (under toasts and the FPS counter, like stable's)
@@ -748,13 +797,17 @@ static class Game
                 if (!double.IsNaN(QuitAt)) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, 1 - (float)Math.Clamp((QuitAt - now) / 1500, 0, 1)));
                 SongSelect.FlushCursor();
                 stats.Draw(TargetFps(Config.Get("FrameSync", "Optimal"), refresh));
-                if (Box is { } box)
+                if (frameRt is { } rt)
                 {
                     EndTextureMode();
+                    var dest = Box ?? new Rectangle(0, 0, W, H);
+                    var src = new Rectangle(0, 0, dest.Width, -dest.Height);
                     Rlgl.DisableColorBlend(); // a copy: translucent sprites leave the texture's alpha below 1
-                    DrawTexturePro(boxRt.Texture, new Rectangle(0, 0, box.Width, -box.Height), box, Vector2.Zero, 0, Color.White);
+                    DrawTexturePro(rt.Texture, src, dest, Vector2.Zero, 0, Color.White);
                     Rlgl.DrawRenderBatchActive();
                     Rlgl.EnableColorBlend();
+                    if (soft) DrawSoftening(rt.Texture, src, dest);
+                    frameRt = null;
                 }
             }
             double secs = now / 1000;

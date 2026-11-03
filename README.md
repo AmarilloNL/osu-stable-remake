@@ -75,6 +75,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Volume overlay, stable's FPS / frame time counter and its frame time graph (`Ctrl+F11`: update, draw, present and limiter time per frame, plus garbage collections), notifications
 - Beatmap (`.osz`) and skin (`.osk`) imports and stable replays (`.osr`): drop them on the window or open them with the executable, like stable (a game that's already running takes them)
 - Stable's display modes: fullscreen at its own resolution, or letterboxed ("Render at native resolution": the monitor keeps its resolution and the game sits in a movable box)
+- Stable's Softening filter (Graphics), matching stable pixel for pixel
 </details>
 
 <details>
