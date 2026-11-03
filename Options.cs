@@ -37,6 +37,7 @@ sealed class Options : Screen
     }
 
     readonly Screen back;
+    internal Screen Back => back;
     readonly SongSelect songs;
     readonly Item[] items;
     string? jumpTo;

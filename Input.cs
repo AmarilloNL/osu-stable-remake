@@ -36,6 +36,11 @@ static class Input
                     script.Add(new(t, Kind.KeyDown, k));
                     script.Add(new(t + (a.Length > 2 ? F(a[2]) / 1000 : 0.03), Kind.KeyUp, k));
                     break;
+                case "side" or "extra": // the mouse's back / forward buttons
+                    var x = a[0] == "side" ? MouseButton.Side : MouseButton.Extra;
+                    script.Add(new(t, Kind.MouseDown, (int)x));
+                    script.Add(new(t + 0.05, Kind.MouseUp, (int)x));
+                    break;
                 case "click" or "rclick":
                     if (a.Length > 2) script.Add(new(t, Kind.Move, Pos: P(1)));
                     script.Add(new(t, Kind.MouseDown, B()));
@@ -79,6 +84,16 @@ static class Input
                 case Kind.Text: foreach (char c in e.Text) chars.Enqueue(c); break;
             }
         }
+        // stable: the mouse's back button presses Escape and its forward button the Skip key, anywhere but the main
+        // menu (options opened from it included), and not while a play has the mouse buttons disabled
+        bool menu = Game.Screen is MainMenu || Game.Screen is Options { Back: MainMenu };
+        bool disabled = Game.Screen is Player { ActivePlay: true } && Config.GetBool("MouseDisableButtons", false);
+        if (!menu && !disabled)
+        {
+            if (IsMouseButtonPressed(MouseButton.Side)) Press(KeyboardKey.Escape);
+            if (IsMouseButtonPressed(MouseButton.Extra)) Press(Config.Key("keySkip", KeyboardKey.Space));
+        }
+        static void Press(KeyboardKey k) { keysPressed.Add((int)k); keyQueue.Enqueue((int)k); }
     }
 
     // Alt+Enter is the fullscreen toggle (AltEnterPressed): no screen sees it as Enter (the exit dialog would quit)
