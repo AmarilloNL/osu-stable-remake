@@ -226,6 +226,8 @@ sealed partial class Player : Screen
             catch (IOException e) { Console.Error.WriteLine($"storyboard not loaded: {e.Message}"); }
         if (dimAlpha > 0) LoadBackground();
         sliderRt = LoadRenderTexture(Game.W, Game.H);
+        if (!VirtualClock && objs.Any(o => o.Type == ObjType.Slider))
+            for (int k = 0; k < 6; k++) bodyTexturePool.Add(LoadRenderTexture((Game.W / 2 + 127) / 128 * 128, (Game.H / 2 + 127) / 128 * 128));
         if (!VirtualClock) ApplyToggles();
         if (!VirtualClock)
         {
@@ -305,8 +307,10 @@ sealed partial class Player : Screen
         UnloadRenderTexture(sliderRt);
         foreach (var (mesh, _) in bodyMeshes.Values) UnloadMesh(mesh);
         bodyMeshes.Clear();
-        foreach (var rt in bodyCache.Values) UnloadRenderTexture(rt);
+        foreach (var (rt, _, _) in bodyCache.Values) UnloadRenderTexture(rt);
         bodyCache.Clear();
+        foreach (var rt in bodyTexturePool) UnloadRenderTexture(rt);
+        bodyTexturePool.Clear();
         if (sliderGradient.Id != 0) UnloadTexture(sliderGradient);
         samples.Unload();
     }
@@ -2123,25 +2127,30 @@ sealed partial class Player : Screen
             int x0 = Math.Max(0, (int)MathF.Floor(a.X)), y0 = Math.Max(0, (int)MathF.Floor(a.Y));
             int x1 = Math.Min(tex.Width, (int)MathF.Ceiling(b.X)), y1 = Math.Min(tex.Height, (int)MathF.Ceiling(b.Y));
             var tint = ColorAlpha(Shade(Color.White, lit), alpha);
+            // (render textures are stored bottom-up: the used top-left part is the last rows, drawn flipped)
             if (count >= bodies[i].Length && bodyCache.TryGetValue(i, out var cached))
-                DrawTextureRec(cached.Texture, new Rectangle(0, 0, cached.Texture.Width, -cached.Texture.Height), new Vector2(x0, y0), tint);
+                DrawTextureRec(cached.Rt.Texture, new Rectangle(0, cached.Rt.Texture.Height - cached.H, cached.W, -cached.H), new Vector2(x0, y0), tint);
             else if (x1 > x0 && y1 > y0)
             {
                 if (Falling) Rlgl.PopMatrix();
                 if (count >= bodies[i].Length)
                 {
-                    // a finished body doesn't change: drawn once into its own texture (its box) and reused from now on
-                    var rt = LoadRenderTexture(x1 - x0, y1 - y0);
+                    // a finished body doesn't change: drawn once into a texture of its own (its box, from a pool) and
+                    // reused from now on; drawn directly unless it snaked in (then its mesh is there already)
+                    int bw = x1 - x0, bh = y1 - y0;
+                    var rt = TakeBodyTexture(bw, bh);
                     BeginTextureMode(rt);
                     ClearBackground(Color.Blank);
                     Rlgl.PushMatrix();
                     Rlgl.Translatef(-x0, -y0, 0);
-                    DrawBody(i, count, SliderGradient(skin.SliderBorder, track));
+                    var gradient = SliderGradient(skin.SliderBorder, track);
+                    if (bodyMeshes.ContainsKey(i)) DrawBody(i, count, gradient);
+                    else DrawBodyOnce(bodies[i], gradient);
                     Rlgl.PopMatrix();
                     Game.EndTexture();
-                    bodyCache[i] = rt;
+                    bodyCache[i] = (rt, bw, bh);
                     if (Falling) PushFall(i);
-                    DrawTextureRec(rt.Texture, new Rectangle(0, 0, rt.Texture.Width, -rt.Texture.Height), new Vector2(x0, y0), tint);
+                    DrawTextureRec(rt.Texture, new Rectangle(0, rt.Texture.Height - bh, bw, -bh), new Vector2(x0, y0), tint);
                 }
                 else
                 {
@@ -2369,7 +2378,69 @@ sealed partial class Player : Screen
     // vertices per body every frame was most of a dense map's CPU time); snaking draws the first part (Ends[k] = vertices
     // through point k).
     readonly Dictionary<int, (Mesh Mesh, int[] Ends)> bodyMeshes = [];
-    readonly Dictionary<int, RenderTexture2D> bodyCache = []; // finished bodies, drawn once (see DrawSlider)
+    readonly Dictionary<int, (RenderTexture2D Rt, int W, int H)> bodyCache = []; // finished bodies, drawn once (see DrawSlider)
+    // Their textures come from a pool and go back to it: creating one took ~2ms each time a slider appeared. Sizes are
+    // rounded up to 128 so they get reused; a few are made while the play loads.
+    readonly List<RenderTexture2D> bodyTexturePool = [];
+    RenderTexture2D TakeBodyTexture(int w, int h)
+    {
+        int best = -1;
+        for (int k = 0; k < bodyTexturePool.Count; k++)
+        {
+            var t = bodyTexturePool[k].Texture;
+            if (t.Width >= w && t.Height >= h && (best < 0 || t.Width * t.Height < bodyTexturePool[best].Texture.Width * bodyTexturePool[best].Texture.Height)) best = k;
+        }
+        if (best < 0) return LoadRenderTexture((w + 127) / 128 * 128, (h + 127) / 128 * 128);
+        var rt = bodyTexturePool[best];
+        bodyTexturePool.RemoveAt(best);
+        return rt;
+    }
+
+    // a unit circle in the body cones' 64 steps (the same floats as computing them each time)
+    static readonly Vector2[] Circle64 = Enumerable.Range(0, 65).Select(j => new Vector2(MathF.Cos(j * MathF.Tau / 64), MathF.Sin(j * MathF.Tau / 64))).ToArray();
+
+    // a body drawn directly (immediate mode), for one that's drawn only once: cheaper than building its mesh
+    void DrawBodyOnce(Vector2[] pts, Texture2D gradient)
+    {
+        float r = map.Radius * scale;
+        Rlgl.DrawRenderBatchActive();
+        Rlgl.EnableDepthTest();
+        Rlgl.DisableColorBlend(); // write the gradient's own alpha; the texture is composited afterwards
+        static void Centre(Vector2 p) { Rlgl.TexCoord2f(1, 0); Rlgl.Vertex3f(p.X, p.Y, -0.01f); }
+        static void Edge(Vector2 p) { Rlgl.TexCoord2f(0, 0); Rlgl.Vertex3f(p.X, p.Y, -0.99f); }
+        void Begin(int vertices)
+        {
+            Rlgl.CheckRenderBatchLimit(vertices);
+            Rlgl.Begin(DrawMode.Triangles);
+            Rlgl.SetTexture(gradient.Id); // after Begin: a mode change resets the batch texture
+            Rlgl.Color4ub(255, 255, 255, 255);
+        }
+        Vector2 prev = default;
+        for (int k = 0; k < pts.Length; k++)
+        {
+            var c = ToScreen(pts[k]);
+            if (k > 0 && Vector2.DistanceSquared(prev, c) > 1e-6f)
+            {
+                var n = Vector2.Normalize(new Vector2(prev.Y - c.Y, c.X - prev.X)) * r;
+                Begin(12);
+                for (int sgn = 1; sgn >= -1; sgn -= 2)
+                {
+                    var side = n * sgn;
+                    Centre(prev); Edge(prev + side); Edge(c + side);
+                    Centre(prev); Edge(c + side); Centre(c);
+                }
+                Rlgl.End();
+            }
+            Begin(64 * 3);
+            for (int j = 0; j < 64; j++) { Centre(c); Edge(c + Circle64[j + 1] * r); Edge(c + Circle64[j] * r); }
+            Rlgl.End();
+            prev = c;
+        }
+        Rlgl.SetTexture(0);
+        Rlgl.DrawRenderBatchActive();
+        Rlgl.EnableColorBlend();
+        Rlgl.DisableDepthTest();
+    }
     static Material bodyMaterial;
     static bool bodyMaterialReady;
 
@@ -2398,13 +2469,7 @@ sealed partial class Player : Screen
                     Centre(prev); Edge(c + side); Centre(c);
                 }
             }
-            for (int j = 0; j < segments; j++)
-            {
-                float a0 = j * MathF.Tau / segments, a1 = (j + 1) * MathF.Tau / segments;
-                Centre(c);
-                Edge(c + new Vector2(MathF.Cos(a1), MathF.Sin(a1)) * r);
-                Edge(c + new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * r);
-            }
+            for (int j = 0; j < segments; j++) { Centre(c); Edge(c + Circle64[j + 1] * r); Edge(c + Circle64[j] * r); }
             ends[k] = pos.Count;
             prev = c;
         }
@@ -2440,7 +2505,7 @@ sealed partial class Player : Screen
         foreach (var k in bodyMeshesDone) { UnloadMesh(bodyMeshes[k].Mesh); bodyMeshes.Remove(k); }
         bodyMeshesDone.Clear();
         foreach (var k in bodyCache.Keys) if (k < firstActive) bodyMeshesDone.Add(k);
-        foreach (var k in bodyMeshesDone) { UnloadRenderTexture(bodyCache[k]); bodyCache.Remove(k); }
+        foreach (var k in bodyMeshesDone) { bodyTexturePool.Add(bodyCache[k].Rt); bodyCache.Remove(k); }
         bodyMeshesDone.Clear();
     }
 

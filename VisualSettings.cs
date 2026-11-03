@@ -50,7 +50,7 @@ sealed partial class Player
         samples.UseMapSamples = t.Hitsounds;
         skin.SetMapSkin(t.Skin ? map.Folder : null);
         map.NumberCombos(skips: t.Skin && !Config.GetBool("IgnoreBeatmapSkins", false));
-        foreach (var rt in bodyCache.Values) UnloadRenderTexture(rt); // drawn in the old colours
+        foreach (var (rt, _, _) in bodyCache.Values) bodyTexturePool.Add(rt); // drawn in the old colours
         bodyCache.Clear();
         colours = t.Skin && map.ComboColours.Count > 0
             ? map.ComboColours.Select(c => new Color(c.R, c.G, c.B, (byte)255)).ToArray()
