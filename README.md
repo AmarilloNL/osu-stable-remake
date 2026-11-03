@@ -48,7 +48,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Pause and resume exactly like stable (click the orange cursor to resume), hold-to-retry, Visual Settings bar (dim, storyboard, video, skin, hitsound toggles, per map)
 - Follow points, snaking sliders, judgement animations and particles, old- and new-style spinners
 - Loved/Qualified map warning, local beatmap offset with `+` / `-` (`Alt` for 1ms steps; read from stable's `osu!.db`)
-- Stable's keyboard bindings (Options → Change keyboard bindings), F7 frame limiter, F10 mouse buttons, F12 screenshots
+- Stable's keyboard bindings (Options → Change keyboard bindings), F7 frame limiter (with stable's menu, pause and background rates), F10 mouse buttons, F12 screenshots, the Boss key (hides to a notification-area icon)
+- Mouse back / forward buttons as Escape / Skip; the cursor kept in the window during a play, raw input included
 </details>
 
 <details>
