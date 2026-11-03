@@ -26,6 +26,7 @@ sealed class HitObject
     public int ComboSkip, ComboNumber, ColourIndex, Stack;
     public bool StartsCombo; // stable's new-combo flag after Finish (a spinner keeps its own; the object after one is forced)
     public int HitSound, NormalSet, AdditionSet, SampleIndex, Volume;
+    public string SampleFile = ""; // the hitsample's custom file (circles and sliders; stable ignores a spinner's)
 
     // Sliders
     public Vector2[] Path = [];
@@ -334,6 +335,7 @@ sealed class Beatmap
             if (s.Length > 1) { o.NormalSet = I(s[0]); o.AdditionSet = I(s[1]); }
             if (s.Length > 2) o.SampleIndex = I(s[2]);
             if (s.Length > 3) o.Volume = I(s[3]);
+            if (s.Length > 4 && o.Type != ObjType.Spinner) o.SampleFile = s[4].Trim();
         }
         Objects.Add(o);
     }

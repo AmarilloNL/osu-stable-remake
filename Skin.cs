@@ -414,8 +414,11 @@ sealed class BeatmapSamples
     static readonly string[] SetNames = ["normal", "normal", "soft", "drum"];
     static readonly System.Text.RegularExpressions.Regex SampleName = new(@"^(normal|soft|drum)-(hit\w+|slidertick|sliderslide|sliderwhistle)\d*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+    readonly string folder;
+
     public BeatmapSamples(string folder)
     {
+        this.folder = folder;
         // Preload the map's own hitsounds; misses are filled in lazily (they fall back to the skin).
         foreach (var file in Directory.EnumerateFiles(folder))
         {
@@ -432,6 +435,23 @@ sealed class BeatmapSamples
     public bool UseMapSamples = !Config.GetBool("IgnoreBeatmapSamples", false);
 
     public void Play(int set, string name, int index, int volumePercent) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f);
+
+    // A hit object's custom sample: that file in the map's folder, or (no extension, or not there) the name with
+    // .wav / .mp3 / .ogg; null when it isn't there either, or the map's samples are off.
+    public SoundPool? File(string name)
+    {
+        if (name.Length == 0 || !UseMapSamples) return null;
+        if (cache.TryGetValue("file:" + name, out var known)) return known;
+        string full = Path.GetFullPath(Path.Combine(folder, name));
+        SoundPool? pool = null;
+        if (full.StartsWith(Path.GetFullPath(folder) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+        {
+            string stem = Path.HasExtension(full) ? Path.ChangeExtension(full, null) : full;
+            pool = (Path.HasExtension(full) ? SoundPool.Load(full) : null)
+                ?? SoundPool.Load(stem + ".wav") ?? SoundPool.Load(stem + ".mp3") ?? SoundPool.Load(stem + ".ogg");
+        }
+        return cache["file:" + name] = pool;
+    }
 
     SoundPool? Resolve(int set, string name, int index)
     {

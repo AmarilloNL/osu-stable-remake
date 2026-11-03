@@ -1307,7 +1307,7 @@ sealed partial class Player : Screen
 
         if (o.Type == ObjType.Circle)
         {
-            if (result > 0) PlayHitsound(o.HitSound, o.NormalSet, o.AdditionSet, o.SampleIndex, o.Volume, o.Time);
+            if (result > 0) PlayHitsound(o.HitSound, o.NormalSet, o.AdditionSet, o.SampleIndex, o.Volume, o.Time, o.SampleFile);
             Final(i, result, PosOf(o));
         }
         else if (result == 0)
@@ -1619,18 +1619,21 @@ sealed partial class Player : Screen
     {
         int sound = edge < o.EdgeSounds.Length ? o.EdgeSounds[edge] : o.HitSound;
         var (normal, addition) = edge < o.EdgeSets.Length ? o.EdgeSets[edge] : (o.NormalSet, o.AdditionSet);
-        PlayHitsound(sound, normal, addition, o.SampleIndex, o.Volume, o.Time + edge * o.SpanDuration);
+        PlayHitsound(sound, normal, addition, o.SampleIndex, o.Volume, o.Time + edge * o.SpanDuration, o.SampleFile);
     }
 
-    void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at)
+    // A custom sample file found in the map's folder plays instead of the whole set (stable: none of the normal,
+    // whistle, finish or clap); storyboard triggers still see the set.
+    void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at, string file = "")
     {
         var tp = map.PointAt(at + 5); // stable samples the timing point slightly ahead
         int set = normalSet > 0 ? normalSet : tp.SampleSet;
         int add = additionSet > 0 ? additionSet : set;
         int idx = index > 0 ? index : tp.SampleIndex;
         int vol = volume > 0 ? volume : tp.Volume;
-        samples.Play(set, "hitnormal", idx, vol);
         storyboard?.FireHitSound(time, set, add, bits, idx);
+        if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * vol / 100f); return; }
+        samples.Play(set, "hitnormal", idx, vol);
         if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, vol);
         if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol);
         if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, vol);
