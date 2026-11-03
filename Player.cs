@@ -631,8 +631,9 @@ sealed partial class Player : Screen
             int set = own && so.NormalSet > 0 ? so.NormalSet : tp.SampleSet, addition = own && so.AdditionSet > 0 ? so.AdditionSet : set;
             int volume = PointVolume;
             bool whistle = (so.HitSound & 2) != 0;
-            if (skin.LayeredHitSounds || !whistle) samples.Loop("slide", set, "sliderslide", tp.SampleIndex, volume); else samples.StopLoop("slide");
-            if (whistle) samples.Loop("whistle", addition, "sliderwhistle", tp.SampleIndex, volume); else samples.StopLoop("whistle");
+            float pan = Pan(BallOf(so, time));
+            if (skin.LayeredHitSounds || !whistle) samples.Loop("slide", set, "sliderslide", tp.SampleIndex, volume, pan); else samples.StopLoop("slide");
+            if (whistle) samples.Loop("whistle", addition, "sliderwhistle", tp.SampleIndex, volume, pan); else samples.StopLoop("whistle");
         }
         else { samples.StopLoop("slide"); samples.StopLoop("whistle"); }
 
@@ -1314,7 +1315,7 @@ sealed partial class Player : Screen
 
         if (o.Type == ObjType.Circle)
         {
-            if (result > 0) PlayHitsound(o.HitSound, o.NormalSet, o.AdditionSet, o.SampleIndex, o.Volume, o.Time, o.SampleFile);
+            if (result > 0) PlayHitsound(o.HitSound, o.NormalSet, o.AdditionSet, o.SampleIndex, o.Volume, o.Time, o.SampleFile, pan: Pan(PosOf(o)));
             Final(i, result, PosOf(o));
         }
         else if (result == 0)
@@ -1460,7 +1461,7 @@ sealed partial class Player : Screen
                 if (cp.Kind == CheckpointKind.Tick)
                 {
                     var tp = map.PointAt(cp.Time + 2); // stable: the timing point 2ms on, at its own volume
-                    samples.Play(o.NormalSet > 0 ? o.NormalSet : tp.SampleSet, "slidertick", tp.SampleIndex, tp.Volume, SamplePitch);
+                    samples.Play(o.NormalSet > 0 ? o.NormalSet : tp.SampleSet, "slidertick", tp.SampleIndex, tp.Volume, SamplePitch, Pan(BallOf(o, cp.Time)));
                 }
                 else PlayEdge(o, cp.Kind == CheckpointKind.End ? o.Slides : cp.Span + 1);
             }
@@ -1645,6 +1646,9 @@ sealed partial class Player : Screen
         else if (Math.Clamp(map.SliderTickRate, 0.5, 8) % 2 == 0) skin.Sound("nightcore-hat")?.Play(vol);
     }
 
+    // stable pans hitsounds by where they happen: (x / 512 - 0.5) x 0.8 (a slider's by its ball; spinners sit centred)
+    static float Pan(Vector2 p) => (p.X / 512f - 0.5f) * 0.8f;
+
     // stable: hitsounds follow DT / HT (speed and pitch) only on maps that ask for it
     float SamplePitch => map.SamplesMatchPlaybackRate ? (float)rate : 1;
 
@@ -1655,13 +1659,14 @@ sealed partial class Player : Screen
         int sound = edge < o.EdgeSounds.Length ? o.EdgeSounds[edge] : o.HitSound;
         var (normal, addition) = edge < o.EdgeSets.Length ? o.EdgeSets[edge] : (o.NormalSet, o.AdditionSet);
         if (edge == 0 && normal == 0 && map.FormatVersion < 14) normal = o.NormalSet;
-        PlayHitsound(sound, normal, addition, 0, 0, o.Time + edge * o.SpanDuration);
+        double at = o.Time + edge * o.SpanDuration;
+        PlayHitsound(sound, normal, addition, 0, 0, at, pan: Pan(BallOf(o, at)));
     }
 
     // A custom sample file found in the map's folder plays instead of the whole set (stable: none of the normal,
     // whistle, finish or clap); storyboard triggers still see the set. Otherwise stable's mix: at least 8% volume, the
     // normal at 0.8 of it, whistle and clap at 0.85, finish at full.
-    void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at, string file = "", double ahead = 5)
+    void PlayHitsound(int bits, int normalSet, int additionSet, int index, int volume, double at, string file = "", double ahead = 5, float pan = 0)
     {
         var tp = map.PointAt(at + ahead); // stable samples the timing point slightly ahead (a spinner's end: right at it)
         int set = normalSet > 0 ? normalSet : tp.SampleSet;
@@ -1669,13 +1674,13 @@ sealed partial class Player : Screen
         int idx = index > 0 ? index : tp.SampleIndex;
         int vol = volume > 0 ? volume : tp.Volume;
         storyboard?.FireHitSound(time, set, add, bits, idx);
-        if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * vol / 100f, SamplePitch); return; }
+        if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * vol / 100f, SamplePitch, pan); return; }
         vol = Math.Max(8, vol);
         // the normal sound: with no additions, when the map asks for it, or with the skin's LayeredHitSounds (on by default)
-        if (bits == 0 || (bits & 1) != 0 || skin.LayeredHitSounds) samples.Play(set, "hitnormal", idx, (int)(vol * 0.8), SamplePitch);
-        if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, (int)(vol * 0.85), SamplePitch);
-        if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol, SamplePitch);
-        if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, (int)(vol * 0.85), SamplePitch);
+        if (bits == 0 || (bits & 1) != 0 || skin.LayeredHitSounds) samples.Play(set, "hitnormal", idx, (int)(vol * 0.8), SamplePitch, pan);
+        if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, (int)(vol * 0.85), SamplePitch, pan);
+        if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol, SamplePitch, pan);
+        if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, (int)(vol * 0.85), SamplePitch, pan);
     }
 
     // ---------------------------------------------------------------- drawing

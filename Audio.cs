@@ -73,7 +73,7 @@ static class Bass
     [DllImport(Dll)] public static extern bool BASS_ChannelSlideAttribute(int handle, uint attrib, float value, uint timeMs);
     [DllImport(Dll)] public static extern bool BASS_ChannelGetAttribute(int handle, uint attrib, ref float value);
     [DllImport(Dll)] public static extern uint BASS_ChannelFlags(int handle, uint flags, uint mask);
-    public const uint AttribFreq = 1, SampleLoop = 4;
+    public const uint AttribFreq = 1, AttribPan = 3, SampleLoop = 4;
     public const uint DataFft2048 = 0x80000003;
 
     // bass_fx: tempo change without pitch change (DT/HT), as stable does.
@@ -162,12 +162,13 @@ sealed class SoundPool
     readonly int sample;
     SoundPool(int sample) { this.sample = sample; Bass.Register(sample, true); }
 
-    public void Play(float volume, float pitch = 1)
+    public void Play(float volume, float pitch = 1, float pan = 0)
     {
         if (sample == 0) return;
         int ch = Bass.BASS_SampleGetChannel(sample, 0);
         if (ch == 0) return;
         Bass.BASS_ChannelSetAttribute(ch, Bass.AttribVol, volume);
+        if (pan != 0) Bass.BASS_ChannelSetAttribute(ch, Bass.AttribPan, pan);
         if (pitch != 1) { float f = 0; Bass.BASS_ChannelGetAttribute(ch, Bass.AttribFreq, ref f); Bass.BASS_ChannelSetAttribute(ch, Bass.AttribFreq, f * pitch); }
         Bass.BASS_ChannelPlay(ch, false);
     }

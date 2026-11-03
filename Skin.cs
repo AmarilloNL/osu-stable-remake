@@ -436,7 +436,7 @@ sealed class BeatmapSamples
     // stable's IgnoreBeatmapSamples (and the per-map Hitsounds toggle): off = always the skin's samples.
     public bool UseMapSamples = !Config.GetBool("IgnoreBeatmapSamples", false);
 
-    public void Play(int set, string name, int index, int volumePercent, float pitch = 1) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f, pitch);
+    public void Play(int set, string name, int index, int volumePercent, float pitch = 1, float pan = 0) => Resolve(set, name, index)?.Play(EffectVolume * volumePercent / 100f, pitch, pan);
 
     // A hit object's custom sample: that file in the map's folder, or (no extension, or not there) the name with
     // .wav / .ogg / .mp3; null when it isn't there either, or the map's samples are off.
@@ -465,17 +465,17 @@ sealed class BeatmapSamples
 
     // Looping samples (slider slide / whistle): one voice per key, restarted when its sample changes, until stopped.
     readonly Dictionary<string, (int Channel, SoundPool? Pool)> loops = [];
-    public void Loop(string key, int set, string name, int index, int volumePercent)
+    public void Loop(string key, int set, string name, int index, int volumePercent, float pan = 0)
     {
         float vol = EffectVolume * volumePercent / 100f;
         var pool = Resolve(set, name, index);
-        if (loops.TryGetValue(key, out var l) && l.Pool == pool && Bass.BASS_ChannelIsActive(l.Channel) == Bass.ActivePlaying)
+        if (!(loops.TryGetValue(key, out var l) && l.Pool == pool && Bass.BASS_ChannelIsActive(l.Channel) == Bass.ActivePlaying))
         {
-            Bass.BASS_ChannelSetAttribute(l.Channel, Bass.AttribVol, vol);
-            return;
+            SoundPool.Stop(l.Channel);
+            loops[key] = l = (pool?.PlayLooped(vol) ?? 0, pool);
         }
-        SoundPool.Stop(l.Channel);
-        loops[key] = (pool?.PlayLooped(vol) ?? 0, pool);
+        Bass.BASS_ChannelSetAttribute(l.Channel, Bass.AttribVol, vol);
+        Bass.BASS_ChannelSetAttribute(l.Channel, Bass.AttribPan, pan);
     }
     public void StopLoop(string key) { if (loops.Remove(key, out var l)) SoundPool.Stop(l.Channel); }
 
