@@ -150,15 +150,29 @@ sealed class SongSelect : Screen
             Console.Error.WriteLine(e is FileNotFoundException ? "osu!.db: none" : $"osu!.db: {e}");
             all = []; // then every Songs folder is new below: read in parallel, cached for the next start, rated in the background
         }
-        // like stable after an import (or a folder copied in): Songs folders its osu!.db doesn't list yet are read too
-        var known = new HashSet<string>(all.Select(b => b.Folder), StringComparer.OrdinalIgnoreCase);
-        var fresh = new List<string>();
+        var dirs = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase); // Songs folder -> last change
+        bool listed = false;
         try
         {
             if (Directory.Exists(Config.SongsDir))
-                fresh.AddRange(Directory.EnumerateDirectories(Config.SongsDir).Where(d => !known.Contains(Path.GetFileName(d))));
+            {
+                foreach (var d in new DirectoryInfo(Config.SongsDir).EnumerateDirectories()) dirs[d.Name] = d.LastWriteTimeUtc;
+                listed = true;
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Console.Error.WriteLine($"Songs folder: {e.Message}"); }
+        // maps deleted since stable last wrote its osu!.db (it does when it closes; the remake's Delete doesn't touch it):
+        // folders that are gone, and in folders changed since then, difficulties whose file is gone
+        if (listed && all.Count > 0)
+        {
+            var written = File.GetLastWriteTimeUtc(Path.Combine(Config.OsuDir, "osu!.db"));
+            int before = all.Count;
+            all = all.Where(b => dirs.TryGetValue(b.Folder, out var changed) ? changed <= written || File.Exists(b.FilePath) : b.Folder.IndexOfAny(['/', '\\']) >= 0 && File.Exists(b.FilePath)).ToList();
+            if (all.Count < before) Console.Error.WriteLine($"osu!.db: {before - all.Count} maps no longer on disk");
+        }
+        // like stable after an import (or a folder copied in): Songs folders its osu!.db doesn't list yet are read too
+        var known = new HashSet<string>(all.Select(b => b.Folder), StringComparer.OrdinalIgnoreCase);
+        var fresh = dirs.Keys.Where(d => !known.Contains(d)).Select(d => Path.Combine(Config.SongsDir, d)).ToList();
         var newMaps = new List<DbBeatmap>();
         var toRate = new List<DbBeatmap>();
         var cache = fresh.Count > 0 ? OsuDb.LoadMapCache() : new Dictionary<string, (long Length, long Ticks, DbBeatmap Map)>();
@@ -933,7 +947,7 @@ sealed class SongSelect : Screen
         if (Input.IsKeyPressed(Config.Key("keyToggleChat", KeyboardKey.F8)) || Input.IsKeyPressed(Config.Key("keyToggleExtendedChat", KeyboardKey.F9))) { Options.lastScroll = 0; Game.Screen = new Options(this, this); return; }
 
         // F1: stable's mod select, with stable's hotkeys.
-        if (beatmapOptions) { while (Input.GetCharPressed() != 0) { } UpdateBeatmapOptions(); return; }
+        if (dialog != null) { while (Input.GetCharPressed() != 0) { } UpdateDialog(); return; }
         if (Input.IsKeyPressed(KeyboardKey.F3) && !modSelect) { OpenBeatmapOptions(); return; }
         if (Input.IsKeyPressed(KeyboardKey.F1)) OpenModSelect(!modSelect);
         else if (modSelect)
@@ -978,8 +992,7 @@ sealed class SongSelect : Screen
         // stable's F5 rescans the Songs folder and rebuilds the list; ours re-reads osu!.db, keeping the selection
         if (Input.IsKeyPressed(KeyboardKey.F5)) { Game.Screen = new BeatmapImport(this, []); return; } // stable: its import screen checks for new files
         // stable: Shift+Delete is the beatmap options' Delete...
-        if (Input.IsKeyPressed(KeyboardKey.Delete) && Input.ShiftHeld && Selected != null)
-            Notification.Show(BeatmapOptions[1].Notice!, 3000);
+        if (Input.IsKeyPressed(KeyboardKey.Delete) && Input.ShiftHeld && Selected is { } toDelete) { OpenDelete(toDelete); return; }
         // F2: random map (stable's spin; F2 again stops it); Shift+F2: back to the one before the last random pick.
         if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.ShiftHeld);
         UpdateSpin(dtMs);
@@ -1664,14 +1677,14 @@ sealed class SongSelect : Screen
         DrawBottomBar(w, h, s);
         Snow.Update(this);
         Snow.Draw();
-        if (webTip && !modSelect && !beatmapOptions) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
-        else if (scoreTip != null && !modSelect && !beatmapOptions) Options.DrawScreenTooltip(ScoreTip(scoreTip), Input.GetMousePosition());
+        if (webTip && !modSelect && dialog == null) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
+        else if (scoreTip != null && !modSelect && dialog == null) Options.DrawScreenTooltip(ScoreTip(scoreTip), Input.GetMousePosition());
         webTip = false;
         scoreTip = null;
         DrawModeMenu();
         DrawDropdown();
         if (modSelect) DrawModSelect(w, h);
-        if (beatmapOptions) DrawBeatmapOptions();
+        DrawDialog();
         DrawCursor(); // over the overlays, like stable
     }
 
@@ -2298,46 +2311,129 @@ sealed class SongSelect : Screen
         hoveredScore = hovered;
         // (stable shows its "Personal Best" box only for the online ranking types, never for Local Ranking)
     }
-    // F3 / Beatmap Options: stable's dialog for the selected set. Offline, the actions that would change stable's files
-    // (collections, deleting, the unplayed flag, local scores) or need the editor only explain themselves.
-    static readonly (string Label, Color Colour, string? Notice)[] BeatmapOptions =
-    [
-        ("Manage Collections", new Color(154, 205, 50, 255), "Collections are read from stable; manage them in osu!stable."),
-        ("Delete...", new Color(255, 69, 0, 255), "This remake never deletes your beatmaps; delete them in osu!stable."),
-        ("Remove from Unplayed", new Color(207, 124, 215, 255), "The remake doesn't write osu!stable's database."),
-        ("Clear local scores", new Color(207, 124, 215, 255), "Your scores are kept; clear them in osu!stable."),
-        ("Edit", new Color(255, 69, 0, 255), "The beatmap editor isn't part of this offline remake."),
-        ("Cancel", Xna.Gray, null),
-    ];
-    bool beatmapOptions;
-    double beatmapOptionsAt;
-    float beatmapOptionsY;
+    // ---- stable's song select dialogs (F3 Beatmap Options and the ones it leads to): a title over numbered buttons;
+    // number keys and clicks choose, Esc / F3 / Enter take the last one (stable's dialogs take Enter as a plain close).
+    sealed record DialogSpec(string Title, (string Label, Color Colour, Action? Act)[] Buttons);
+    DialogSpec? dialog;
+    double dialogAt;
+    float dialogY;
+    static readonly Color OrangeRed = new(255, 69, 0, 255), OptionsPurple = new(207, 124, 215, 255);
+    static readonly (string, Color, Action?) NoDelete = ("Nooooo! I didn't mean to!", Xna.Gray, null);
 
-    void OpenBeatmapOptions() { if (Selected != null) { beatmapOptions = true; beatmapOptionsAt = Game.NowMs; } }
+    void OpenDialog(string title, params (string, Color, Action?)[] buttons) { dialog = new(title, buttons); dialogAt = Game.NowMs; }
 
-    void UpdateBeatmapOptions()
+    void UpdateDialog()
     {
+        var d = dialog!;
         var mouse = Input.GetMousePosition();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        // Esc, F3 and Enter close it (stable's dialogs take Enter as a plain close)
-        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) || Input.IsKeyPressed(KeyboardKey.Enter) ? BeatmapOptions.Length - 1 : -1;
-        for (int i = 0; i < BeatmapOptions.Length && chosen < 0; i++)
-            if (Input.IsKeyPressed(KeyboardKey.One + i) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(beatmapOptionsY + i * 50))) chosen = i;
+        int chosen = Input.IsKeyPressed(KeyboardKey.Escape) || Input.IsKeyPressed(KeyboardKey.F3) || Input.IsKeyPressed(KeyboardKey.Enter) ? d.Buttons.Length - 1 : -1;
+        for (int i = 0; i < d.Buttons.Length && chosen < 0; i++)
+            if (Input.IsKeyPressed(KeyboardKey.One + i) || click && CheckCollisionPointRec(mouse, Dialog.ButtonRect(dialogY + i * 50))) chosen = i;
         if (chosen < 0) return;
-        beatmapOptions = false;
-        if (BeatmapOptions[chosen].Notice is { } notice) Notification.Show(notice, 3000);
+        dialog = null;
+        d.Buttons[chosen].Act?.Invoke();
     }
 
-    void DrawBeatmapOptions()
+    void DrawDialog()
     {
-        if (Selected is not { } b) return;
-        double age = Game.NowMs - beatmapOptionsAt;
+        if (dialog is not { } d) return;
+        double age = Game.NowMs - dialogAt;
         float fade = (float)Math.Clamp(age / 200, 0, 1);
         Dialog.Backdrop(fade);
-        beatmapOptionsY = Dialog.Title($"{b.Artist} - {b.Title}\nWhat do you want to do with this beatmap?", fade);
+        dialogY = Dialog.Title(d.Title, fade);
         var mouse = Input.GetMousePosition();
-        for (int i = 0; i < BeatmapOptions.Length; i++)
-            Dialog.Button(i, BeatmapOptions[i].Label, BeatmapOptions[i].Colour, beatmapOptionsY + i * 50, age, mouse);
+        for (int i = 0; i < d.Buttons.Length; i++)
+            Dialog.Button(i, d.Buttons[i].Label, d.Buttons[i].Colour, dialogY + i * 50, age, mouse);
+    }
+
+    // F3 / Beatmap Options: stable's dialog for the selected map
+    void OpenBeatmapOptions()
+    {
+        if (Selected is not { } b) return;
+        OpenDialog($"{b.Artist} - {b.Title}\nWhat do you want to do with this beatmap?",
+            ("Manage Collections", new Color(154, 205, 50, 255), () => Notification.Show("Collections are read from stable; manage them in osu!stable.", 3000)),
+            ("Delete...", OrangeRed, () => OpenDelete(b)),
+            ("Remove from Unplayed", OptionsPurple, () => Notification.Show("The remake doesn't write osu!stable's database.", 3000)),
+            ("Clear local scores", OptionsPurple, () => Notification.Show("Your scores are kept; clear them in osu!stable.", 3000)),
+            ("Edit", OrangeRed, () => Notification.Show("The beatmap editor isn't part of this offline remake.", 3000)),
+            ("Cancel", Xna.Gray, null));
+    }
+
+    // stable's Delete...: the whole set, this difficulty, or every difficulty the list shows (after a second question)
+    // go to the Recycle Bin, silently like stable's. osu!.db keeps listing them until stable rewrites it; the library
+    // load leaves out what's no longer on disk.
+    void OpenDelete(DbBeatmap b)
+    {
+        bool several;
+        try { several = Directory.EnumerateFiles(Path.Combine(Config.SongsDir, b.Folder), "*.osu").Skip(1).Any(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { several = false; }
+        string name = $"{b.Artist} - {b.Title} [{b.Version}]", title = $"Are you sure you wish to delete '{name}' from disk?";
+        if (several)
+            OpenDialog(title, ("Yes, delete all difficulties!", OrangeRed, () => DeleteSet(b, name)),
+                ("Yes, but only this difficulty", OrangeRed, () => DeleteMaps([b])),
+                ("Delete ALL VISIBLE beatmaps!!", Xna.Red, DeleteVisible), NoDelete);
+        else OpenDialog(title, ("Yes, delete this beatmap!", OrangeRed, () => DeleteSet(b, name)), NoDelete);
+    }
+
+    void DeleteSet(DbBeatmap b, string name)
+    {
+        Toast.Show($"{name} has been moved to Recycle Bin!", Xna.Red, 3000);
+        ReleaseMusic();
+        Recycle([Path.Combine(Config.SongsDir, b.Folder)]);
+        Forget(sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs.ToList() ?? [b]);
+    }
+
+    void DeleteMaps(List<DbBeatmap> maps)
+    {
+        Recycle(maps.Select(m => m.FilePath));
+        Forget(maps);
+    }
+
+    void DeleteVisible()
+    {
+        var visible = view.SelectMany(v => v.Diffs).ToList();
+        if (visible.Count == 0) Toast.Show("There are no maps visible!");
+        else if (visible.Count == sets.Sum(s => s.Diffs.Count)) Toast.Show("You can't delete all your beatmaps at once!");
+        else OpenDialog($"Are you sure you want to delete {visible.Count} beatmaps?", ("Yes", OrangeRed, () => DeleteMaps(visible)), ("No", Xna.Gray, null));
+    }
+
+    // the music's file stays open while it plays or loads: let go of it before its folder goes (it restarts for the
+    // next selection)
+    void ReleaseMusic()
+    {
+        try { if (previewLoading != null) previewLoading.Result.Item2?.Dispose(); } catch (AggregateException) { }
+        previewLoading = null;
+        StopPreview();
+    }
+
+    // takes deleted maps out of the list, selecting the next one along (or the one before)
+    void Forget(List<DbBeatmap> gone)
+    {
+        var g = gone.ToHashSet();
+        var flat = view.SelectMany(v => v.Diffs).ToList();
+        int at = Selected is { } s ? flat.IndexOf(s) : -1;
+        var next = Selected is { } kept && !g.Contains(kept) ? kept
+            : flat.Skip(at + 1).FirstOrDefault(d => !g.Contains(d)) ?? flat.Take(Math.Max(0, at)).LastOrDefault(d => !g.Contains(d));
+        int before = sets.Sum(x => x.Diffs.Count);
+        foreach (var set in sets) set.Diffs.RemoveAll(g.Contains);
+        sets.RemoveAll(x => x.Diffs.Count == 0);
+        TotalBeatmaps -= before - sets.Sum(x => x.Diffs.Count);
+        ApplyFilter(next);
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    struct ShFileOp { public nint Hwnd; public uint Func; public string From; public string? To; public ushort Flags; public int Aborted; public nint Mappings; public string? Title; }
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int SHFileOperationW(ref ShFileOp op);
+
+    // stable's delete: to the Recycle Bin with no confirmation, progress or error UI (FO_DELETE; FOF_ALLOWUNDO,
+    // FOF_SILENT, FOF_NOCONFIRMATION, FOF_NOERRORUI)
+    static void Recycle(IEnumerable<string> paths)
+    {
+        var op = new ShFileOp { Func = 3, From = string.Join("\0", paths.Select(Path.GetFullPath)) + "\0", Flags = 0x40 | 0x4 | 0x10 | 0x400 };
+        int r = SHFileOperationW(ref op);
+        if (r != 0) Console.Error.WriteLine($"Recycle Bin: error {r:x}");
     }
 
     // stable's mod select: a dialog titled with its blurb, "Score Multiplier" centred 20 units above the content, three

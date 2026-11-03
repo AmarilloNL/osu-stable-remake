@@ -20,7 +20,7 @@ in a new client written from the ground up in C#. The goal is to judge, look and
 while running with sub-millisecond frame times and handling frames better.
 
 It is **offline only**: it never talks to any osu! server. Everything it saves (its own settings, replays,
-screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin.
+screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, or delete a beatmap (to the Recycle Bin, like stable).
 
 > [!NOTE]
 > This is a personal hobby project. It is not affiliated with, endorsed by, or connected to ppy Pty Ltd
@@ -113,7 +113,8 @@ Progress at a glance. Checked items are done; everything else is still open.
 
 **Missing pieces**
 - [x] Hit lighting
-- [ ] Beatmap options (`F3`) actions: the dialog is there, but deleting maps and editing collections are left to stable
+- [x] Beatmap options (`F3`): deleting a set, a difficulty or everything listed (to the Recycle Bin, like stable; also `Shift+Delete`)
+- [ ] Beatmap options (`F3`): managing collections, Remove from Unplayed and clearing local scores (these write stable's databases)
 - [x] Visual Settings per map (stable's from `osu!.db`, changes kept in `remake.cfg`)
 - [x] Libraries without a readable `osu!.db`: the Songs folder is read in parallel and cached, star ratings come in the background
 - [x] Verify guessed details: the Qualified warning text, notice texts and menu tips (read from a running stable)
