@@ -329,7 +329,9 @@ sealed partial class SongSelect : Screen
     }
 
     // the library entry with this MD5, if it's loaded
-    internal DbBeatmap? FindMap(string md5) => sets.SelectMany(s => s.Diffs).FirstOrDefault(d => d.Md5 == md5);
+    internal DbBeatmap? FindMap(string md5) => Lib.SelectMany(s => s.Diffs).FirstOrDefault(d => d.Md5 == md5);
+    // the library, also when it finished loading while another screen was up (song select adopts it when it's next shown)
+    List<BeatmapSet> Lib => loading is { IsCompletedSuccessfully: true } l ? l.Result : sets;
 
     // re-reads the library (osu!.db plus new folders), then selects that map (or keeps the selection)
     internal void Reload(string? select)

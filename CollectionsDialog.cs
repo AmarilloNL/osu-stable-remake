@@ -15,6 +15,15 @@ namespace OsuStableRemake;
 sealed partial class SongSelect
 {
     string collectionName = "";
+    DbBeatmap? collectionsFor; // the map the + / - buttons act on when it isn't song select's (a replay being watched)
+    DbBeatmap? CollectionsMap => collectionsFor ?? Selected;
+
+    // stable's replay overlay Collections button: the same dialog over the replay, for the replay's map
+    internal void OpenCollectionsFor(DbBeatmap? map) { collectionsFor = map; OpenCollections(); }
+    internal bool DialogOpen => dialog != null;
+    // hosted by another screen: the dialog takes this frame's input (the host's own presses are muted until it ends)
+    internal void HostDialog() { UpdateDialog(); while (Input.GetCharPressed() != 0) { } Input.Muted = true; }
+    internal void HostDrawDialog() => DrawDialog();
     int collectionPicked = -1, collectionRenaming = -1;
     float collectionScroll;
     HashSet<string>? libraryMd5s;
@@ -28,10 +37,10 @@ sealed partial class SongSelect
 
     void OpenCollections()
     {
-        libraryMd5s = sets.SelectMany(s => s.Diffs).Select(d => d.Md5).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        libraryMd5s = Lib.SelectMany(s => s.Diffs).Select(d => d.Md5).ToHashSet(StringComparer.OrdinalIgnoreCase);
         collectionName = "";
         collectionRenaming = -1;
-        dialog = new("Collections", [("Delete the collection", Xna.Red, DeleteCollection), ("Close", Xna.Gray, () => { if (GroupMode == "Collections") ApplyFilter(Selected); })],
+        dialog = new("Collections", [("Delete the collection", Xna.Red, DeleteCollection), ("Close", Xna.Gray, () => { collectionsFor = null; if (GroupMode == "Collections") ApplyFilter(Selected); })],
             320, DrawCollections, UpdateCollections);
         dialogAt = Game.NowMs;
     }
@@ -116,9 +125,9 @@ sealed partial class SongSelect
     // + / +Set / - / -Set: the selected map, or its whole set, into or out of the collection
     void ChangeCollection(int i, bool add, bool wholeSet)
     {
-        if (Selected is not { } b || !CanWriteCollections()) return;
+        if (CollectionsMap is not { } b || !CanWriteCollections()) return;
         var (name, md5s) = Collections[i];
-        var maps = wholeSet ? sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs ?? [b] : [b];
+        var maps = wholeSet ? Lib.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs ?? [b] : [b];
         bool changed = false;
         foreach (var m in maps) changed |= add ? md5s.Add(m.Md5) : md5s.Remove(m.Md5);
         if (!changed || !SaveCollections()) return;
@@ -166,7 +175,7 @@ sealed partial class SongSelect
         Game.TextBold(shown, x0 + 2 * u, box.Y + box.Height / 2 - 7.75f * u, 15.5f * u, ColorAlpha(Color.White, alpha));
         // the collections
         var list = Collections;
-        var b = Selected;
+        var b = CollectionsMap;
         string? tip = null;
         BeginScissorMode(0, (int)(60 * u), Game.W, (int)(250 * u));
         for (int i = 0; i < list.Count; i++)

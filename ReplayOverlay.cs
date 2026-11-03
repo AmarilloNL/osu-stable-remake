@@ -8,8 +8,7 @@ namespace OsuStableRemake;
 // edge, centred 40 units in from it at y 85 + 20 per button, fading in over 500ms and tinting (255,247,197) on
 // hover. Offline, stable skips the Discussion button, so there are three. F cycles the speed like the button;
 // H hides the overlay and the leaderboard.
-// TODO: Collections shows but does nothing yet (stable opens its Manage Collections dialog over the replay; ours lives
-// in song select).
+// Collections opens stable's Manage Collections dialog over the replay (which keeps going) for the replay's map.
 sealed partial class Player
 {
     double overlayFrom = double.NaN;
@@ -42,6 +41,7 @@ sealed partial class Player
             if (skin.Tex(OverlayTexture(i)) is not { } s || !CheckCollisionPointRec(Input.GetMousePosition(), OverlayRect(i, s))) continue;
             if (OverlayButtons[i] == "overlay-endreplay") return true;
             if (OverlayButtons[i] == "speed") CycleSpeed();
+            if (OverlayButtons[i] == "overlay-collections") back.OpenCollectionsFor(back.FindMap(mapMd5 ??= Replays.Md5Of(map.File)));
         }
         return false;
     }

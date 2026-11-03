@@ -65,6 +65,7 @@ static class Input
     // Once per frame, before anything reads input: applies the script's events that are due.
     public static void Update(double secs)
     {
+        Muted = false;
         keysPressed.Clear(); buttonsPressed.Clear(); keyQueue.Clear(); chars.Clear(); wheel = 0; // per frame, like raylib's queues
         // one script timestamp per frame, so a stalled frame (a screenshot) can't merge a press with the move after it
         double at = next < script.Count ? script[next].At : 0;
@@ -100,13 +101,15 @@ static class Input
     public static bool AltHeld => IsKeyDown(KeyboardKey.LeftAlt) || IsKeyDown(KeyboardKey.RightAlt);
     public static bool CtrlHeld => IsKeyDown(KeyboardKey.LeftControl) || IsKeyDown(KeyboardKey.RightControl); // stable takes either
     public static bool ShiftHeld => IsKeyDown(KeyboardKey.LeftShift) || IsKeyDown(KeyboardKey.RightShift);
-    static bool Raw(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressed(k) || keysPressed.Contains((int)k);
+    // Muted: a dialog hosted over a screen (Manage Collections over a replay) took this frame's presses
+    internal static bool Muted;
+    static bool Raw(KeyboardKey k) => !Muted && (!ScriptOnly && Raylib.IsKeyPressed(k) || keysPressed.Contains((int)k));
     static bool Pressed(KeyboardKey k) => Raw(k) || k == KeyboardKey.Enter && Raw(KeyboardKey.KpEnter); // stable: the numpad Enter is Enter
     public static bool IsKeyPressed(KeyboardKey k) => Pressed(k) && !(k == KeyboardKey.Enter && AltHeld);
     public static bool AltEnterPressed => AltHeld && Pressed(KeyboardKey.Enter);
-    public static bool IsKeyPressedRepeat(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyPressedRepeat(k);
+    public static bool IsKeyPressedRepeat(KeyboardKey k) => !Muted && !ScriptOnly && Raylib.IsKeyPressedRepeat(k);
     public static bool IsKeyDown(KeyboardKey k) => !ScriptOnly && Raylib.IsKeyDown(k) || keysDown.Contains((int)k);
-    public static bool IsMouseButtonPressed(MouseButton b) => !ScriptOnly && Raylib.IsMouseButtonPressed(b) || buttonsPressed.Contains((int)b);
+    public static bool IsMouseButtonPressed(MouseButton b) => !Muted && (!ScriptOnly && Raylib.IsMouseButtonPressed(b) || buttonsPressed.Contains((int)b));
     public static bool IsMouseButtonDown(MouseButton b) => !ScriptOnly && Raylib.IsMouseButtonDown(b) || buttonsDown.Contains((int)b);
     public static Vector2 GetMousePosition() => mouse ?? (ScriptOnly ? new(-1000, -1000) : (Game.RawCursor ?? Raylib.GetMousePosition()) - Game.BoxAt); // off-screen until scripted
     public static float GetMouseWheelMove() => (ScriptOnly ? 0 : Raylib.GetMouseWheelMove()) + wheel;

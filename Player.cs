@@ -805,6 +805,7 @@ sealed partial class Player : Screen
 
     public override void Update(double dtMs)
     {
+        if (back.DialogOpen) back.HostDialog(); // (Manage Collections over a replay)
         int w = Game.W, h = Game.H;
         scale = h / 480f;
         origin = new Vector2((w - 512 * scale) / 2, (h - 384 * scale) / 2 + 8 * scale);
@@ -1693,6 +1694,7 @@ sealed partial class Player : Screen
             DrawHud(w, h);
         }
         DrawOverlays(w, h);
+        if (back.DialogOpen) back.HostDrawDialog();
     }
 
     void DrawPlayfield(int w, int h)
