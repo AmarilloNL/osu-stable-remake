@@ -179,11 +179,13 @@ sealed partial class SongSelect
             // measured on stable: black box, 1px border white (yellow-green when the collection holds the selected map),
             // the whole row at grey 200 (white while hovered; the hovered yellow-green border lightens about 45%)
             var row = new Rectangle(rx, y, 448 * u, 15 * u);
-            var border = holds ? hover ? ColorLerp(XnaYellowGreen, Color.White, 0.45f) : Tint(XnaYellowGreen, 200) : hover ? Color.White : RowGrey;
+            // (while renaming: a yellow border, the bare name)
+            var rowEdge = collectionRenaming == i ? Color.Yellow : holds ? XnaYellowGreen : Color.White;
+            var border = hover ? (rowEdge.Equals(Color.White) ? Color.White : ColorLerp(rowEdge, Color.White, 0.45f)) : Tint(rowEdge, 200);
             DrawRectangleRec(row, ColorAlpha(Color.Black, alpha));
             DrawRectangleLinesEx(row, 1, ColorAlpha(border, alpha));
             string label = collectionRenaming == i ? renameText : $"{(name.Length > 40 ? name[..40] + "..." : name)} ({md5s.Count(m => libraryMd5s?.Contains(m) != false)})";
-            var colour = collectionRenaming == i ? Color.Yellow : hover ? Color.White : RowGrey;
+            var colour = hover ? Color.White : RowGrey;
             float ts = 12.4f * u, ty = y + 7.5f * u - ts / 2;
             if (i == collectionPicked) Game.TextBold(label, rx + 2 * u, ty, ts, ColorAlpha(colour, alpha));
             else Game.TextRegular(label, rx + 2 * u, ty, ts, ColorAlpha(colour, alpha));
