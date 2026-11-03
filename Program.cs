@@ -462,7 +462,8 @@ static class Game
     {
         float s = (float)Config.GetDouble("MouseSpeed", 1);
         string confine = Config.Get("ConfineMouse", "Fullscreen"); // (not focus: GLFW frees and recaptures the cursor itself)
-        bool raw = Config.GetBool("RawInput", false) && (confine == "Always" || confine == "Fullscreen" && DisplayMode() == "Fullscreen");
+        // (stable reads raw input whenever it's on; here it needs the cursor captured: while confined, a live play included)
+        bool raw = Config.GetBool("RawInput", false) && (confine == "Always" || confine == "Fullscreen" && DisplayMode() == "Fullscreen" || Screen is Player { ActivePlay: true });
         if (raw != RawCursor.HasValue)
         {
             if (raw) { GetCursorPos(out var c0); RawCursor = new Vector2(c0.X, c0.Y) - GetWindowPosition(); DisableCursor(); }
