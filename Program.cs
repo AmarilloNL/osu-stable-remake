@@ -705,6 +705,13 @@ static class Game
             UpdateBossKey(songSelect);
             if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
             if (Input.CtrlHeld && Input.AltHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) ReloadSkinKey();
+            // F10 (Disable mouse buttons) is global in stable, notice included (a play handles its own)
+            if (Screen is not Player && Input.IsKeyPressed(Config.Key("keyDisableMouseButtons", KeyboardKey.F10)))
+            {
+                bool off = !Config.GetBool("MouseDisableButtons", false);
+                Config.SetOwn("MouseDisableButtons", off ? "1" : "0");
+                Notification.Show(off ? "Mouse buttons are disabled." : "Mouse buttons are enabled.", 1000);
+            }
             // F7 (Toggle Framerate Limit): stable's cycle VSync / Power saving -> Optimal -> Unlimited -> Power saving
             if (Input.IsKeyPressed(Config.Key("keyToggleFrameLimiter", KeyboardKey.F7)))
             {
