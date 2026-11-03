@@ -74,6 +74,19 @@ static class Game
         wasFocused = focused;
     }
 
+    // stable turns Windows' pen gestures off for its window (press-and-hold right click, flicks, tap and barrel feedback,
+    // smooth scrolling): they'd get in the way of tablet players
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern ushort GlobalAddAtomW(string name);
+    [DllImport("kernel32.dll")] static extern ushort GlobalDeleteAtom(ushort atom);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SetPropW(IntPtr window, string name, IntPtr data);
+    static unsafe void NoPenGestures()
+    {
+        const string pen = "MicrosoftTabletPenServiceProperty";
+        ushort atom = GlobalAddAtomW(pen);
+        if (atom != 0) SetPropW((IntPtr)GetWindowHandle(), pen, 0x1190019);
+        GlobalDeleteAtom(atom);
+    }
+
     // stable keeps the display and the system awake while it has focus (a long replay or Cinema play has no input to
     // keep the screen saver away)
     [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
@@ -637,6 +650,7 @@ static class Game
         if (testRun) Config.SetTemp("VolumeUniversal", "2"); // quiet: the user may be at the PC
         var (resW, resH) = Resolution();
         InitWindow(resW, resH, "osu!stable remake");
+        NoPenGestures();
         SetExitKey(KeyboardKey.Null);
         int monitor = GetCurrentMonitor();
         ApplyDisplay();
