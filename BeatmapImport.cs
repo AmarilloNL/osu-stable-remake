@@ -143,7 +143,11 @@ sealed class BeatmapImport : Screen
         if (Game.Screen is Player) return; // stable refuses while playing
         ReplayInfo info;
         try { info = Replays.ReadAnyInfo(file); }
-        catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { return; }
+        catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException or ArgumentException or IndexOutOfRangeException)
+        {
+            Toast.Show("Unable to read the requested replay file."); // stable's
+            return;
+        }
         if (songs.FindMap(info.BeatmapMd5) is not { } map) { Toast.Show("You do not have the beatmap this replay was made for."); return; }
         Game.FadeTo(() => Player.Summary(Beatmap.Load(map.FilePath, mods: info.Mods), songs, info));
     }
