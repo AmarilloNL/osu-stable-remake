@@ -285,10 +285,14 @@ static class OsuDb
     }
 
     // stable's collection.db: version, then per collection a name and its beatmap MD5s.
+    static (long Length, DateTime Write) collectionsRead; // the collection.db the list came from (Length -1: none)
+
     public static List<(string Name, HashSet<string> Md5s)> LoadCollections(string path)
     {
         var result = new List<(string, HashSet<string>)>();
-        if (!File.Exists(path)) return result;
+        var info = new FileInfo(path);
+        collectionsRead = info.Exists ? (info.Length, info.LastWriteTimeUtc) : (-1, default);
+        if (!info.Exists) return result;
         try
         {
             using var r = new BinaryReader(File.OpenRead(path));
@@ -308,10 +312,14 @@ static class OsuDb
     }
 
     // collection.db as stable writes it: its version, then each collection's name and MD5s (to a temporary file first)
+    // false when it couldn't write, or when collection.db changed since it was read (stable wrote its own): the caller
+    // reads it again rather than overwrite it
     internal static bool SaveCollections(string path, List<(string Name, HashSet<string> Md5s)> list)
     {
         try
         {
+            var info = new FileInfo(path);
+            if ((info.Exists ? (info.Length, info.LastWriteTimeUtc) : (-1, default)) != collectionsRead) return false;
             int version = 20250107;
             if (File.Exists(path)) using (var r = new BinaryReader(File.OpenRead(path))) version = r.ReadInt32();
             string tmp = path + ".tmp";
@@ -327,6 +335,8 @@ static class OsuDb
                 }
             }
             File.Move(tmp, path, overwrite: true);
+            info.Refresh();
+            collectionsRead = (info.Length, info.LastWriteTimeUtc);
             return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or EndOfStreamException) { return false; }

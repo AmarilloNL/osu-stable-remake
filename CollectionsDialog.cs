@@ -106,8 +106,10 @@ sealed partial class SongSelect
 
     void SaveCollections()
     {
-        if (!OsuDb.SaveCollections(Path.Combine(Config.OsuDir, "collection.db"), Collections))
-            Notification.Show("Couldn't save collection.db.", 3000);
+        if (OsuDb.SaveCollections(Path.Combine(Config.OsuDir, "collection.db"), Collections)) return;
+        Notification.Show("collection.db changed or couldn't be written: read again, please try once more.", 3000);
+        collections = null; // (read again on the next use)
+        collectionPicked = collectionRenaming = -1;
     }
 
     // + / ++ / - / --: the selected map, or its whole set, into or out of the collection
