@@ -1019,10 +1019,25 @@ sealed partial class SongSelect : Screen
         else Game.Quit = true;
     }
 
+    // stable: song select with no beatmaps at all says so for 5 seconds, then goes back to the main menu (stable also
+    // opens the website's beatmap listing; this offline remake doesn't, so its notice leaves that line out)
+    double noMapsAt = double.NaN;
+    void CheckEmptyLibrary()
+    {
+        if (sets.Count > 0 || Menu is not { } menu) { noMapsAt = double.NaN; return; }
+        if (double.IsNaN(noMapsAt))
+        {
+            noMapsAt = Game.NowMs;
+            Notification.Show("You have no beatmaps!  Please place at least one beatmap or audio file in the songs directory before starting.", 5000);
+        }
+        else if (Game.NowMs - noMapsAt >= 5000 && !Game.Fading) { noMapsAt = double.NaN; Game.FadeTo(() => menu); }
+    }
+
     public override void Update(double dtMs)
     {
         Game.Skin.UploadPrefetched();
         if (!Ambient()) return;
+        CheckEmptyLibrary();
 
         if (Input.CtrlHeld && !Input.AltHeld && Input.IsKeyPressed(KeyboardKey.O)) { Game.Screen = new Options(this, this); return; }
         // stable offline: the chat keys open the options at sign-in
@@ -1312,7 +1327,7 @@ sealed partial class SongSelect : Screen
     static string SmallGrade(string grade) => smallGrades.TryGetValue(grade, out var s) ? s : smallGrades[grade] = $"ranking-{grade}-small";
     readonly Dictionary<ReplayInfo, (string Score, string Mods, string Acc)> rowText = [];
     (string Score, string Mods, string Acc) RowText(ReplayInfo r) => rowText.TryGetValue(r, out var t) ? t : rowText[r] =
-        ($"Score: {r.Score:N0} ({r.MaxCombo}x)", r.Mods == Mods.None ? "" : string.Join(",", r.Mods.Short().Split(' ', StringSplitOptions.RemoveEmptyEntries)),
+        ($"Score: {r.Score:N0} ({r.MaxCombo:N0}x)", r.Mods == Mods.None ? "" : string.Join(",", r.Mods.Short().Split(' ', StringSplitOptions.RemoveEmptyEntries)),
          $"{(r.N300 + r.N100 + r.N50 + r.NMiss == 0 ? 100 : r.Accuracy):0.00}%"); // stable: no judgements count as 100%
 
     // stable's "how long ago" for scores under 96 hours old: days past 47h, else hours, minutes, seconds.
