@@ -1670,6 +1670,16 @@ sealed partial class SongSelect : Screen
         leaveShift = 500 * (1 - (float)Math.Pow(0.95, ms / (1000 / 60.0)));
         leaveSlide = 110 * U * (float)Easing.Apply(1, Math.Min(1, ms / 800));
         scoreFade = 1 - (float)Math.Min(1, ms / 500);
+        // stable's big mode icon as the map starts: its colour flashes sky blue back to its own grey and it fades out
+        // over 1s, swelling to twice its size (4s, Out) and turning a radian (4s, In)
+        if (Game.Skin.Tex("mode-osu") is { } mode && ms < 1000)
+        {
+            float t1 = (float)(ms / 1000), t4 = (float)(ms / 4000);
+            var tint = ColorLerp(Xna.SkyBlue, new Color(80, 80, 80, 255), t1);
+            BeginBlendMode(BlendMode.Additive);
+            mode.Draw(new Vector2(w / 2f, 240 * U), s * (1 + (float)Easing.Apply(1, t4)), ColorAlpha(tint, 70 / 255f * (1 - t1)), (float)Easing.Apply(2, t4) * 180 / MathF.PI);
+            EndBlendMode();
+        }
         int first = Math.Max(0, RowAt(0)), last = Math.Min(RowCount - 1, RowAt(h));
         UpdateThumbs();
         for (int row = last; row >= first; row--) DrawRow(row, w, h, s);
