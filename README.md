@@ -19,8 +19,8 @@ osu!stable remake plays your existing **osu!stable** library — songs, skins, r
 in a new client written from the ground up in C#. The goal is to judge, look and feel like stable,
 while running with sub-millisecond frame times and handling frames better.
 
-It is **offline only**: it never talks to any osu! server, and it never writes to your osu! folder.
-Everything it saves (its own settings, replays) goes next to its own executable.
+It is **offline only**: it never talks to any osu! server. Everything it saves (its own settings, replays,
+screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin.
 
 > [!NOTE]
 > This is a personal hobby project. It is not affiliated with, endorsed by, or connected to ppy Pty Ltd
@@ -68,6 +68,7 @@ Everything it saves (its own settings, replays) goes next to its own executable.
 - Options panel as stable's: all nine sections with dropdowns, buttons, stable's tooltips and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
 - Menu snow, kiai star fountains, break stars, combo bursts and kiai beat pulses, ported from stable
 - Volume overlay, stable's FPS / frame time counter, notifications
+- Beatmap (`.osz`) and skin (`.osk`) imports and stable replays (`.osr`): drop them on the window or open them with the executable, like stable (a game that's already running takes them)
 - Stable's display modes: fullscreen at its own resolution, or letterboxed ("Render at native resolution": the monitor keeps its resolution and the game sits in a movable box)
 </details>
 
@@ -143,7 +144,7 @@ OsuDir = D:\Games\osu!
 
 Your osu! settings (`osu!.<username>.cfg`) are read as-is: keys, skin, dim, volumes, offset and so on.
 Anything you change inside osu!stable remake is written to `remake.cfg` next to the executable instead, and
-overrides the osu! value. Your osu! files are never modified.
+overrides the osu! value. Your osu! settings and databases are never modified.
 
 ## 🧪 Developer tools
 

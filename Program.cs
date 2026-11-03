@@ -328,6 +328,38 @@ static class Game
         }
     }
 
+    const string PipeName = "osu!stable remake";
+    static readonly System.Collections.Concurrent.ConcurrentQueue<string> Opened = new();
+    static volatile bool raise;
+
+    // Hands files to the running game; false if it doesn't answer (then this one opens them itself).
+    static bool Forward(string[] files)
+    {
+        try
+        {
+            using var pipe = new System.IO.Pipes.NamedPipeClientStream(".", PipeName, System.IO.Pipes.PipeDirection.Out);
+            pipe.Connect(2000);
+            using var w = new StreamWriter(pipe);
+            foreach (var f in files) w.WriteLine(f);
+            return true;
+        }
+        catch (Exception e) when (e is TimeoutException or IOException) { return false; }
+    }
+
+    static void Listen() => new Thread(() =>
+    {
+        while (true)
+            try
+            {
+                using var pipe = new System.IO.Pipes.NamedPipeServerStream(PipeName, System.IO.Pipes.PipeDirection.In);
+                pipe.WaitForConnection();
+                using var r = new StreamReader(pipe);
+                while (r.ReadLine() is { } f) Opened.Enqueue(f);
+                raise = true;
+            }
+            catch (IOException) { }
+    }) { IsBackground = true }.Start();
+
     // The frame as the framebuffer holds it. raylib's LoadImageFromScreen multiplies the size by Windows' display
     // scale, which on a scaled display (125% etc.) reads past the frame: a bigger image with the game in one corner.
     static unsafe Image ReadFrame()
@@ -488,13 +520,19 @@ static class Game
         if (args.Length >= 2 && args[0] == "--dump-osr") { Console.WriteLine(string.Join("\n", Replays.OsrText(args[1]).Split(',').Take(args.Length > 2 ? int.Parse(args[2]) : 12))); return; }
         if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() is { } fl && !fl.StartsWith("--") ? fl : "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
-        if (args.Length > 0 && !args[0].StartsWith("--")) Config.OsuDir = args[0];
         // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch), --song-shots 12000 (song ms)
         string? Arg(string name) => Array.IndexOf(args, name) is int i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;
         double[] shots = Arg("--shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? [];
         double[] songShots = Arg("--song-shots")?.Split(',').Select(s => double.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray() ?? []; // song ms, during play
         double exitAfter = Arg("--exit-after") is { } ea ? double.Parse(ea, System.Globalization.CultureInfo.InvariantCulture) : double.MaxValue;
-        string? testDrop = Arg("--drop");
+        // Files opened with the game ("Open with", or dropped on the exe) open like files dropped on the window. Like
+        // stable, a game that's already running takes them and comes to the front instead of a second one starting.
+        string[] opened = [.. args.TakeWhile(a => !a.StartsWith("--")).Where(File.Exists).Select(Path.GetFullPath)];
+        using var single = new Mutex(false, PipeName, out bool firstInstance);
+        if (!firstInstance && opened.Length > 0 && Forward(opened)) return;
+        if (firstInstance) Listen();
+        foreach (var f in opened) Opened.Enqueue(f);
+        if (Arg("--drop") is { } drop) Opened.Enqueue(drop); // test hook
         int shotIndex = 0;
         if (Arg("--input") is { } script) Input.Load(script); // test hook: scripted input
         Config.Load();
@@ -575,7 +613,13 @@ static class Game
             Input.Update(now / 1000);
             if (!testRun) { ConfineCursor(); ApplySensitivity(); }
             if (IsFileDropped()) BeatmapImport.Open(GetDroppedFiles());
-            if (testDrop != null && now >= 1500) { BeatmapImport.Open([testDrop]); testDrop = null; } // test hook: --drop <file>
+            if (!Opened.IsEmpty && SongSelect.Instance is { LibraryLoading: false }) // (a replay needs its map listed)
+            {
+                if (raise) { raise = false; if (IsWindowMinimized()) RestoreWindow(); SetWindowFocused(); }
+                var files = new List<string>();
+                while (Opened.TryDequeue(out var f)) files.Add(f);
+                BeatmapImport.Open([.. files]);
+            }
             BeatmapImport.Poll();
             VolumeControl.Update(songSelect);
             // minimised (a 0x0 window) only a play keeps running, so its time stays with the music; menus wait
