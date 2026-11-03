@@ -423,7 +423,7 @@ static class Game
     static void ConfineCursor()
     {
         string mode = Config.Get("ConfineMouse", "Fullscreen");
-        bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() != "Windowed");
+        bool want = IsWindowFocused() && !IsWindowMinimized() && (mode == "Always" || mode == "Fullscreen" && DisplayMode() == "Fullscreen"); // stable: "Fullscreen" means its Fullscreen setting, not a monitor-sized window
         ClipRect? r = null;
         if (want) { var p = GetWindowPosition(); p += BoxAt; r = new ClipRect { L = (int)p.X, T = (int)p.Y, R = (int)p.X + W, B = (int)p.Y + H }; }
         // Windows drops the clip on focus changes and the like, so it's re-applied every 250ms while wanted
@@ -448,7 +448,7 @@ static class Game
     {
         float s = (float)Config.GetDouble("MouseSpeed", 1);
         string confine = Config.Get("ConfineMouse", "Fullscreen"); // (not focus: GLFW frees and recaptures the cursor itself)
-        bool raw = Config.GetBool("RawInput", false) && (confine == "Always" || confine == "Fullscreen" && DisplayMode() != "Windowed");
+        bool raw = Config.GetBool("RawInput", false) && (confine == "Always" || confine == "Fullscreen" && DisplayMode() == "Fullscreen");
         if (raw != RawCursor.HasValue)
         {
             if (raw) { GetCursorPos(out var c0); RawCursor = new Vector2(c0.X, c0.Y) - GetWindowPosition(); DisableCursor(); }
