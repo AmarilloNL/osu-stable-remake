@@ -126,13 +126,14 @@ static class OsuDb
     static string? loadedPath;
     static long loadedLength;
     static DateTime loadedWrite;
-    static readonly List<long> unplayedAt = []; // every unplayed map's flag in that file, all modes (Mark all maps as played)
+    static List<long> unplayedAt = []; // every unplayed map's flag in that file, all modes (Mark all maps as played)
+    static List<long> reading = []; // (filled while a load runs, kept once it succeeds)
 
     public static List<DbBeatmap> Load(string path)
     {
         var info = new FileInfo(path);
-        (loadedPath, loadedLength, loadedWrite) = (path, info.Length, info.LastWriteTimeUtc);
-        unplayedAt.Clear();
+        loadedPath = null; // (set again once this read succeeds)
+        reading = [];
         using var stream = new BufferedStream(File.OpenRead(path), 1 << 20);
         using var r = new BinaryReader(stream);
         var rd = new Reader(r);
@@ -146,6 +147,7 @@ static class OsuDb
         for (int i = 0; i < count; i++) list.Add(ReadBeatmap(rd, version));
         r.ReadInt32();            // user permissions
         if (stream.Position != stream.Length) throw new InvalidDataException($"osu!.db: {stream.Length - stream.Position} unread bytes");
+        (loadedPath, loadedLength, loadedWrite, unplayedAt) = (path, info.Length, info.LastWriteTimeUtc, reading);
         return list;
     }
 
@@ -211,7 +213,7 @@ static class OsuDb
         rd.Skip();                        // title font
         b.UnplayedAt = r.BaseStream.Position;
         b.Unplayed = r.ReadBoolean();
-        if (b.Unplayed) unplayedAt.Add(b.UnplayedAt);
+        if (b.Unplayed) reading.Add(b.UnplayedAt);
         b.LastPlayed = r.ReadInt64();     // DateTime ticks (UTC)
         r.ReadBoolean();                  // osz2
         b.Folder = rd.String(8);

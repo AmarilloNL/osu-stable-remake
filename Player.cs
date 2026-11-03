@@ -219,6 +219,7 @@ sealed partial class Player : Screen
         // stable counts retries in a row of a live play (any other way in starts over)
         if (playback == null && !auto) RetryStreak = retrying ? RetryStreak + 1 : 0;
         retrying = false;
+        Bloom.On = false; // (a play left mid-effect doesn't carry it into this one)
         music = Track.Load(Path.Combine(map.Folder, map.AudioFilename), rate, mods.HasFlag(Mods.Nightcore), tempo: playback != null);
         if (music != null)
             music.Volume = Config.MusicVolume;
