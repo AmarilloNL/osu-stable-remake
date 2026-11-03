@@ -44,6 +44,7 @@ sealed class DbBeatmap
     public float AR, CS, HP, OD;
     public long LastModified, LastPlayed;
     public bool Unplayed;
+    public long UnplayedAt; // where osu!.db keeps that flag (0: not from osu!.db)
     public byte ManiaSpeed;
     public double MinBpm, MaxBpm, MainBpm; // MainBpm: the one held longest (stable's "(147)")
     public byte Mode, Status;
@@ -121,8 +122,15 @@ static class OsuDb
         }
     }
 
+    // the osu!.db the list came from, as it was then (SetPlayed only writes to that exact file)
+    static string? loadedPath;
+    static long loadedLength;
+    static DateTime loadedWrite;
+
     public static List<DbBeatmap> Load(string path)
     {
+        var info = new FileInfo(path);
+        (loadedPath, loadedLength, loadedWrite) = (path, info.Length, info.LastWriteTimeUtc);
         using var stream = new BufferedStream(File.OpenRead(path), 1 << 20);
         using var r = new BinaryReader(stream);
         var rd = new Reader(r);
@@ -199,6 +207,7 @@ static class OsuDb
         b.Source = rd.String(6); b.Tags = rd.String(7);
         b.OnlineOffset = r.ReadInt16();   // online offset
         rd.Skip();                        // title font
+        b.UnplayedAt = r.BaseStream.Position;
         b.Unplayed = r.ReadBoolean();
         b.LastPlayed = r.ReadInt64();     // DateTime ticks (UTC)
         r.ReadBoolean();                  // osz2
@@ -293,6 +302,29 @@ static class OsuDb
         }
         catch (Exception e) when (e is IOException or EndOfStreamException or InvalidDataException) { }
         return result;
+    }
+
+    // stable's Remove from Unplayed: the map's flag cleared in osu!.db in place (one byte). Only while stable is closed
+    // (it writes its own copy when it closes) and while the file is still the one the list was read from; the file
+    // keeps its time, which the library load compares with the Songs folders.
+    internal static bool SetPlayed(DbBeatmap b)
+    {
+        if (b.UnplayedAt <= 0 || loadedPath == null || System.Diagnostics.Process.GetProcessesByName("osu!").Length > 0) return false;
+        try
+        {
+            var info = new FileInfo(loadedPath);
+            if (!info.Exists || info.Length != loadedLength || info.LastWriteTimeUtc != loadedWrite) return false;
+            using (var f = new FileStream(loadedPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+            {
+                f.Position = b.UnplayedAt;
+                if (f.ReadByte() != 1) return false; // not the flag as it was read
+                f.Position = b.UnplayedAt;
+                f.WriteByte(0);
+            }
+            File.SetLastWriteTimeUtc(loadedPath, loadedWrite);
+            return true;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
     static string ReadString(BinaryReader r)

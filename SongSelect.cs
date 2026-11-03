@@ -86,6 +86,7 @@ sealed class SongSelect : Screen
 
     public void AddScore(ReplayInfo info)
     {
+        if (Cleared(info)) return;
         rankedFor = null; // By Rank Achieved may change
         if (!scores.TryGetValue(info.BeatmapMd5, out var list)) scores[info.BeatmapMd5] = list = [];
         list.Add(info);
@@ -2317,7 +2318,7 @@ sealed class SongSelect : Screen
     DialogSpec? dialog;
     double dialogAt;
     float dialogY;
-    static readonly Color OrangeRed = new(255, 69, 0, 255), OptionsPurple = new(207, 124, 215, 255);
+    static readonly Color OrangeRed = new(255, 69, 0, 255), OptionsPurple = new(207, 124, 215, 255), YellowGreen = new(154, 205, 50, 255);
     static readonly (string, Color, Action?) NoDelete = ("Nooooo! I didn't mean to!", Xna.Gray, null);
 
     void OpenDialog(string title, params (string, Color, Action?)[] buttons) { dialog = new(title, buttons); dialogAt = Game.NowMs; }
@@ -2354,8 +2355,8 @@ sealed class SongSelect : Screen
         OpenDialog($"{b.Artist} - {b.Title}\nWhat do you want to do with this beatmap?",
             ("Manage Collections", new Color(154, 205, 50, 255), () => Notification.Show("Collections are read from stable; manage them in osu!stable.", 3000)),
             ("Delete...", OrangeRed, () => OpenDelete(b)),
-            ("Remove from Unplayed", OptionsPurple, () => Notification.Show("The remake doesn't write osu!stable's database.", 3000)),
-            ("Clear local scores", OptionsPurple, () => Notification.Show("Your scores are kept; clear them in osu!stable.", 3000)),
+            ("Remove from Unplayed", OptionsPurple, () => RemoveFromUnplayed(b)),
+            ("Clear local scores", OptionsPurple, () => OpenDialog("Are you sure you want to clear all local scores for this beatmap?", ("Let's do it!", YellowGreen, () => ClearScores(b)), ("Cancel", OrangeRed, null))),
             ("Edit", OrangeRed, () => Notification.Show("The beatmap editor isn't part of this offline remake.", 3000)),
             ("Cancel", Xna.Gray, null));
     }
@@ -2395,8 +2396,31 @@ sealed class SongSelect : Screen
         var visible = view.SelectMany(v => v.Diffs).ToList();
         if (visible.Count == 0) Toast.Show("There are no maps visible!");
         else if (visible.Count == sets.Sum(s => s.Diffs.Count)) Toast.Show("You can't delete all your beatmaps at once!");
-        else OpenDialog($"Are you sure you want to delete {visible.Count} beatmaps?", ("Yes", OrangeRed, () => DeleteMaps(visible)), ("No", Xna.Gray, null));
+        else OpenDialog($"Are you sure you want to delete {visible.Count} beatmaps?", ("Let's do it!", YellowGreen, () => DeleteMaps(visible)), ("Cancel", OrangeRed, null));
     }
+
+    // stable's Remove from Unplayed (written into osu!.db, see OsuDb.SetPlayed)
+    void RemoveFromUnplayed(DbBeatmap b)
+    {
+        if (!OsuDb.SetPlayed(b)) { Toast.Show(b.UnplayedAt > 0 && b.Unplayed ? "Close osu!stable first: it rewrites osu!.db when it closes." : $"{b.Artist} - {b.Title} isn't in osu!.db as unplayed."); return; }
+        b.Unplayed = false;
+        Toast.Show($"Removed {b.Artist} - {b.Title} from unplayed songs.", Xna.SkyBlue, 3000);
+        ApplyFilter(b);
+    }
+
+    // stable's Clear local scores empties the map's list in its scores.db. The remake's list comes from the replays
+    // themselves, which stay where they are: it leaves out the map's scores up to the newest one at the time
+    // (remake.cfg ClearedScores_<md5>), so later plays show again.
+    void ClearScores(DbBeatmap b)
+    {
+        if (scores.Remove(b.Md5, out var list) && list.Count > 0)
+            Config.SetOwn($"ClearedScores_{b.Md5}", list.Max(r => r.Date.Ticks).ToString(CultureInfo.InvariantCulture));
+        rankedFor = null;
+        Toast.Show($"Cleared all local scores for {b.Artist} - {b.Title}", new Color(50, 205, 50, 255), 3000);
+    }
+
+    static bool Cleared(ReplayInfo r) =>
+        Config.Get($"ClearedScores_{r.BeatmapMd5}", "") is { Length: > 0 } v && long.TryParse(v, CultureInfo.InvariantCulture, out long t) && r.Date.Ticks <= t;
 
     // the music's file stays open while it plays or loads: let go of it before its folder goes (it restarts for the
     // next selection)
