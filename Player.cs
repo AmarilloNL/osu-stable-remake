@@ -621,9 +621,12 @@ sealed partial class Player : Screen
         }
         if (slider is { } so)
         {
-            var tp = map.PointAt(time);
-            int set = so.NormalSet > 0 ? so.NormalSet : tp.SampleSet, addition = so.AdditionSet > 0 ? so.AdditionSet : set;
-            int volume = so.Volume > 0 ? so.Volume : tp.Volume;
+            // stable: the current timing point (5ms on) at its own volume, at least 8; the slider's own sample sets only in
+            // v14+ maps
+            var tp = map.PointAt(time + 5);
+            bool own = map.FormatVersion >= 14;
+            int set = own && so.NormalSet > 0 ? so.NormalSet : tp.SampleSet, addition = own && so.AdditionSet > 0 ? so.AdditionSet : set;
+            int volume = Math.Max(8, tp.Volume);
             bool whistle = (so.HitSound & 2) != 0;
             if (skin.LayeredHitSounds || !whistle) samples.Loop("slide", set, "sliderslide", tp.SampleIndex, volume); else samples.StopLoop("slide");
             if (whistle) samples.Loop("whistle", addition, "sliderwhistle", tp.SampleIndex, volume); else samples.StopLoop("whistle");
