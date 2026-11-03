@@ -1313,6 +1313,9 @@ sealed partial class SongSelect : Screen
     // Header text and match count, rebuilt only when they change.
     (DbBeatmap?, Mods, float) headerFor;
     DbBeatmap? fadeFor; // the map the header last faded in for
+    string statusIcon = "selection-question";
+    int statusKind;
+    bool statusFadesIn;
     double headerFadeAt = double.MinValue;
     string[] header = [];
     // stable's tooltip on the difficulty line: approach time, the 300 / 100 / 50 windows (whole ms less half, as the
@@ -1806,7 +1809,19 @@ sealed partial class SongSelect : Screen
         DrawRatingStatus(w);
         // stable: a new map (not while the random spin runs) restarts the header fade and flashes the screen white,
         // 10% fading out over 500ms
-        if (Selected != fadeFor && !spinning) { fadeFor = Selected; headerFadeAt = Game.NowMs; }
+        if (Selected != fadeFor && !spinning)
+        {
+            fadeFor = Selected;
+            headerFadeAt = Game.NowMs;
+            int was = statusKind;
+            statusKind = Selected?.Status ?? 0;
+            if (statusKind != 1) // (a not submitted map keeps the last icon, fading it out)
+            {
+                string icon = statusKind switch { 4 => "selection-ranked", 5 or 6 => "selection-approved", 7 => "selection-loved", _ => "selection-question" };
+                statusFadesIn = icon != statusIcon || was == 1;
+                statusIcon = icon;
+            }
+        }
         if (Game.NowMs - headerFadeAt < 500) DrawRectangle(0, 0, w, h, ColorAlpha(Color.White, 0.1f * (1 - (float)((Game.NowMs - headerFadeAt) / 500))));
         Snow.Update(this);
         Snow.Draw();
@@ -2066,9 +2081,22 @@ sealed partial class SongSelect : Screen
         {
             // Ranked-status icon (osu!.db status: 4 ranked, 5 approved, 6 qualified, 7 loved).
             // Unknown / not submitted (an install that never went online): stable's question mark, at scale 1 (measured).
-            string status = b.Status switch { 4 => "selection-ranked", 5 or 6 => "selection-approved", 7 => "selection-loved", 2 or 3 => "selection-notranked", _ => "selection-question" };
-            if (status == "selection-question" && Game.Skin.Tex(status) is { } q) q.Draw(new Vector2(12 * u, 12 * u), s, Color.White);
-            else if (Game.Skin.Tex(status) is { } icon) icon.Draw(new Vector2(11 * u, 11 * u), 15 * u / Math.Max(1, icon.Width), Color.White);
+            // stable's icon is one of question / ranked / approved (also qualified) / loved, animated on each new map:
+            // ranked, qualified and loved pop (0.92 -> 1.4 -> 1 over 400ms, In), approved swings in (-0.4 rad and 1.4 -> 1
+            // over 400ms, Out), a not submitted map's icon shrinks to 0.8 and fades out over 500ms, and the others fade
+            // in over 400ms when the icon changed (or was faded out)
+            double st = Game.NowMs - headerFadeAt;
+            float sc = 1, rot = 0, ia = 1;
+            switch (statusKind)
+            {
+                case 4 or 6 or 7: sc = st < 200 ? 0.92f + 0.48f * (float)Easing.Apply(2, st / 200) : 1.4f - 0.4f * (float)Easing.Apply(2, (st - 200) / 200); break;
+                case 5: rot = -0.4f * (1 - (float)Easing.Apply(1, st / 400)); sc = 1.4f - 0.4f * (float)Easing.Apply(1, st / 400); break;
+                case 1: ia = 1 - (float)Math.Clamp(st / 500, 0, 1); sc = 1 - 0.2f * (float)Easing.Apply(1, st / 500); break;
+                default: if (statusFadesIn) ia = (float)Math.Clamp(st / 400, 0, 1); break;
+            }
+            var iconTint = ColorAlpha(Color.White, ia);
+            if (statusIcon == "selection-question" && Game.Skin.Tex(statusIcon) is { } q) q.Draw(new Vector2(12 * u, 12 * u), s * sc, iconTint, rot * 180 / MathF.PI);
+            else if (Game.Skin.Tex(statusIcon) is { } icon) icon.Draw(new Vector2(11 * u, 11 * u), 15 * u / Math.Max(1, icon.Width) * sc, iconTint, rot * 180 / MathF.PI);
             if (headerFor != (b, mods, b.StarsFor(mods))) // the header text only changes with the selection, mods or star rating
             {
                 headerFor = (b, mods, b.StarsFor(mods));
