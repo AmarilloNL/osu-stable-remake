@@ -257,7 +257,8 @@ sealed class Options : Screen
     // Fullscreen follows the display mode in use rather than a stored flag.
     bool On(Item it) => it.Key == "Fullscreen" ? Game.DisplayMode() == "Fullscreen" : it.Key == "Letterboxing" ? Game.Letterboxing : Config.GetBool(it.Key, it.Def != 0);
 
-    string ChoiceValue(Item it) => Config.Get(it.Key, it.DefValue.Length > 0 ? it.DefValue : it.Values is { Length: > 0 } vs ? vs[0] : "");
+    string ChoiceValue(Item it) => Config.Get(it.Key, it.DefValue.Length > 0 ? it.DefValue : it.Values is { Length: > 0 } vs ? vs[0] : "") is var v
+        && it.Key == "FrameSync" && v == "Limit120" ? "Optimal" : v; // stable's enum: Limit120 and Optimal are one value
 
     string NameOf(Item it, int idx) => it.Names != null && idx >= 0 ? it.Names[idx] : it.Values![idx];
 
@@ -287,7 +288,7 @@ sealed class Options : Screen
     {
         Kind.Toggle => On(it) == (d == "1"),
         Kind.Slider => Math.Abs(Value(it) - it.Def) < 1e-6,
-        Kind.Choice => Config.Get(it.Key, d).Equals(d, StringComparison.OrdinalIgnoreCase),
+        Kind.Choice => ChoiceValue(it).Equals(d, StringComparison.OrdinalIgnoreCase),
         _ => Config.Key(it.Key, (KeyboardKey)(int)it.Def) == (KeyboardKey)(int)it.Def,
     };
 
