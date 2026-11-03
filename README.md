@@ -57,7 +57,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Reads stable's `osu!.db` directly, in the background (a 100k-map library is ready in a few seconds)
 - Stable's carousel, search with filters (`stars>5 ar=9 length<120`), sorting and grouping (collections, recently played, artist, difficulty)
 - Mod-adjusted star ratings, preview music, local leaderboard and personal best
-- Beatmap thumbnails on the panels from the ones stable already downloaded (`Datat`), with stable's layout for maps without one
+- Beatmap thumbnails on the panels from the ones stable already downloaded (`Data\bt`), with stable's layout for maps without one
 - Mod select (`F1`) and beatmap options (`F3`) as stable's dialogs, random (`F2`) and rewind (`Shift+F2`), play with Auto (`Ctrl+Enter`) or Cinema (`Ctrl+Shift+Enter`), watch a local score (`Ctrl+1`–`9`)
 </details>
 

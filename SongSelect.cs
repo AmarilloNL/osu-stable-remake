@@ -1786,7 +1786,7 @@ sealed class SongSelect : Screen
 
     static bool OldPanels => Game.Skin.Version < 2.2 && Game.Skin.Own("menu-button-background");
 
-    // stable's song select thumbnails: the set's thumbnail from osu!'s own cache, Datat<set id>.jpg (80x60, or
+    // stable's song select thumbnails: the set's thumbnail from osu!'s own cache, Data\bt\<set id>.jpg (80x60, or
     // <set id>l.jpg at 160x120 when the window is 768+ tall), which stable fills while online; offline it shows what's
     // cached, and so does this. Centre-left 5.2 units into the panel at 1.425x (half that for the large ones), fading
     // in over 400ms once loaded, grey (50) except on the selected set's panels (white), 300ms between the two.
