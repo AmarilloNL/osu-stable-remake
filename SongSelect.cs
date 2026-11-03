@@ -2452,14 +2452,12 @@ sealed partial class SongSelect : Screen
     {
         Toast.Show($"{name} has been moved to Recycle Bin!", Xna.Red, 3000);
         ReleaseMusic();
-        IgnoreSongsUntil = Game.NowMs + 3000;
         Recycle([Path.Combine(Config.SongsDir, b.Folder)]);
         Forget(sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs.ToList() ?? [b]);
     }
 
     void DeleteMaps(List<DbBeatmap> maps)
     {
-        IgnoreSongsUntil = Game.NowMs + 3000;
         Recycle(maps.Select(m => m.FilePath));
         Forget(maps);
     }
@@ -2507,7 +2505,6 @@ sealed partial class SongSelect : Screen
         var folders = maps.Select(m => m.Folder).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (folders.Count == 0) return;
         ReleaseMusic();
-        IgnoreSongsUntil = Game.NowMs + 3000;
         Recycle(folders.Select(f => Path.Combine(Config.SongsDir, f)));
         Forget([.. sets.Where(s => folders.Contains(s.First.Folder)).SelectMany(s => s.Diffs)]);
     }
@@ -2559,9 +2556,11 @@ sealed partial class SongSelect : Screen
     // FOF_SILENT, FOF_NOCONFIRMATION, FOF_NOERRORUI)
     static void Recycle(IEnumerable<string> paths)
     {
+        IgnoreSongsUntil = double.MaxValue; // the watcher: our own deletes aren't news (until 2s after they finish)
         var op = new ShFileOp { Func = 3, From = string.Join("\0", paths.Select(Path.GetFullPath)) + "\0", Flags = 0x40 | 0x4 | 0x10 | 0x400 };
         int r = SHFileOperationW(ref op);
         if (r != 0) Console.Error.WriteLine($"Recycle Bin: error {r:x}");
+        IgnoreSongsUntil = Game.NowMs + 2000;
     }
 
     // stable's mod select: a dialog titled with its blurb, "Score Multiplier" centred 20 units above the content, three
