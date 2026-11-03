@@ -2545,6 +2545,7 @@ sealed partial class SongSelect : Screen
         sets.RemoveAll(x => x.Diffs.Count == 0);
         TotalBeatmaps -= before - sets.Sum(x => x.Diffs.Count);
         ApplyFilter(next);
+        if (keptSelection != null && g.Contains(keptSelection)) keptSelection = null; // (nothing left to show)
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Unicode)]

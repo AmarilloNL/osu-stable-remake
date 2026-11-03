@@ -351,7 +351,8 @@ static class OsuDb
 
     static int ClearFlags(IEnumerable<long> offsets)
     {
-        if (loadedPath == null || System.Diagnostics.Process.GetProcessesByName("osu!").Length > 0) return -1;
+        if (loadedPath == null) return 0; // no osu!.db: nothing to write
+        if (System.Diagnostics.Process.GetProcessesByName("osu!").Length > 0) return -1;
         try
         {
             var info = new FileInfo(loadedPath);
