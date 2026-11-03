@@ -183,7 +183,7 @@ sealed partial class SongSelect : Screen
         }
         // like stable after an import (or a folder copied in): Songs folders its osu!.db doesn't list yet are read too
         var known = new HashSet<string>(all.Select(b => b.Folder), StringComparer.OrdinalIgnoreCase);
-        var fresh = dirs.Keys.Where(d => !known.Contains(d)).Select(d => Path.Combine(Config.SongsDir, d)).ToList();
+        var fresh = dirs.Keys.Where(d => !known.Contains(d) && !d.Equals("Failed", StringComparison.OrdinalIgnoreCase)).Select(d => Path.Combine(Config.SongsDir, d)).ToList();
         var newMaps = new List<DbBeatmap>();
         var toRate = new List<DbBeatmap>();
         var cache = fresh.Count > 0 ? OsuDb.LoadMapCache() : new Dictionary<string, (long Length, long Ticks, DbBeatmap Map)>();
@@ -934,6 +934,7 @@ sealed partial class SongSelect : Screen
         while (songsChanged.TryDequeue(out var path))
         {
             if (Game.NowMs < IgnoreSongsUntil) continue;
+            if (Path.GetRelativePath(Config.SongsDir, path).StartsWith("Failed", StringComparison.OrdinalIgnoreCase)) continue; // broken imports
             string parent = Path.GetDirectoryName(path.TrimEnd(Path.DirectorySeparatorChar)) ?? "";
             string key = parent.Equals(Path.GetFullPath(Config.SongsDir).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase)
                 || path.EndsWith(".osu", StringComparison.OrdinalIgnoreCase) ? path : parent;
