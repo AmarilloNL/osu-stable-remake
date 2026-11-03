@@ -115,6 +115,29 @@ static class Game
         lastAcLine = p.AcLine;
     }
 
+    // stable's "Detect performance issues" (on by default): every 5 minutes, outside a running play, it looks for f.lux and
+    // warns once if it's running
+    static Task<bool>? fluxCheck;
+    static bool fluxFound;
+    static double nextFluxCheck;
+    static void CheckBackgroundApps()
+    {
+        if (fluxFound) return;
+        if (fluxCheck is { IsCompleted: true } done)
+        {
+            fluxCheck = null;
+            if (done.IsCompletedSuccessfully && done.Result)
+            {
+                fluxFound = true;
+                Toast.Show("Detected f.lux running in the background. This may adversely affect osu! performance. Please consider closing it!", new Color(255, 165, 0, 255), 10000);
+                return;
+            }
+        }
+        if (fluxCheck != null || NowMs < nextFluxCheck || !Config.GetBool("DetectPerformanceIssues", true) || Screen is Player { Paused: false }) return;
+        nextFluxCheck = NowMs + 300000;
+        fluxCheck = Task.Run(() => Process.GetProcessesByName("flux").Length > 0);
+    }
+
     // stable's Boss key (Insert): the game goes silent (master volume 0) and out of sight, into a notification-area
     // icon (the first time with a balloon saying so), pausing a play first. Clicking the icon (or starting the game
     // again) brings it back, and the volume with it.
@@ -846,7 +869,7 @@ static class Game
             UpdateBossKey(songSelect);
             if (!testRun) MinimiseOnAltTab();
             KeepAwake();
-            if (!testRun) CheckPower();
+            if (!testRun) { CheckPower(); CheckBackgroundApps(); }
             if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
             if (Input.CtrlHeld && Input.AltHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) ReloadSkinKey();
             // F10 (Disable mouse buttons) is global in stable, notice included (a play handles its own)
