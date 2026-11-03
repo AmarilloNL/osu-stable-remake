@@ -476,7 +476,6 @@ sealed class MainMenu : Screen
         hovered = -1;
     }
 
-    static bool songSelectVisited; // stable's first visit in a session goes through the beatmap import screen
     void Activate(int i)
     {
         string name = Buttons[i].Name;
@@ -485,7 +484,8 @@ sealed class MainMenu : Screen
         switch (name)
         {
             case "play": SetTier(true); break;
-            case "freeplay": Game.FadeTo(!songSelectVisited || SongSelect.SongsPending ? new BeatmapImport(songs, []) : songs); songSelectVisited = true; break;
+            // stable passes through its import screen on the way (unseen behind the fade unless there is work to do)
+            case "freeplay": Game.FadeTo(SongSelect.SongsPending || songs.LibraryLoading ? new BeatmapImport(songs, []) : songs); break;
             case "back": SetTier(false); break;
             case "edit": toast = ("The beatmap editor isn't part of this offline remake.", Game.NowMs); break;
             case "multiplayer": toast = ("Multiplayer isn't part of this offline remake.", Game.NowMs); break;

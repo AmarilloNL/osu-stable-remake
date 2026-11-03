@@ -20,7 +20,7 @@ sealed class BeatmapImport : Screen
     readonly ConcurrentQueue<string> incoming = new();
     readonly List<(string Text, double At)> lines = [];
     bool reloading;
-    readonly bool reload;
+    readonly bool reload, minimum; // minimum: shown at least 300ms (imports and F5)
 
     // full: F5 (stable's full process: the whole library is read again)
     public BeatmapImport(SongSelect songs, IReadOnlyList<string> archives, bool full = false)
@@ -28,9 +28,10 @@ sealed class BeatmapImport : Screen
         this.songs = songs;
         incoming.Enqueue("Checking for new files...");
         var files = archives.ToArray();
-        // stable's first visit to song select in a session (and one after the Songs folder changed) passes through here
-        // too, with nothing to extract: the library is only read again when something changed
+        // stable's way into song select passes through here too, with nothing to extract (the main menu only comes here
+        // when the Songs folder changed or the library is still loading): the library is only read again for a change
         reload = files.Length > 0 || full || SongSelect.SongsPending;
+        minimum = files.Length > 0 || full;
         if (files.Length == 0 && SongSelect.SongsPending) incoming.Enqueue("Loading new files only...");
         else if (files.Length == 0 && full) incoming.Enqueue("Reloading database...");
         work = Task.Run(() => Import(files));
@@ -80,7 +81,7 @@ sealed class BeatmapImport : Screen
         while (incoming.TryDequeue(out var text)) lines.Add((text, Game.NowMs));
         if (!work.IsCompleted) return;
         if (!reloading) { reloading = true; if (reload) songs.Reload(work.Result); return; }
-        if (!songs.LibraryLoading && Game.NowMs - start >= 300) Game.Screen = songs; // shown at least 300ms (stable took about that for one small archive)
+        if (!songs.LibraryLoading && (!minimum || Game.NowMs - start >= 300)) Game.Screen = songs; // shown at least 300ms (stable took about that for one small archive)
     }
 
     public override void Draw()
