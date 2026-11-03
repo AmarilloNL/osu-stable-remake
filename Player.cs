@@ -1378,6 +1378,7 @@ sealed partial class Player : Screen
                 maxCombo = Math.Max(maxCombo, combo);
                 V2Hit(tickScore ? 10 : 30);
                 health.Apply(tickScore ? HpEvent.SliderTick : HpEvent.SliderPoint);
+                if (passed != n && !VirtualClock && PointPops) pointPops.Add((BallOf(o, time), time, tickScore)); // (not the end)
                 if (cp.Kind == CheckpointKind.Tick)
                 {
                     var tp = map.PointAt(cp.Time);
@@ -1668,6 +1669,7 @@ sealed partial class Player : Screen
         }
         DrawPopups(3);
         DrawPopups(4);
+        DrawPointPops(); // stable: depth 1, over everything on the playfield
     }
 
     void DrawOverlays(int w, int h)
@@ -2382,6 +2384,25 @@ sealed partial class Player : Screen
             tex.Draw(ToScreen(pos), CircleScale * sc, ColorAlpha(colour, a));
         }
         EndBlendMode();
+    }
+
+    // stable's slider point popups: only skins of version 1.0 or below (with their own sliderpoint10 / sliderpoint30)
+    // show them, at the slider ball for each tick (10) and repeat (30), not the end: rising 10 units over 300ms (Out),
+    // then fading over 60ms.
+    readonly List<(Vector2 Pos, double At, bool Ten)> pointPops = [];
+    bool PointPops => skin.Version <= 1 && (skin.Own("sliderpoint10") || skin.Own("sliderpoint30"));
+
+    void DrawPointPops()
+    {
+        for (int i = pointPops.Count - 1; i >= 0; i--)
+        {
+            var (pos, at, ten) = pointPops[i];
+            double t = time - at;
+            if (t >= 360 || t < 0) { pointPops.RemoveAt(i); continue; }
+            if (skin.Tex(ten ? "sliderpoint10" : "sliderpoint30") is not { } tex) continue;
+            float a = (1 - (float)Math.Clamp((t - 300) / 60, 0, 1)) * playfieldAlpha;
+            tex.Draw(ToScreen(pos - new Vector2(0, 10 * (float)Easing.Apply(1, t / 300))), scale / 2.25f, ColorAlpha(Color.White, a)); // (judgements' field scale)
+        }
     }
 
     void DrawFollowPoints()
