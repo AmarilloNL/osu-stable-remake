@@ -109,7 +109,7 @@ sealed class MainMenu : Screen
         "Add new beatmaps to osu! by simply dragging the .osz file into the window, double-clicking it in Windows Explorer, or choosing \"open\" when downloading in your browser.",
         "You can efficiently navigate large lists of beatmaps in song select by holding left-mouse to drag the list, or right-mouse to quick-seek.",
         "Press F8/F9 anywhere in game to join osu! chat!",
-        "Right-clicking on a beatmap or clicking the Beatmap Options button in the song select will show a menu that will allow you to manage the beatmap.",
+        "Right clicking on a beatmap or clicking the \"Beatmap Options\" button in the song select will show a menu that will allow you to manage the beatmap.",
         "If your game or mouse feels laggy, try toggling the Framerate Limit in Options or using Fullscreen mode/Letterboxing! It might just help!",
         "For fast combos, try toggling between left and right mouse button, or use keyboard alternative Z/X!",
         "If you can't play videos, take a look at the wiki before posting a bug report!",
