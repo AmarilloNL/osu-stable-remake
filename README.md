@@ -67,6 +67,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Main menu with the beating cookie, audio visualizer, seasonal backgrounds, tips and music controls
 - Ranking screen with stable's layout, HP graph and replay watching
 - Options panel as stable's: all nine sections with dropdowns, buttons, stable's tooltips and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
+- `Ctrl+Alt+Shift+S` reloads the skin from disk like stable's (queued until you're back in the menus during a play or on a ranking screen)
 - Stable's offset wizard (Options → Audio): ticks scroll to the beat of the song that's playing while you set the universal offset
 - Menu snow, kiai star fountains, break stars, combo bursts and kiai beat pulses, ported from stable
 - Volume overlay, stable's FPS / frame time counter and its frame time graph (`Ctrl+F11`: update, draw, present and limiter time per frame, plus garbage collections), notifications

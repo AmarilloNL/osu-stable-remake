@@ -313,6 +313,11 @@ sealed partial class Player : Screen
         Game.Screen = next;
     }
 
+    internal bool AutoPlay => mods.HasFlag(Mods.Autoplay) || mods.HasFlag(Mods.Cinema);
+
+    // a skin reload during Auto: the play starts over, the new skin loaded while the screen is black
+    internal void Restart(Action whileBlack) => Game.FadeTo(() => new Player(map, back, mods, playback, watching), () => { Dispose(); whileBlack(); });
+
     // stable restarts through black too; a quick retry (held key) is black already
     void Retry(bool quick = false)
     {

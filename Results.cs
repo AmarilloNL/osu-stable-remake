@@ -20,7 +20,7 @@ sealed partial class Player
     // stable's ranking screen. Layout is stable's 640x480 coordinate space (x from the left, or from the right
     // edge for the grade/buttons/mods column); skin sprites are sized for 768px height, like everywhere else.
     // Nested in Player so it reads the finished play directly; the Player (and its outro music) is disposed on leave.
-    sealed class Results : Screen
+    internal sealed class Results : Screen
     {
         readonly Player p;
         readonly Skin skin = Game.Skin;

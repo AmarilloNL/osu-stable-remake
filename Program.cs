@@ -20,7 +20,36 @@ abstract class Screen
 static class Game
 {
     static Screen screen = null!;
-    public static Screen Screen { get => screen; set { if (value == screen) return; Previous = screen; screen = value; value.Entered(); } }
+    public static Screen Screen
+    {
+        get => screen;
+        set
+        {
+            if (value == screen) return;
+            Previous = screen;
+            screen = value;
+            if (skinReloadQueued && value is not (Player or Player.Results)) { skinReloadQueued = false; ReloadSkin(); } // (those hold the old skin)
+            value.Entered();
+        }
+    }
+
+    // stable's Ctrl+Alt+Shift+S (for skinners): the skin read from disk again, then the screen entered again through
+    // black with it (an Auto play starts over). On a ranking screen or in a play it's queued until the game is back
+    // in the menus.
+    static bool skinReloadQueued;
+    static void ReloadSkin()
+    {
+        Notification.Show("Skin reloaded!", 2000);
+        Skin.Unload();
+        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+    }
+    static void ReloadSkinKey()
+    {
+        if (Fading) return;
+        if (Screen is Player.Results or Player { AutoPlay: false }) { skinReloadQueued = true; Notification.Show("Skin reload queued.", 2000); }
+        else if (Screen is Player p) p.Restart(ReloadSkin);
+        else FadeTo(Screen, ReloadSkin);
+    }
     public static Screen? Previous; // the screen before the current one
 
     // stable's fading mode change: a black overlay (0-100) rises 8 a 60Hz tick, the screen switches at 100, then it
@@ -675,6 +704,7 @@ static class Game
             }
             UpdateBossKey(songSelect);
             if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.F11)) FrameGraph.Toggle(); // stable: Ctrl+F11, anywhere
+            if (Input.CtrlHeld && Input.AltHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) ReloadSkinKey();
             // F7 (Toggle Framerate Limit): stable's cycle VSync / Power saving -> Optimal -> Unlimited -> Power saving
             if (Input.IsKeyPressed(Config.Key("keyToggleFrameLimiter", KeyboardKey.F7)))
             {
