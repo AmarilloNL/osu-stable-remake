@@ -1554,6 +1554,7 @@ sealed class SongSelect : Screen
         leaveSlide = 110 * U * (float)Easing.Apply(1, Math.Min(1, ms / 800));
         scoreFade = 1 - (float)Math.Min(1, ms / 500);
         int first = Math.Max(0, RowAt(0)), last = Math.Min(RowCount - 1, RowAt(h));
+        UpdateThumbs();
         for (int row = last; row >= first; row--) DrawRow(row, w, h, s);
         Rlgl.PushMatrix();
         Rlgl.Translatef(0, -leaveSlide, 0);
@@ -1656,6 +1657,7 @@ sealed class SongSelect : Screen
         }
 
         int first = Math.Max(0, RowAt(0)), last = Math.Min(RowCount - 1, RowAt(h));
+        UpdateThumbs();
         for (int row = last; row >= first; row--) DrawRow(row, w, h, s);
 
         DrawTopBar(w, s);
@@ -1755,15 +1757,20 @@ sealed class SongSelect : Screen
             : focused ? new Color(255, 103, 214, 240) : SetColour);
         entry |= d < 0 && set.Diffs.Count == 1; // stable: a lone difficulty's panel shows its version and stars even closed
 
-        // stable's panel text (offsets from the panel's left edge and centre line, in 640x480 units): 75 in (room for
-        // the online thumbnail) plus 8, or 25 beside a difficulty's grade icon; title 16 at -16, artist // creator 12
-        // at -4, version 12 (bold) at +7 (one further in), stars at +18. The grade icon sits at 79.
+        // stable's panel text (offsets from the panel's left edge and centre line, in 640x480 units): 75 in when the
+        // panel has a thumbnail slot (else 5) plus 8, or 25 beside a difficulty's grade icon; title 16 at -16, artist //
+        // creator 12 at -4, version 12 (bold) at +7 (one further in), stars at +18. The grade icon sits at slot + 4.
+        // Old skins' own panels (version < 2.2 with their own menu-button-background) take no thumbnail, and their
+        // text sits 10 further right and 3 higher.
         var grade = (d >= 0 || entry) && BestGrade(b) is { } gr ? Game.Skin.Tex(SmallGrade(gr)) : null;
+        bool old = OldPanels, slotted = !old && b.SetId > 0 && Config.GetBool("SongSelectThumbnails", true);
+        float slot = slotted ? 75 : 5, edge = old ? 15 : 5, oy = old ? -3 * u : 0;
+        if (slotted) DrawThumb(b, x, cy, u, s);
         var text = selected ? Game.Skin.SongSelectActiveText : Game.Skin.SongSelectInactiveText;
         // stable centres each line on its offset and its text bitmaps carry padding, so the glyphs sit 1.67 units right
         // of a plain top-left layout and a unit higher; its text also runs ~3% wider than ours at the same height
         // (measured on the default skin at 720p).
-        float tx = x + (grade != null ? 100 : 83) * u, lx = tx + 1.67f * u, dy = -u;
+        float tx = x + (slot + edge + (grade != null ? 20 : 3)) * u, lx = tx + 1.67f * u, dy = oy - u;
         var faded = d >= 0 && !selected && !entry ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
         Game.Text(b.ShownTitle, lx, cy - 16 * u - 8 * u + dy, 16.55f * u, faded); // stable says 16; renders this wide (measured)
         Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.1f * u, faded);
@@ -1771,8 +1778,61 @@ sealed class SongSelect : Screen
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
         if (d >= 0 && RowEntries[si].Set != starsSet) { starsSet = RowEntries[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
         float step = (Game.Skin.Tex("star")?.Width ?? 46) * 0.6f * s;
-        DrawStars(b.StarsFor(mods), tx + step / 2, cy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue);
-        if (grade is { } g) g.Draw(new Vector2(x + 79 * u + g.Width * s / 2, cy), s, Color.White);
+        DrawStars(b.StarsFor(mods), tx + step / 2, cy + oy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue);
+        if (grade is { } g) g.Draw(new Vector2(x + (edge + slot - 1) * u + g.Width * s / 2, cy + oy), s, Color.White);
+    }
+
+    static bool OldPanels => Game.Skin.Version < 2.2 && Game.Skin.Own("menu-button-background");
+
+    // stable's song select thumbnails: the set's thumbnail from osu!'s own cache, Datat<set id>.jpg (80x60, or
+    // <set id>l.jpg at 160x120 when the window is 768+ tall), which stable fills while online; offline it shows what's
+    // cached, and so does this. Centre-left 5.2 units into the panel at 1.425x (half that for the large ones), fading
+    // in over 400ms once loaded, grey (50) except on the selected set's panels (white), 300ms between the two.
+    // Files are decoded off the main thread and textures unloaded once their panel has been out of sight for 5s.
+    readonly Dictionary<int, (Sprite? Tex, double At, double Seen)> thumbs = [];
+    readonly System.Collections.Concurrent.ConcurrentQueue<(int Set, Image Img)> thumbsLoaded = new();
+    double thumbsSweptAt;
+    string? thumbSet, thumbSetBefore;
+    double thumbSetAt = double.NegativeInfinity;
+
+    void DrawThumb(DbBeatmap b, float x, float cy, float u, float s)
+    {
+        double now = Game.NowMs;
+        if (!thumbs.TryGetValue(b.SetId, out var t))
+        {
+            int set = b.SetId;
+            string file = Path.Combine(Config.OsuDir, "Data", "bt", $"{set}{(Game.H >= 768 ? "l" : "")}.jpg");
+            Task.Run(() => { if (File.Exists(file) && LoadImage(file) is { Width: > 0 } img) thumbsLoaded.Enqueue((set, img)); });
+        }
+        thumbs[b.SetId] = t with { Seen = now };
+        if (t.Tex is not { } tex) return;
+        if (Selected?.Folder != thumbSet) (thumbSetBefore, thumbSet, thumbSetAt) = (thumbSet, Selected?.Folder, now);
+        float lit = (float)Math.Clamp((now - thumbSetAt) / 300, 0, 1);
+        lit = b.Folder == thumbSet ? lit : b.Folder == thumbSetBefore ? 1 - lit : 0;
+        byte grey = (byte)(50 + 205 * lit);
+        float scale = 1.425f * s, w = tex.Width * scale;
+        tex.Draw(new Vector2(x + 5.2f * u + w / 2, cy + 0.25f * u), scale, new Color(grey, grey, grey, (byte)(255 * Math.Clamp((now - t.At) / 400, 0, 1))));
+    }
+
+    // once a frame: textures for decoded thumbnails, and the ones not drawn for 5s unloaded
+    void UpdateThumbs()
+    {
+        double now = Game.NowMs;
+        while (thumbsLoaded.TryDequeue(out var l))
+        {
+            if (!thumbs.TryGetValue(l.Set, out var t)) { UnloadImage(l.Img); continue; } // swept meanwhile
+            var tex = LoadTextureFromImage(l.Img);
+            UnloadImage(l.Img);
+            SetTextureFilter(tex, TextureFilter.Bilinear);
+            thumbs[l.Set] = t with { Tex = new Sprite(tex, Game.H >= 768 ? 0.5f : 1), At = now };
+        }
+        if (now - thumbsSweptAt < 1000) return;
+        thumbsSweptAt = now;
+        foreach (var (set, t) in thumbs.Where(kv => now - kv.Value.Seen > 5000).ToList())
+        {
+            if (t.Tex is { } sp) UnloadTexture(sp.Tex);
+            thumbs.Remove(set);
+        }
     }
 
     // stable's star row: ten faint stars (alpha 30) under the filled ones, the last filled one scaled by the
