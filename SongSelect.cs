@@ -1780,7 +1780,7 @@ sealed class SongSelect : Screen
         Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
         if (d >= 0 && RowEntries[si].Set != starsSet) { starsSet = RowEntries[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
         float step = (Game.Skin.Tex("star")?.Width ?? 46) * 0.6f * s;
-        DrawStars(b.StarsFor(mods), tx + step / 2, cy + oy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue);
+        DrawStars(b.StarsFor(mods), tx + step / 2, cy + oy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue, old);
         if (grade is { } g) g.Draw(new Vector2(x + (edge + slot - 1) * u + g.Width * s / 2, cy + oy), s, Color.White);
     }
 
@@ -1842,7 +1842,7 @@ sealed class SongSelect : Screen
     BeatmapSet? starsSet;
     double starsAt;
 
-    static void DrawStars(float stars, float x, float y, float u, Color tint, double age = double.MaxValue)
+    static void DrawStars(float stars, float x, float y, float u, Color tint, double age = double.MaxValue, bool oldPanels = false)
     {
         if (stars <= 0 || stars > 100) return;
         // stable: spaced by 0.6 of the sprite's width; the faint row at 0.6 x 0.35, white, additive, alpha 30;
@@ -1858,7 +1858,7 @@ sealed class SongSelect : Screen
             if (star is { } sp)
             {
                 BeginBlendMode(BlendMode.Additive);
-                sp.Draw(c, 0.21f * sd, new Color(255, 255, 255, 30)); // white on every panel (measured)
+                sp.Draw(c, (oldPanels ? 0.6f : 0.21f) * sd, new Color(255, 255, 255, 30)); // white on every panel (measured); old skins' panels keep them at 0.6
                 EndBlendMode();
                 if (filled > 0) sp.Draw(c, filled * sd, tint);
             }
