@@ -305,6 +305,8 @@ sealed partial class Player : Screen
         UnloadRenderTexture(sliderRt);
         foreach (var (mesh, _) in bodyMeshes.Values) UnloadMesh(mesh);
         bodyMeshes.Clear();
+        foreach (var rt in bodyCache.Values) UnloadRenderTexture(rt);
+        bodyCache.Clear();
         if (sliderGradient.Id != 0) UnloadTexture(sliderGradient);
         samples.Unload();
     }
@@ -1619,7 +1621,7 @@ sealed partial class Player : Screen
 
         visible.Clear();
         for (int i = firstActive; i < objs.Count && objs[i].Time - map.Preempt <= time; i++) visible.Add(i);
-        if (bodyMeshes.Count > 0) SweepBodyMeshes();
+        if (bodyMeshes.Count > 0 || bodyCache.Count > 0) SweepBodyMeshes();
 
         float sbDim = 1 - bgDim / 100f;
         bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
@@ -2120,18 +2122,39 @@ sealed partial class Player : Screen
             Vector2 a = ToScreen(lo) - new Vector2(pad), b = ToScreen(hi) + new Vector2(pad);
             int x0 = Math.Max(0, (int)MathF.Floor(a.X)), y0 = Math.Max(0, (int)MathF.Floor(a.Y));
             int x1 = Math.Min(tex.Width, (int)MathF.Ceiling(b.X)), y1 = Math.Min(tex.Height, (int)MathF.Ceiling(b.Y));
-            if (x1 > x0 && y1 > y0)
+            var tint = ColorAlpha(Shade(Color.White, lit), alpha);
+            if (count >= bodies[i].Length && bodyCache.TryGetValue(i, out var cached))
+                DrawTextureRec(cached.Texture, new Rectangle(0, 0, cached.Texture.Width, -cached.Texture.Height), new Vector2(x0, y0), tint);
+            else if (x1 > x0 && y1 > y0)
             {
                 if (Falling) Rlgl.PopMatrix();
-                BeginTextureMode(sliderRt);
-                BeginScissorMode(x0, y0, x1 - x0, y1 - y0);
-                ClearBackground(Color.Blank);
-                EndScissorMode();
-                DrawBody(i, count, SliderGradient(skin.SliderBorder, track));
-                Game.EndTexture();
-                if (Falling) PushFall(i);
-                // (a render texture is stored bottom-up: rows counted from its bottom, drawn flipped)
-                DrawTextureRec(tex, new Rectangle(x0, tex.Height - y1, x1 - x0, -(y1 - y0)), new Vector2(x0, y0), ColorAlpha(Shade(Color.White, lit), alpha));
+                if (count >= bodies[i].Length)
+                {
+                    // a finished body doesn't change: drawn once into its own texture (its box) and reused from now on
+                    var rt = LoadRenderTexture(x1 - x0, y1 - y0);
+                    BeginTextureMode(rt);
+                    ClearBackground(Color.Blank);
+                    Rlgl.PushMatrix();
+                    Rlgl.Translatef(-x0, -y0, 0);
+                    DrawBody(i, count, SliderGradient(skin.SliderBorder, track));
+                    Rlgl.PopMatrix();
+                    Game.EndTexture();
+                    bodyCache[i] = rt;
+                    if (Falling) PushFall(i);
+                    DrawTextureRec(rt.Texture, new Rectangle(0, 0, rt.Texture.Width, -rt.Texture.Height), new Vector2(x0, y0), tint);
+                }
+                else
+                {
+                    BeginTextureMode(sliderRt);
+                    BeginScissorMode(x0, y0, x1 - x0, y1 - y0);
+                    ClearBackground(Color.Blank);
+                    EndScissorMode();
+                    DrawBody(i, count, SliderGradient(skin.SliderBorder, track));
+                    Game.EndTexture();
+                    if (Falling) PushFall(i);
+                    // (a render texture is stored bottom-up: rows counted from its bottom, drawn flipped)
+                    DrawTextureRec(tex, new Rectangle(x0, tex.Height - y1, x1 - x0, -(y1 - y0)), new Vector2(x0, y0), tint);
+                }
             }
         }
 
@@ -2346,6 +2369,7 @@ sealed partial class Player : Screen
     // vertices per body every frame was most of a dense map's CPU time); snaking draws the first part (Ends[k] = vertices
     // through point k).
     readonly Dictionary<int, (Mesh Mesh, int[] Ends)> bodyMeshes = [];
+    readonly Dictionary<int, RenderTexture2D> bodyCache = []; // finished bodies, drawn once (see DrawSlider)
     static Material bodyMaterial;
     static bool bodyMaterialReady;
 
@@ -2414,6 +2438,9 @@ sealed partial class Player : Screen
     {
         foreach (var k in bodyMeshes.Keys) if (k < firstActive) bodyMeshesDone.Add(k);
         foreach (var k in bodyMeshesDone) { UnloadMesh(bodyMeshes[k].Mesh); bodyMeshes.Remove(k); }
+        bodyMeshesDone.Clear();
+        foreach (var k in bodyCache.Keys) if (k < firstActive) bodyMeshesDone.Add(k);
+        foreach (var k in bodyMeshesDone) { UnloadRenderTexture(bodyCache[k]); bodyCache.Remove(k); }
         bodyMeshesDone.Clear();
     }
 
