@@ -980,7 +980,12 @@ sealed partial class SongSelect : Screen
             Game.PreloadGlyphs(sets.SelectMany(s => s.Diffs).SelectMany(d => new[] { d.Title, d.TitleUnicode, d.Artist, d.ArtistUnicode, d.Version, d.Creator, d.Source }));
             // like stable's background difficulty calculation: new maps' stars fill in while the list is already up
             // (on a low-priority thread: thousands of new maps can take minutes, and a play shouldn't stutter meanwhile)
-            if (unrated.Count > 0) { var todo = unrated; unrated = []; var keep = cacheEntries; rating = RunLowPriority(() => { var sw = Stopwatch.StartNew(); foreach (var b in todo) RateStars(b); rankedFor = null; OsuDb.SaveMapCache(keep); Console.Error.WriteLine($"star ratings for {todo.Count} new maps in {sw.Elapsed.TotalSeconds:0.0}s"); }); }
+            if (unrated.Count > 0)
+            {
+                ratingTotal = ratingLeft = unrated.Count;
+                if (unrated.Count > 50 && !ratingNoticed) { ratingNoticed = true; Toast.Show("Beatmap difficulty calculation is running in the background. Performance at song select may be lower than usual."); }
+            }
+            if (unrated.Count > 0) { var todo = unrated; unrated = []; var keep = cacheEntries; rating = RunLowPriority(() => { var sw = Stopwatch.StartNew(); foreach (var b in todo) { RateStars(b); Interlocked.Decrement(ref ratingLeft); } rankedFor = null; OsuDb.SaveMapCache(keep); Console.Error.WriteLine($"star ratings for {todo.Count} new maps in {sw.Elapsed.TotalSeconds:0.0}s"); }); }
             ApplyFilter(again);
             if (reselect == null && filter.Length == 0 && view.Count > 0)
             {
@@ -993,7 +998,13 @@ sealed partial class SongSelect : Screen
             reselect = null;
         }
         // the new maps' star ratings are in: re-sort (by difficulty they all sat at 0 stars), keeping the selection
-        if (rating is { IsCompleted: true }) { rating = null; ApplyFilter(); }
+        if (rating is { IsCompleted: true })
+        {
+            rating = null;
+            ratingLeft = 0;
+            ApplyFilter();
+            if (ratingNoticed) { ratingNoticed = false; Toast.Show("Background difficulty calculation finished.", YellowGreen, 4000); }
+        }
         PollScores();
         UpdatePreview(menu);
         UpdateTiming();
@@ -1728,6 +1739,19 @@ sealed partial class SongSelect : Screen
     // stable's panel colours: other sets pink, the open set's difficulties blue, the selected one white.
     static readonly Color SetColour = new(235, 73, 153, 240), DiffColour = new(0, 150, 236, 240), SelectedColour = new(255, 255, 255, 240);
 
+    // stable's background difficulty calculation: a notice once more than 50 maps wait (and one when they're done), and
+    // the progress at song select's top right (size 12, right-aligned 5 units in, 1 above the top)
+    static int ratingLeft, ratingTotal;
+    static bool ratingNoticed;
+    static void DrawRatingStatus(int w)
+    {
+        int left = Volatile.Read(ref ratingLeft);
+        if (left <= 0) return;
+        string text = left == ratingTotal ? "Difficulty calculation in progress..." : $"Difficulty calculation in progress ({left} beatmaps remaining)";
+        float size = 12.4f * U;
+        Game.Text(text, w - 5 * U - Game.TextWidth(text, size), -U, size, Color.White);
+    }
+
     public override void Draw()
     {
         int w = Game.W, h = Game.H;
@@ -1750,6 +1774,7 @@ sealed partial class SongSelect : Screen
         DrawTopBar(w, s);
         DrawScores(w, h, s); // over the top bar: stable's ranking box overlaps its lower edge
         DrawBottomBar(w, h, s);
+        DrawRatingStatus(w);
         Snow.Update(this);
         Snow.Draw();
         if (webTip && !modSelect && dialog == null) Options.DrawScreenTooltip("Quick web access for this beatmap", Input.GetMousePosition());
