@@ -263,12 +263,12 @@ sealed partial class Player
     void TaikoBigBonus(TNote n)
     {
         if (n.Result == 300) nGeki++; else nKatu++;
-        TaikoScore(n.Result == 300 ? 300 : 150);
+        TaikoScore(n.Result == 300 ? 300 : 150, comboOffset: -1); // stable: the second hand's bonus counts one combo less
         tLastJudge = (n.Result, true, Game.NowMs);
     }
 
     // stable: the hit's value plus (value / 35 x 2 x (difficulty + 1) x mod multiplier) for every 10 combo (up to 100)
-    void TaikoScore(int value) => score += value + (int)((double)(value / 35 * 2 * (diffMul + 1)) * modMul) * (Math.Min(100, combo) / 10);
+    void TaikoScore(int value, int comboOffset = 0) => score += value + (int)((double)(value / 35 * 2 * (diffMul + 1)) * modMul) * (Math.Min(100, combo + comboOffset) / 10);
 
     void TaikoDraw(int w, int h)
     {

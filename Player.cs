@@ -371,9 +371,13 @@ sealed partial class Player : Screen
 
     public override void CloseRequested() => Leave(back); // stable: back to song select
 
+    // the editor's test play: back to the editor instead of song select (and no ranking screen, no score or replay kept)
+    internal Screen? ReturnTo;
+
     void Leave(Screen next)
     {
-        if (next == back && !VirtualClock) { Game.FadeTo(back, Dispose); return; } // stable goes back through black
+        if (next == back && ReturnTo != null) next = ReturnTo;
+        if ((next == back || next == ReturnTo) && !VirtualClock) { Game.FadeTo(next, Dispose); return; } // stable goes back through black
         Dispose();
         Game.Screen = next;
     }
@@ -389,8 +393,8 @@ sealed partial class Player : Screen
     void Retry(bool quick = false)
     {
         retrying = true;
-        if (VirtualClock) { Leave(new Player(map, back, mods, playback, watching) { Retried = true }); return; }
-        Game.FadeTo(() => new Player(map, back, mods, playback, watching) { Retried = true }, Dispose, quick);
+        if (VirtualClock) { Leave(new Player(map, back, mods, playback, watching) { Retried = true, ReturnTo = ReturnTo }); return; }
+        Game.FadeTo(() => new Player(map, back, mods, playback, watching) { Retried = true, ReturnTo = ReturnTo }, Dispose, quick);
     }
 
     void Fail()
@@ -828,7 +832,7 @@ sealed partial class Player : Screen
 
         if (UpdateStartHold(dtMs)) return;
         // The results screen takes over (and disposes us later), so the outro keeps playing like stable.
-        if (finished && cinema) { Leave(back); return; } // stable: Cinema ends at song select
+        if (finished && (cinema || ReturnTo != null)) { Leave(back); return; } // stable: Cinema ends at song select (a test play in the editor)
         if (finished) // stable goes to the ranking screen through black too
         {
             if (VirtualClock) Game.Screen = new Results(this);
@@ -1158,7 +1162,7 @@ sealed partial class Player : Screen
 
     void SaveReplay()
     {
-        if (auto || playback != null || recording.Count == 0 || mode != 0) return;
+        if (auto || playback != null || recording.Count == 0 || mode != 0 || ReturnTo != null) return;
         try
         {
             savedReplay = Replays.Save(CurrentInfo(), recording);

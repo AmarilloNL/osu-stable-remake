@@ -779,6 +779,7 @@ static class Game
         else Screen = Arg("--play") is { } play ? new Player(LoadForPlay(play, testMods), songSelect, testMods)
             : Arg("--search") != null ? songSelect : new MainMenu(songSelect, open: args.Contains("--menu-open"), play: args.Contains("--menu-play"));
         if (args.Contains("--options") || Arg("--options-at") != null) Screen = new Options(Screen, songSelect, Arg("--options-at")); // test hooks
+        if (Arg("--edit") is { } edit) Screen = new Editor(edit, songSelect); // test hook: the editor on a map
         // --play's map in a mode (--mode 0-3; an osu! map converts)
         Beatmap LoadForPlay(string file, Mods m)
         {

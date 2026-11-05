@@ -885,9 +885,22 @@ sealed partial class SongSelect : Screen
         Play(mods, pick);
     }
 
+    // the editor: from the main menu's Edit (song select picks the map) or the beatmap options
+    internal bool EditMode;
+    void OpenEditor(DbBeatmap b)
+    {
+        Editor ed;
+        try { ed = new Editor(b.FilePath, this); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notification.Show($"Couldn't open the beatmap: {e.Message}", 3000); return; }
+        Game.Skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
+        StopPreview();
+        Game.FadeTo(ed);
+    }
+
     void Play(Mods mods, DbBeatmap? only = null)
     {
         if ((only ?? Selected) is not { } b) return;
+        if (EditMode && only == null) { OpenEditor(b); return; }
         // stable, however the play starts (Enter, the panel, the logo): Ctrl held makes it an Auto play and Ctrl+Shift
         // a Cinema one, for this play only (the selected mods stay as they are)
         if (Input.CtrlHeld) mods = mods & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay | (Input.ShiftHeld ? Mods.Cinema : Mods.None);
@@ -2557,7 +2570,7 @@ sealed partial class SongSelect : Screen
             ("Delete...", OrangeRed, () => OpenDelete(b)),
             ("Remove from Unplayed", OptionsPurple, () => RemoveFromUnplayed(b)),
             ("Clear local scores", OptionsPurple, () => OpenDialog("Are you sure you want to delete all local scores on this beatmap?", ("Let's do it!", YellowGreen, () => ClearScores(b)), ("Cancel", OrangeRed, null))),
-            ("Edit", OrangeRed, () => Notification.Show("The beatmap editor isn't part of this offline remake.", 3000)),
+            ("Edit", OrangeRed, () => OpenEditor(b)),
             ("Cancel", Xna.Gray, null));
     }
 

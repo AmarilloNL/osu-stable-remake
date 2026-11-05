@@ -161,11 +161,11 @@ sealed class Beatmap
     static double Diff(string s) => Math.Min(10f, Math.Max(0f, float.Parse(s.Trim(), Inv)));
     static int I(string s) => (int)double.Parse(s.Trim(), Inv);
 
-    public static Beatmap Load(string path, bool metadataOnly = false, Mods mods = Mods.None)
+    public static Beatmap Load(string path, bool metadataOnly = false, Mods mods = Mods.None, IEnumerable<string>? lines = null) // lines: the file's text as it stands (the editor's)
     {
         var map = new Beatmap { Folder = System.IO.Path.GetDirectoryName(path)!, File = path, flipY = mods.HasFlag(Mods.HardRock) };
         string section = "";
-        foreach (var raw in System.IO.File.ReadLines(path))
+        foreach (var raw in lines ?? System.IO.File.ReadLines(path))
         {
             var line = raw.Trim();
             if (line.Length == 0 || line.StartsWith("//")) continue;

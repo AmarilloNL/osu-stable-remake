@@ -485,9 +485,9 @@ sealed class MainMenu : Screen
         {
             case "play": SetTier(true); break;
             // stable passes through its import screen on the way (unseen behind the fade unless there is work to do)
-            case "freeplay": Game.FadeTo(SongSelect.SongsPending || songs.LibraryLoading ? new BeatmapImport(songs, []) : songs); break;
+            case "freeplay": songs.EditMode = false; Game.FadeTo(SongSelect.SongsPending || songs.LibraryLoading ? new BeatmapImport(songs, []) : songs); break;
             case "back": SetTier(false); break;
-            case "edit": toast = ("The beatmap editor isn't part of this offline remake.", Game.NowMs); break;
+            case "edit": songs.EditMode = true; Game.FadeTo(SongSelect.SongsPending || songs.LibraryLoading ? new BeatmapImport(songs, []) : songs); break; // stable: song select picks the map to edit
             case "multiplayer": toast = ("Multiplayer isn't part of this offline remake.", Game.NowMs); break;
             case "options": Game.Screen = new Options(this, songs); break;
             case "exit": Farewell(); break;
