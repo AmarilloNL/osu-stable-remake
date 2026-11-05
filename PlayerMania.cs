@@ -56,21 +56,33 @@ sealed partial class Player
     static readonly KeyboardKey[] DefaultKeyRow = [KeyboardKey.A, KeyboardKey.S, KeyboardKey.D, KeyboardKey.F, KeyboardKey.Space, KeyboardKey.J,
         KeyboardKey.K, KeyboardKey.L, KeyboardKey.Semicolon, KeyboardKey.Q, KeyboardKey.W, KeyboardKey.E, KeyboardKey.R, KeyboardKey.RightAlt,
         KeyboardKey.U, KeyboardKey.I, KeyboardKey.O, KeyboardKey.P];
+    // (a skin's SpecialStyle: that stage's special column on Shift - left Shift on the first stage, right on the second)
     static KeyboardKey[] DefaultKeys(int keys, bool split)
     {
         var result = new List<KeyboardKey>();
+        int style = SpecialStyle(keys);
         int[] stages = split && keys > 1 ? [(keys + 1) / 2, keys / 2] : [keys];
         for (int s = 0; s < stages.Length; s++)
         {
-            int n = stages[s], middle = s == 0 ? 4 : 13, at = Math.Max(0, middle - n / 2);
+            int special = SpecialColumn(stages[s], s, style), n = special >= 0 ? stages[s] - 1 : stages[s];
+            int middle = s == 0 ? 4 : 13, at = Math.Max(0, middle - n / 2);
+            var stage = new List<KeyboardKey>();
             for (int i = 0; i < n; i++)
             {
                 if (n % 2 == 0 && n < 10 && at is 4 or 13) at++;
-                result.Add(at < DefaultKeyRow.Length ? DefaultKeyRow[at++] : KeyboardKey.Null);
+                stage.Add(at < DefaultKeyRow.Length ? DefaultKeyRow[at++] : KeyboardKey.Null);
             }
+            if (special >= 0) stage.Insert(special, s == 0 ? KeyboardKey.LeftShift : KeyboardKey.RightShift);
+            result.AddRange(stage);
         }
         return [.. result];
     }
+    // the skin's [Mania] SpecialStyle for a key count: 1 left, 2 right (0 none)
+    internal static int SpecialStyle(int keys) =>
+        Game.Skin.Mania.TryGetValue(keys, out var cfg) && cfg.TryGetValue("SpecialStyle", out var st) ? st.Trim() switch { "1" or "Left" => 1, "2" or "Right" => 2, _ => 0 } : 0;
+    // a stage's special column under that style (-1: none): only stages of an even count over 4; stable mirrors the
+    // style on the second stage
+    static int SpecialColumn(int n, int stage, int style) => style == 0 || n <= 4 || n % 2 == 1 ? -1 : (style == 1) == (stage == 0) ? 0 : n - 1;
     // stable splits 10 keys and more (and any Key Coop play) into two stages, unless the skin says otherwise
     internal static bool SplitStages(int keys, bool coop) =>
         keys > 1 && (Game.Skin.Mania.TryGetValue(keys, out var cfg) && cfg.TryGetValue("SplitStages", out var ss) && ss.Trim().Length > 0 ? ss.Trim() == "1" : keys >= 10 || coop);
@@ -673,12 +685,19 @@ sealed partial class Player
     // a column's kind (1, 2 or S, the middle one), stage by stage
     internal static string ManiaColumnKind(int c, int keys, bool? split = null)
     {
+        int style = SpecialStyle(keys);
         if (split ?? SplitStages(keys, false))
         {
             int half = (keys + 1) / 2;
-            return c < half ? ManiaColumnKind(c, half, false) : ManiaColumnKind(c - half, keys - half, false);
+            return c < half ? StageColumnKind(c, half, 0, style) : StageColumnKind(c - half, keys - half, 1, style);
         }
-        if (keys % 2 == 1 && c == keys / 2) return "S";
-        return Math.Min(c, keys - 1 - c) % 2 == 0 ? "1" : "2";
+        return StageColumnKind(c, keys, 0, style);
+    }
+    static string StageColumnKind(int c, int n, int stage, int style)
+    {
+        int special = SpecialColumn(n, stage, style);
+        if (special >= 0) return c == special ? "S" : (special == 0 ? c % 2 == 0 : c % 2 == 1) ? "2" : "1"; // (the special column's side: the rest alternate from it)
+        if (n % 2 == 1 && c == n / 2) return "S";
+        return Math.Min(c, n - 1 - c) % 2 == 0 ? "1" : "2";
     }
 }
