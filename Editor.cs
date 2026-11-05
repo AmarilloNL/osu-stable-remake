@@ -309,7 +309,7 @@ sealed partial class Editor : Screen
 
     // View → Stacking (the options' too): stable's stacking as in a play - objects at (almost) one spot within
     // StackLeniency x preempt pushed up-left by a tenth of the radius per level
-    bool stacking = Config.GetBool("EditorStacking", true);
+    bool stacking = Config.GetBool("EditorStacking", true), snakingSliders = Config.GetBool("EditorSnakingSliders", true);
     static Vector2 PosOf(EObj o) => new((float)o.X, (float)o.Y);
     static Vector2 EndPosOf(EObj o) => o.Slider && o.Path.Length > 0 ? (o.Slides % 2 == 1 ? o.Path[^1] : o.Path[0]) : PosOf(o);
     Vector2 StackShift(EObj o) { float off = o.Stack * (Radius * 1.00041f / 10f); return new(-off, -off); }
@@ -1462,6 +1462,7 @@ sealed partial class Editor : Screen
             new("Song Setup...", "F4", () => SetTab(2), tab == 2), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
             new("Grid Level", Sub: [.. new[] { ("1 (Most sparse)", 32), ("2", 16), ("3", 8), ("4 (Most precise)", 4) }.Select(g => new MenuItem(g.Item1, "", () => gridSize = g.Item2, gridSize == g.Item2))]),
             new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => Config.SetOwn("EditorFollowPoints", (followPoints = !followPoints) ? "1" : "0"), followPoints),
+            new("Snaking sliders", "", () => Config.SetOwn("EditorSnakingSliders", (snakingSliders = !snakingSliders) ? "1" : "0"), snakingSliders),
             new("Stacking", "", () => { Config.SetOwn("EditorStacking", (stacking = !stacking) ? "1" : "0"); Rebuild(); }, stacking)],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
@@ -2229,27 +2230,35 @@ sealed partial class Editor : Screen
             }
             if (o.Slider && o.Path.Length > 1)
             {
-                // the body: a border-coloured tube with the combo colour inside
+                // the body: a border-coloured tube with the combo colour inside (View → Snaking sliders: growing from the
+                // head over the first third of the approach, as in a play; its end circles once it's all there)
+                float snake = snakingSliders ? (float)Math.Clamp((time - (o.Time - pre)) / (pre / 3), 0, 1) : 1;
+                float limit = float.MaxValue;
+                if (snake < 1) { limit = 0; for (int i = 1; i < o.Path.Length; i++) limit += Vector2.Distance(o.Path[i - 1], o.Path[i]); limit *= snake; }
                 float step = Math.Max(1, radius / 6);
                 var border = ColorAlpha(Color.White, alpha);
                 var inner = ColorAlpha(new Color(col.R / 3, col.G / 3, col.B / 3, 255), alpha);
                 foreach (var pass in new[] { (radius, border), (radius * 0.86f, inner) })
                 {
                     // along each segment of the path (a straight one is only its two ends)
-                    float carry = 0;
-                    for (int i = 1; i < o.Path.Length; i++)
+                    float carry = 0, walked = 0;
+                    for (int i = 1; i < o.Path.Length && walked < limit; i++)
                     {
                         Vector2 a = o.Path[i - 1], b = o.Path[i];
                         float d = Vector2.Distance(a, b), t = carry;
-                        for (; t < d; t += step) { var pt = Vector2.Lerp(a, b, t / d); DrawCircleV(ToScreen(pt.X, pt.Y), pass.Item1 * fs, pass.Item2); }
+                        for (; t < d && walked + t <= limit; t += step) { var pt = Vector2.Lerp(a, b, t / d); DrawCircleV(ToScreen(pt.X, pt.Y), pass.Item1 * fs, pass.Item2); }
                         carry = t - d;
+                        walked += d;
                     }
-                    var end = o.Path[^1];
+                    var end = snake < 1 ? PathAt(o.Path, snake) : o.Path[^1];
                     DrawCircleV(ToScreen(end.X, end.Y), pass.Item1 * fs, pass.Item2);
                 }
-                var tail = o.Slides % 2 == 1 ? o.Path[^1] : o.Path[0];
-                DrawHitCircle(tail, 0, col, alpha, cs, selected.Contains(o), number: false);
-                if (o.Slides > 1) skin.Tex("reversearrow")?.Draw(ToScreen(o.Path[^1].X, o.Path[^1].Y), cs, ColorAlpha(Color.White, alpha));
+                if (snake >= 1)
+                {
+                    var tail = o.Slides % 2 == 1 ? o.Path[^1] : o.Path[0];
+                    DrawHitCircle(tail, 0, col, alpha, cs, selected.Contains(o), number: false);
+                    if (o.Slides > 1) skin.Tex("reversearrow")?.Draw(ToScreen(o.Path[^1].X, o.Path[^1].Y), cs, ColorAlpha(Color.White, alpha));
+                }
                 // the ball while it runs
                 if (time >= o.Time && time <= o.End)
                 {
