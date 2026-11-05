@@ -56,7 +56,7 @@ static class VolumeControl
         float raw = Input.GetMouseWheelMove();
         Wheel = raw;
         var player = Game.Screen as Player;
-        bool alt = Input.AltHeld;
+        bool alt = Input.AltHeld && Game.Screen is not Editor { TakesAltWheel: true }; // (stable's editor: Alt+wheel is its distance spacing)
         bool hoverable = player is not { Playing: true };
 
         foreach (var m in Meters)

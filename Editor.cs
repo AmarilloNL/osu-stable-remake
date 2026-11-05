@@ -76,6 +76,7 @@ sealed partial class Editor : Screen
     int mode; // the map's (General: Mode)
     int divisor = 4;
     static readonly int[] Divisors = [1, 2, 3, 4, 6, 8, 12, 16];
+    internal bool TakesAltWheel => tab == 0; // (Compose: Alt+wheel changes the distance spacing, not the volume)
     int gridSize = 32;
     bool gridSnap = true;
     float zoom = 1; // timeline: 1 = a beat 50 units wide
@@ -484,9 +485,16 @@ sealed partial class Editor : Screen
         float wheel = Input.GetMouseWheelMove();
         if (wheel != 0)
         {
-            if (Input.CtrlHeld) zoom = Math.Clamp(zoom * (wheel > 0 ? 1.25f : 0.8f), 0.1f, 8);
-            else if (Input.AltHeld) divisor = Divisors[Math.Clamp(Array.IndexOf(Divisors, divisor) + (wheel > 0 ? 1 : -1), 0, Divisors.Length - 1)];
-            else Seek(StepTime(time, wheel > 0 ? -1 : 1));
+            // stable's: Ctrl doubles / halves the beat snap divisor, Alt changes the distance spacing (0.1, Shift 0.01), Shift
+            // steps 4 snaps; (Ctrl+Shift zooms the timeline: stable's wheel doesn't)
+            if (Input.CtrlHeld && Input.ShiftHeld) zoom = Math.Clamp(zoom * (wheel > 0 ? 1.25f : 0.8f), 0.1f, 8);
+            else if (Input.CtrlHeld) divisor = wheel > 0 ? Math.Min(16, divisor * 2) : Math.Max(1, divisor / 2);
+            else if (Input.AltHeld) // (outside Compose the volume takes it)
+            {
+                if (TakesAltWheel)
+                    SetKv("Editor", "DistanceSpacing", Math.Clamp(Math.Round(DistanceSpacing + (wheel > 0 ? 1 : -1) * (Input.ShiftHeld ? 0.01 : 0.1), 2), 0.1, 6).ToString(Inv));
+            }
+            else for (int k = 0; k < (Input.ShiftHeld ? 4 : 1); k++) Seek(StepTime(time, wheel > 0 ? -1 : 1));
         }
 
         // the top tabs, the bottom bar
@@ -2013,10 +2021,12 @@ sealed partial class Editor : Screen
         // the current time
         DrawRectangle((int)(r.X + r.Width / 2), (int)r.Y, Math.Max(2, (int)(2 * u)), (int)r.Height, new Color(255, 255, 255, 230));
         // the beat snap divisor
-        string snap = $"1/{divisor}";
-        Game.TextBold("Beat snap", r.X + r.Width + 6 * u, r.Y, 11 * u, Color.White);
+        // (stable's: with Alt held it shows the distance spacing instead)
+        bool spacingShown = Input.AltHeld;
+        string snap = spacingShown ? $"{DistanceSpacing.ToString("0.0#", Inv)}x" : $"1/{divisor}";
+        Game.TextBold(spacingShown ? "Distance Spacing:" : "Beat Snap Divisor:", r.X + r.Width + 6 * u, r.Y + 1 * u, 9 * u, Color.White);
         Game.TextBold(snap, r.X + r.Width + 6 * u, r.Y + 14 * u, 20 * u, Color.White);
-        Game.Text("Alt+wheel", r.X + r.Width + 6 * u, r.Y + 34 * u, 9 * u, Color.Gray);
+        Game.Text(spacingShown ? "Alt+wheel" : "Ctrl+wheel", r.X + r.Width + 6 * u, r.Y + 34 * u, 9 * u, Color.Gray);
     }
 
     static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
