@@ -31,6 +31,9 @@ sealed class Skin
         new(255, 192, 0, 255), new(0, 202, 0, 255), new(18, 124, 255, 255), new(242, 24, 57, 255),
     ];
     public Color SliderBorder = Color.White;
+    // [CatchTheBeat]: the hyperdashing catcher's tint, and its fruits' and after-images' (those two default to it)
+    public Color HyperDash = new(255, 0, 0, 255);
+    public Color? HyperDashFruit, HyperDashAfterImage;
     public Color StarBreakAdditive = new(255, 182, 193, 255);
     public Color? SliderTrackOverride;
     public string HitCirclePrefix = "default";
@@ -172,6 +175,9 @@ sealed class Skin
                     if (ParseColour(v) is { } cc) combos[n] = cc;
                     break;
                 case "SliderBorder": SliderBorder = ParseColour(v) ?? SliderBorder; break;
+                case "HyperDash": HyperDash = ParseColour(v) ?? HyperDash; break;
+                case "HyperDashFruit": HyperDashFruit = ParseColour(v); break;
+                case "HyperDashAfterImage": HyperDashAfterImage = ParseColour(v); break;
                 case "StarBreakAdditive": StarBreakAdditive = ParseColour(v) ?? StarBreakAdditive; break;
                 case "SliderTrackOverride": SliderTrackOverride = ParseColour(v); break;
                 case "HitCirclePrefix": HitCirclePrefix = v.Replace('\\', '/'); break;

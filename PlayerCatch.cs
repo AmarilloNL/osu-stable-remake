@@ -27,6 +27,21 @@ sealed partial class Player
     float cX = 256, cWidth, cDir = 1;
     double cLastTime = double.NaN, cFailUntil = double.MinValue;
     float cHyperSpeed; int cHyperDir; CFruit? cHyperTarget;
+
+    // stable's catch effects. A caught fruit flashes up from the plate in its colour, additive, riding with the catcher
+    // (scoreboard-explosion-2 stretching 1x0.9 -> 16x1.1 times the combo / 200 (0.35-1.125) over 160ms, gone over
+    // 300ms; scoreboard-explosion-1 0.9x1 -> 0.9x1.3 over 500ms, gone over 700ms; a banana only the second). Caught
+    // droplets and bananas pop off the plate (4x their spot across, 120 up), and at a combo's end so does the plate
+    // (the end of a banana shower: 400 up, with a wide white flash); after a miss it drops. Thrown things fall at
+    // 480/s² and fade over 2s (dropped: 1s). A hyperdashing catcher leaves half-faded copies of itself every 16ms
+    // (gone over 250ms, 100 if it didn't move) and one in the after-image colour where it lands (growing 1.2x and
+    // fading over 1.2s).
+    readonly List<(float Dx, Color Colour, double At, float Stretch, bool Banana)> cFlashes = [];
+    readonly List<(float X, float Y, float Vx, float Vy, string Tex, Color Colour, float Scale, double At, double Fade)> cThrown = [];
+    readonly List<(float X, Sprite Tex, bool Flip, Color Tint, double At, double Fade, bool Landing)> cGhosts = [];
+    double cShowerFlashAt = double.NegativeInfinity, cGhostAt = double.NegativeInfinity, cThrownTicks;
+    float cGhostX = float.NaN;
+    bool cWasHyper;
     KeyboardKey cLeft, cRight, cDash;
     (float X, bool Dash) cRecorded = (float.NaN, false);
     (float X, double T) cAutoFrom = (256, double.MinValue);
@@ -268,15 +283,26 @@ sealed partial class Player
             }
             maxCombo = Math.Max(maxCombo, combo);
             cFailUntil = double.MinValue;
+            var colour = colours[f.Colour % colours.Length];
             if (f.Kind is CKind.Fruit or CKind.Droplet)
             {
-                // fruits and droplets land on the plate (stable stacks them 10px apart), cleared at each combo's end
+                // fruits land on the plate (stable stacks them 10px apart); droplets pop off it
                 var spot = new Vector2(f.X - cX, -5);
                 for (int tries = 0; tries < 50 && cPlate.Any(p => Vector2.DistanceSquared(new(p.Dx, p.Dy), spot) < 100); tries++)
                     spot += new Vector2(cPlateRng.Next(-5, 5), -cPlateRng.Next(0, 5));
-                if (f.Kind == CKind.Fruit && cPlate.Count < 100) cPlate.Add((spot.X, spot.Y, f.Visual, f.Colour));
-                if (f.LastInCombo) cPlate.Clear();
+                if (f.Kind == CKind.Fruit)
+                {
+                    if (cPlate.Count < 100) cPlate.Add((spot.X, spot.Y, f.Visual, f.Colour));
+                    CatchFlash(f.X - cX, colour, banana: false);
+                }
+                else cThrown.Add((cX + spot.X, 340 + spot.Y, spot.X * 4, -120, "fruit-drop", colour, 0.8f * 0.5f, Game.NowMs, 2000));
             }
+            if (f.Kind == CKind.Banana)
+            {
+                CatchFlash(f.X - cX, new Color(255, 240, 0, 255), banana: true);
+                cThrown.Add((f.X, 340 - 5, (f.X - cX) * 4, -120, "fruit-bananas", new Color(255, 240, 0, 255), 0.5f, Game.NowMs, 2000));
+            }
+            if (f.LastInCombo) ClearPlate(thrown: true, shower: f.Kind == CKind.Banana);
             // catching a hyperdash fruit flings the catcher towards the next one, arriving 16.7ms early
             if (f.Hyper && f.HyperTarget is { } target && !auto)
             {
@@ -294,12 +320,106 @@ sealed partial class Player
                 case CKind.Droplet: nMiss++; health.Apply(HpEvent.SliderBreak); BreakCombo(); cFailUntil = time + 1000; break;
                 case CKind.Tiny: nKatu++; break;
             }
-            if (f.LastInCombo) cPlate.Clear();
+            if (f.LastInCombo) ClearPlate(thrown: false, shower: f.Kind == CKind.Banana);
             if (f.Kind is CKind.Fruit or CKind.Droplet) cHyperDir = 0;
         }
     }
 
+    void CatchFlash(float dx, Color colour, bool banana)
+    {
+        float half = cWidth / 2, margin = cWidth * 0.1f; // (the flash stays over the plate)
+        cFlashes.Add((Math.Clamp(dx, -half + margin * 3, half - margin * 3), colour, Game.NowMs, Math.Clamp(combo / 200f, 0.35f, 1.125f), banana));
+    }
+
+    // a combo's end: the plate's fruits thrown off (a banana shower's higher, with a flash), or dropped after a miss
+    void ClearPlate(bool thrown, bool shower)
+    {
+        foreach (var p in cPlate)
+            cThrown.Add((cX + p.Dx, 340 + p.Dy, thrown ? p.Dx * 4 : 0, thrown ? (shower ? -400 : -120) : 0, FruitNames[p.Visual], colours[p.Colour % colours.Length], 0.5f, Game.NowMs, thrown ? 2000 : 1000));
+        cPlate.Clear();
+        if (shower && thrown) cShowerFlashAt = Game.NowMs;
+    }
+
     static readonly string[] FruitNames = ["fruit-pear", "fruit-grapes", "fruit-apple", "fruit-orange"];
+
+    void DrawCatchEffects(Func<float, float, Vector2> screen, float s, float cs, Sprite? catcher, float alpha)
+    {
+        double now = Game.NowMs;
+        // the hyperdash's after-images
+        bool hyper = cHyperDir != 0;
+        if (catcher is { } ct)
+        {
+            if (hyper && now - cGhostAt > 16)
+            {
+                cGhosts.Add((cX, ct, cDir < 0, skin.HyperDash, now, cX != cGhostX ? 250 : 100, false));
+                cGhostAt = now; cGhostX = cX;
+            }
+            if (cWasHyper && !hyper) cGhosts.Add((cX, ct, cDir < 0, skin.HyperDashAfterImage ?? skin.HyperDash, now, 1200, true));
+        }
+        cWasHyper = hyper;
+        cGhosts.RemoveAll(g => now - g.At > g.Fade);
+        BeginBlendMode(BlendMode.Additive);
+        foreach (var g in cGhosts)
+        {
+            double age = now - g.At;
+            float a = (g.Landing ? 1 : 0.5f) * (1 - (float)(age / g.Fade)), grow = g.Landing ? 1 + 0.2f * (float)Easing.Apply(2, age / g.Fade) : 1;
+            var top = screen(g.X, 340) - new Vector2(0, 16 * cs);
+            g.Tex.Draw(top + new Vector2(0, g.Tex.Height * cs / 2), cs * grow, ColorAlpha(g.Tint, a * alpha), flipX: g.Flip);
+        }
+
+        // the flashes over the plate
+        cFlashes.RemoveAll(f => now - f.At > 700);
+        var streak = skin.Tex("scoreboard-explosion-2");
+        var glow = skin.Tex("scoreboard-explosion-1");
+        foreach (var f in cFlashes)
+        {
+            double age = now - f.At;
+            var at = screen(cX + f.Dx, 340);
+            if (!f.Banana && streak is { } st && age < 300)
+            {
+                float e = (float)Easing.Apply(1, Math.Min(1, age / 160));
+                DrawUp(st, at, (1 + (16 * f.Stretch - 1) * e) * s, (0.9f + 0.2f * e) * s, ColorAlpha(f.Colour, (1 - (float)(age / 300)) * alpha));
+            }
+            if (glow is { } gl)
+            {
+                float e = (float)Easing.Apply(1, Math.Min(1, age / 500));
+                DrawUp(gl, at, 0.9f * s, (1 + 0.3f * e) * s, ColorAlpha(f.Colour, (1 - (float)(age / 700)) * alpha));
+            }
+        }
+        // a banana shower's end: a wide white flash
+        if (now - cShowerFlashAt < 800 && glow is { } sg)
+        {
+            double age = now - cShowerFlashAt;
+            float e = (float)Easing.Apply(1, Math.Min(1, age / 500));
+            DrawUp(sg, screen(cX, 340), 4 * e * s, (1.8f + 0.4f * e) * s, ColorAlpha(Color.White, (1 - (float)(age / 800)) * alpha));
+        }
+        EndBlendMode();
+
+        // thrown and dropped fruit, falling (stable: 8 osu!px/s more each 60Hz frame)
+        for (cThrownTicks += GetFrameTime() * 60; cThrownTicks >= 1; cThrownTicks--)
+            for (int i = 0; i < cThrown.Count; i++)
+            {
+                var t = cThrown[i];
+                t.Vy += 8; t.X += t.Vx / 60; t.Y += t.Vy / 60;
+                cThrown[i] = t;
+            }
+        cThrown.RemoveAll(t => now - t.At > t.Fade);
+        float circle = (float)(64 * (1 - 0.7 * (map.CS - 5) / 5)) / 128 * s;
+        foreach (var t in cThrown)
+        {
+            float a = (1 - (float)((now - t.At) / t.Fade)) * alpha;
+            var at = screen(t.X, t.Y);
+            skin.Tex(t.Tex)?.Draw(at, circle * t.Scale, ColorAlpha(t.Colour, a));
+            skin.Tex(t.Tex + "-overlay")?.Draw(at, circle * t.Scale, ColorAlpha(Color.White, a));
+        }
+    }
+
+    // a sprite standing up from a point (stable: centre-left origin turned a quarter anticlockwise), length x thickness
+    static void DrawUp(Sprite sp, Vector2 at, float length, float thick, Color tint)
+    {
+        float w = sp.Width * length, h = sp.Height * thick;
+        DrawTexturePro(sp.Tex, new Rectangle(0, 0, sp.Tex.Width, sp.Tex.Height), new Rectangle(at.X, at.Y, w, h), new Vector2(0, h / 2), -90, tint);
+    }
 
     void CatchDraw(int w, int h)
     {
@@ -311,7 +431,7 @@ sealed partial class Player
         float circle = (float)(64 * (1 - 0.7 * (map.CS - 5) / 5)) / 128 * s; // px per sprite px: an osu! circle's size
         double preempt = map.Preempt;
         float alpha = playfieldAlpha;
-        var hyperRed = new Color(255, 0, 0, 255);
+        var hyperRed = skin.HyperDashFruit ?? skin.HyperDash;
 
         for (int i = cFruits.Count - 1; i >= 0; i--)
         {
@@ -350,6 +470,7 @@ sealed partial class Player
         string state = time < cFailUntil ? "fruit-catcher-fail" : map.PointAt(time).Kiai ? "fruit-catcher-kiai" : "fruit-catcher-idle";
         var catcher = skin.AnimFrame(state, Game.NowMs) ?? skin.Tex(state) ?? skin.AnimFrame("fruit-catcher-idle", Game.NowMs) ?? skin.Tex("fruit-ryuuta");
         float cs = cWidth / 305f * s; // stable: the catch width is 305 sprite px at the catcher's scale
+        DrawCatchEffects(Screen, s, cs, catcher, alpha);
         foreach (var p in cPlate)
         {
             var at = Screen(cX + p.Dx, 340 + p.Dy);
@@ -358,7 +479,7 @@ sealed partial class Player
         }
         if (catcher is { } c)
         {
-            var tint = cHyperDir != 0 ? hyperRed : Color.White;
+            var tint = cHyperDir != 0 ? skin.HyperDash : Color.White;
             var top = Screen(cX, 340) - new Vector2(0, 16 * cs);
             c.Draw(top + new Vector2(0, c.Height * cs / 2), cs, ColorAlpha(tint, alpha), flipX: cDir < 0);
         }
