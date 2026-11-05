@@ -335,7 +335,7 @@ sealed partial class Player
         public float Start = 136, HitY = 402, ScoreY = 325, ComboY = 111;
         public float[] X = [], W = [];
         public string[] Note = [], NoteH = [], NoteL = [], NoteT = [], Key = [], KeyD = [];
-        public string LightingN = "lightingN", LightingL = "lightingL";
+        public string LightingN = "lightingN", LightingL = "lightingL", WarningArrow = "mania-warningarrow";
         public float[] LightingNW = [], LightingLW = []; // (0: the column's width)
         public Color?[] Colour = [];
         public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
@@ -378,6 +378,7 @@ sealed partial class Player
         look.StageHint = M("StageHint") ?? look.StageHint;
         look.StageLight = M("StageLight") ?? look.StageLight;
         look.LightingN = M("LightingN") ?? look.LightingN;
+        look.WarningArrow = M("WarningArrow") ?? look.WarningArrow;
         look.LightingL = M("LightingL") ?? look.LightingL;
         look.LightingNW = List("LightingNWidth", mKeys, 0);
         look.LightingLW = List("LightingLWidth", mKeys, 0);
@@ -413,6 +414,19 @@ sealed partial class Player
         else DrawRectangle((int)left, (int)(hitY * u), (int)(stageW * u), 2, tint);
 
         double now = ManiaDist(time);
+        // stable's warning arrows: down the middle of the stage like notes, 1, 2 and 3 seconds before the first one (not
+        // before the first timing point); skins from 2.4 size them to the columns (at most 1x)
+        if (mNotes.Count > 0 && mScroll.Count > 0 && skin.Tex(look.WarningArrow) is { } arrow)
+        {
+            float scale = (skin.Version >= 2.4 ? Math.Min(1, look.Width / (30f * mKeys)) : 1) * sd;
+            double first = mNotes.Min(n => n.Time);
+            for (int k = 1; k <= 3 && first - 1000 * k > mScroll[0].Time; k++)
+            {
+                float y = hitY - (float)(ManiaDist(first - 1000 * k) - now);
+                if (y < -40 || y > 520) continue;
+                arrow.Draw(new(left + stageW * u / 2, y * u - arrow.Height * scale / 2), scale, tint);
+            }
+        }
         for (int c = 0; c < mKeys; c++)
         {
             float x = left + look.X[c] * u, cw = look.W[c] * u;
