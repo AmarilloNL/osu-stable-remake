@@ -74,7 +74,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - **Timing** (`F3`): add, move and delete red and green points, BPM, offset, meter, slider velocity, volume, sample set and kiai
 - **Song setup** (`F4`): artist, title, creator, difficulty name, source, tags and the difficulty sliders
 - Playback with hitsounds at 25-100% speed (`Space`, `Z` `X` `C` `V` `B`), the wheel and arrow keys step through the beat snap
-- `F5` test-plays the map as it stands and comes back; `Ctrl+S` saves; `Esc` asks to save. Lines you didn't touch are written back exactly as they were
+- `F5` test-plays the map as it stands from the current position (like stable) and comes back; `Ctrl+S` saves; `Esc` asks to save. Lines you didn't touch are written back exactly as they were
 </details>
 
 <details>

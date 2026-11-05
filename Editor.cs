@@ -820,13 +820,15 @@ sealed class Editor : Screen
         catch (Exception e) when (e is not OutOfMemoryException) { return info; }
     }
 
-    // ---- test play: the map as it stands, from the start; back here after it
+    // ---- test play: the map as it stands, from the current time; back here after it
     void TestPlay()
     {
         SetPlaying(false);
         Beatmap map;
         try { map = Beatmap.Load(path, lines: Write()); }
         catch (Exception e) when (e is not OutOfMemoryException) { Notification.Show($"Can't test: {e.Message}", 3000); return; }
+        // stable tests from where the editor is (the objects before it left out)
+        if (map.Objects.Any(o => o.Time >= time - 1)) map.TestFrom = map.Objects.RemoveAll(o => o.Time < time - 1) > 0;
         if (map.Objects.Count == 0) { Notification.Show("Place some objects first!", 2000); return; }
         map.PlayMode = map.Mode;
         Game.FadeTo(() => new Player(map, back, Mods.None) { ReturnTo = this });

@@ -127,6 +127,7 @@ sealed class Beatmap
     public bool SamplesMatchPlaybackRate; // [General]: hitsounds follow DT / HT's speed (and pitch)
     public double RawCS, RawOD, RawHP, RawAR; // the values before EZ / HR
     public int PlayMode; // the mode it's played in: its own, or (an osu! map) the one song select is in
+    public bool TestFrom; // the editor's test play: the objects before its position were left out, the play starts at the first
     public int DefaultSampleSet = 1;
     public List<System.Drawing.Color> ComboColours = [];
     public List<TimingPoint> TimingPoints = [];

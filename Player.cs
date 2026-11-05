@@ -259,6 +259,7 @@ sealed partial class Player : Screen
 
         // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
         clockOrigin = Math.Min(Math.Min(-map.AudioLeadIn, storyboard?.EarliestEvent ?? 0), objs[0].Time - Math.Max(1800, map.Preempt));
+        if (map.TestFrom) clockOrigin = objs[0].Time - Math.Max(1800, map.Preempt); // (the editor's test: from its position)
         playStart = clockOrigin;
         SetupSkip();
         sw.Start();
