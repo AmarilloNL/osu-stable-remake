@@ -11,7 +11,8 @@ namespace OsuStableRemake;
 // hitsound toggles on the right (Q, W / E / R), and the song's position, playback and rate along the bottom.
 // F1 Compose, F3 Timing, F4 Song Setup, F5 test play, Ctrl+S save, Ctrl+Z / Ctrl+Y undo / redo, Ctrl+C / X / V,
 // Ctrl+A, Delete; the Edit menu's Ctrl+H / J (flip), Ctrl+< / > (rotate 90°), Ctrl+G (reverse), Ctrl+D (clone);
-// Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them; Ctrl+Tab live mapping; a selected slider's points drag, a
+// Ctrl+Shift+R / S rotate / scale by; Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them;
+// Ctrl+Tab live mapping; a selected slider's points drag, a
 // Ctrl+click on its body adds one and a right click on one removes it;
 // the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
@@ -377,6 +378,7 @@ sealed class Editor : Screen
         var mouse = Input.GetMousePosition();
         float u = U;
         if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
+        if (xform != null) { UpdateXform(mouse); return; }
 
         // the clock
         if (music != null && playing)
@@ -400,7 +402,7 @@ sealed class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F3)) tab = 1;
         if (Input.IsKeyPressed(KeyboardKey.F4)) tab = 2;
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
+        if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Y)) Restore(redo, undo);
 
@@ -634,6 +636,7 @@ sealed class Editor : Screen
             if (Input.IsKeyPressed(KeyboardKey.J)) Change(() => { if (mode == 3) ReverseSelection(); else Transform(p => new(p.X, 384 - p.Y)); });
             if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Period)) Change(() => Transform(p => new(256 - (p.Y - 192), 192 + (p.X - 256))));
             if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Comma)) Change(() => Transform(p => new(256 + (p.Y - 192), 192 - (p.X - 256))));
+            if (mode != 3 && Input.ShiftHeld && (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.S))) { OpenXform(scale: Input.IsKeyPressed(KeyboardKey.S)); return; }
             if (Input.IsKeyPressed(KeyboardKey.G)) Change(ReverseSelection);
             if (Input.IsKeyPressed(KeyboardKey.D)) Change(CloneSelection);
         }
@@ -784,6 +787,143 @@ sealed class Editor : Screen
         }
     }
 
+    // ---- stable's Rotate by... (-180 to 180 degrees, clockwise or anticlockwise) and Scale by... (0.1x up to what
+    // still fits the playfield, on X and / or Y), about the playfield's centre or the selection's: previewed as it
+    // changes, kept with OK (Enter), undone with Cancel (Escape)
+    sealed class Xform
+    {
+        public bool Scale, Anticlockwise, SelectionCentre, X = true, Y = true, Dragging, WasModified;
+        public double Value;
+        public Dictionary<EObj, (double X, double Y, List<Vector2> Anchors, double Length, string? Raw)> Start = [];
+    }
+    Xform? xform;
+
+    void OpenXform(bool scale)
+    {
+        undo.Add(string.Join("\n", Write())); redo.Clear();
+        xform = new Xform { Scale = scale, Value = scale ? 1 : 0, WasModified = modified };
+        foreach (var o in selected) xform.Start[o] = (o.X, o.Y, [.. o.Anchors], o.Length, o.Raw);
+    }
+
+    Vector2 XformCentre(Xform x) => !x.SelectionCentre ? new(256, 192)
+        : new((float)x.Start.Values.Average(s => s.X), (float)x.Start.Values.Average(s => s.Y));
+
+    // the largest scale that keeps the selection (heads, points) in the playfield
+    double XformMaxScale(Xform x)
+    {
+        var c = XformCentre(x);
+        double max = 2;
+        foreach (var s in x.Start.Values)
+            foreach (var p in s.Anchors.Prepend(new Vector2((float)s.X, (float)s.Y)))
+            {
+                if (x.X && Math.Abs(p.X - c.X) > 0.5) max = Math.Min(max, ((p.X > c.X ? 512 : 0) - c.X) / (p.X - c.X));
+                if (x.Y && Math.Abs(p.Y - c.Y) > 0.5) max = Math.Min(max, ((p.Y > c.Y ? 384 : 0) - c.Y) / (p.Y - c.Y));
+            }
+        return Math.Max(0.1, max);
+    }
+
+    void ApplyXform(Xform x)
+    {
+        var c = XformCentre(x);
+        double a = (x.Anticlockwise ? -x.Value : x.Value) * Math.PI / 180;
+        float cos = (float)Math.Cos(a), sin = (float)Math.Sin(a);
+        Vector2 F(Vector2 p)
+        {
+            var d = p - c;
+            return x.Scale ? c + new Vector2(x.X ? d.X * (float)x.Value : d.X, x.Y ? d.Y * (float)x.Value : d.Y) : c + new Vector2(d.X * cos - d.Y * sin, d.X * sin + d.Y * cos);
+        }
+        foreach (var (o, s) in x.Start)
+        {
+            var p = F(new((float)s.X, (float)s.Y));
+            o.X = Math.Round(p.X); o.Y = Math.Round(p.Y);
+            o.Anchors = [.. s.Anchors.Select(F)];
+            o.Length = s.Length;
+            if (x.Scale && o.Slider) FitLength(o); // (stable refits a scaled slider)
+            o.Raw = null;
+        }
+        modified = true;
+        Rebuild();
+    }
+
+    Rectangle XformPanel() { float u = U; return new Rectangle(Game.W / 2f - 160 * u, 150 * u, 320 * u, 170 * u); }
+    Rectangle XformBar() { var p = XformPanel(); float u = U; return new Rectangle(p.X + 20 * u, p.Y + 48 * u, p.Width - 40 * u, 14 * u); }
+    Rectangle XformToggle(int row, int i) { var p = XformPanel(); float u = U; return new Rectangle(p.X + 20 * u + i * 142 * u, p.Y + (76 + row * 28) * u, 136 * u, 22 * u); }
+    Rectangle XformButton(int i) { var p = XformPanel(); float u = U; return new Rectangle(p.X + 20 * u + i * 142 * u, p.Y + p.Height - 30 * u, 136 * u, 22 * u); }
+    (double Min, double Max) XformRange(Xform x) => x.Scale ? (0.1, XformMaxScale(x)) : (-180, 180);
+
+    void UpdateXform(Vector2 mouse)
+    {
+        var x = xform!;
+        var (min, max) = XformRange(x);
+        double before = x.Value;
+        bool ok = Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.KpEnter), cancel = Input.IsKeyPressed(KeyboardKey.Escape);
+        if (Input.IsKeyPressed(KeyboardKey.Left) || Input.IsKeyPressedRepeat(KeyboardKey.Left)) x.Value -= x.Scale ? 0.01 : 1;
+        if (Input.IsKeyPressed(KeyboardKey.Right) || Input.IsKeyPressedRepeat(KeyboardKey.Right)) x.Value += x.Scale ? 0.01 : 1;
+        if (Input.IsMouseButtonPressed(MouseButton.Left))
+        {
+            var bar = XformBar();
+            if (CheckCollisionPointRec(mouse, new Rectangle(bar.X - 8, bar.Y - 8, bar.Width + 16, bar.Height + 16))) x.Dragging = true;
+            for (int i = 0; i < 2; i++)
+            {
+                if (CheckCollisionPointRec(mouse, XformToggle(0, i)))
+                {
+                    if (x.Scale) { if (i == 0) x.X = !x.X; else x.Y = !x.Y; if (!x.X && !x.Y) { if (i == 0) x.Y = true; else x.X = true; } }
+                    else x.Anticlockwise = i == 1;
+                    before = double.NaN;
+                }
+                if (CheckCollisionPointRec(mouse, XformToggle(1, i))) { x.SelectionCentre = i == 1; before = double.NaN; }
+                if (CheckCollisionPointRec(mouse, XformButton(i))) { if (i == 0) ok = true; else cancel = true; }
+            }
+        }
+        if (x.Dragging)
+        {
+            if (!Input.IsMouseButtonDown(MouseButton.Left)) x.Dragging = false;
+            else
+            {
+                var bar = XformBar();
+                double f = Math.Clamp((mouse.X - bar.X) / bar.Width, 0, 1);
+                x.Value = x.Scale ? Math.Round(min + f * (max - min), 3) : Math.Round(min + f * (max - min));
+            }
+        }
+        (min, max) = XformRange(x);
+        x.Value = Math.Clamp(x.Value, min, max);
+        if (x.Value != before) ApplyXform(x);
+        if (cancel)
+        {
+            // (back exactly as it was)
+            foreach (var (o, st) in x.Start) { o.X = st.X; o.Y = st.Y; o.Anchors = [.. st.Anchors]; o.Length = st.Length; o.Raw = st.Raw; }
+            undo.RemoveAt(undo.Count - 1);
+            modified = x.WasModified;
+            Rebuild();
+        }
+        if (ok || cancel) xform = null;
+    }
+
+    void DrawXform(float u)
+    {
+        var x = xform!;
+        var p = XformPanel();
+        DrawRectangleRounded(p, 0.06f, 8, new Color(20, 20, 30, 235));
+        DrawRectangleRoundedLinesEx(p, 0.06f, 8, 1, ColorAlpha(Color.White, 0.4f));
+        string title = x.Scale ? "Scale by" : "Rotate by", label = x.Scale ? "Scale the selected objects’ spacing by:" : "Enter an angle to rotate by:";
+        Game.TextBold(title, p.X + 12 * u, p.Y + 6 * u, 14 * u, Color.White);
+        Game.Text(label, p.X + 20 * u, p.Y + 26 * u, 11 * u, Color.LightGray);
+        string value = x.Scale ? $"{x.Value.ToString("0.000", Inv)}×" : $"{x.Value:0}°";
+        Game.TextBold(value, p.X + p.Width - 20 * u - Game.TextWidth(value, 12 * u), p.Y + 26 * u, 12 * u, Color.White);
+        var bar = XformBar();
+        var (min, max) = XformRange(x);
+        DrawRectangle((int)bar.X, (int)(bar.Y + bar.Height / 2 - u), (int)bar.Width, (int)(2 * u), Color.Gray);
+        DrawCircleV(new(bar.X + bar.Width * (float)((x.Value - min) / Math.Max(1e-9, max - min)), bar.Y + bar.Height / 2), 6 * u, new Color(255, 160, 40, 255));
+        string[] row0 = x.Scale ? ["X-axis", "Y-axis"] : ["Clockwise", "Anti-Clockwise"];
+        bool[] on0 = x.Scale ? [x.X, x.Y] : [!x.Anticlockwise, x.Anticlockwise];
+        for (int i = 0; i < 2; i++)
+        {
+            DrawButton(XformToggle(0, i), row0[i], on0[i]);
+            DrawButton(XformToggle(1, i), i == 0 ? "Playfield Centre" : "Selection Centre", x.SelectionCentre == (i == 1));
+            DrawButton(XformButton(i), i == 0 ? "OK" : "Cancel", false);
+        }
+    }
+
     // the selection's positions (slider points too) through f
     void Transform(Func<Vector2, Vector2> f)
     {
@@ -879,11 +1019,11 @@ sealed class Editor : Screen
         o.Raw = null;
     }
 
-    // a selected slider's point (after its head) under the cursor
+    // a selected (visible) slider's point (after its head) under the cursor
     (EObj Slider, int Index)? PointAt(Vector2 fieldPos)
     {
-        foreach (var o in selected)
-            if (o.Slider)
+        foreach (var o in Visible())
+            if (o.Slider && selected.Contains(o))
                 for (int i = o.Anchors.Count - 1; i >= 0; i--)
                     if (Vector2.Distance(o.Anchors[i], fieldPos) <= 6) return (o, i);
         return null;
@@ -1192,6 +1332,7 @@ sealed class Editor : Screen
         DrawTimeline(u);
         DrawTopBar(u);
         DrawBottomBar(u);
+        if (xform != null) DrawXform(u);
         if (exitPrompt != null)
         {
             Dialog.Backdrop(1);
@@ -1367,10 +1508,10 @@ sealed class Editor : Screen
                 skin.Tex("approachcircle")?.Draw(ToScreen(o.X, o.Y), cs * (1 + 3 * a), ColorAlpha(col, alpha));
             }
         }
-        // the selected sliders' points: joined by lines, a square on each (red where two meet: a segment's end)
-        foreach (var o in selected)
+        // the selected (visible) sliders' points: joined by lines, a square on each (red where two meet: a segment's end)
+        foreach (var o in vis)
         {
-            if (!o.Slider) continue;
+            if (!o.Slider || !selected.Contains(o)) continue;
             var pts = new List<Vector2> { new((float)o.X, (float)o.Y) };
             pts.AddRange(o.Anchors);
             for (int i = 1; i < pts.Count; i++) DrawLineV(ToScreen(pts[i - 1].X, pts[i - 1].Y), ToScreen(pts[i].X, pts[i].Y), ColorAlpha(Color.White, 0.6f));
