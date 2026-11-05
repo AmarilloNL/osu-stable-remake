@@ -994,7 +994,10 @@ sealed class Editor : Screen
         ("Metadata", "TitleUnicode", "Title (unicode)"), ("Metadata", "Creator", "Creator"), ("Metadata", "Version", "Difficulty"),
         ("Metadata", "Source", "Source"), ("Metadata", "Tags", "Tags"),
     ];
-    static readonly (string Key, string Label, double Min, double Max, double Step)[] Sliders =
+    // (mania, like stable's: Circle Size is the Key Count, 1 to 9 in whole steps, and there's no Approach Rate)
+    (string Key, string Label, double Min, double Max, double Step)[] Sliders => mode != 3 ? AllSliders
+        : [.. AllSliders.Where(s => s.Key != "ApproachRate").Select(s => s.Key == "CircleSize" ? ("CircleSize", "Key Count", 1.0, 9.0, 1.0) : s)];
+    static readonly (string Key, string Label, double Min, double Max, double Step)[] AllSliders =
     [
         ("HPDrainRate", "HP Drain Rate", 0, 10, 0.1), ("CircleSize", "Circle Size", 0, 10, 0.1), ("ApproachRate", "Approach Rate", 0, 10, 0.1),
         ("OverallDifficulty", "Overall Difficulty", 0, 10, 0.1), ("SliderMultiplier", "Slider Velocity", 0.4, 3.6, 0.01), ("SliderTickRate", "Slider Tick Rate", 0.5, 8, 0.5),
@@ -1005,8 +1008,23 @@ sealed class Editor : Screen
     Rectangle SliderRect(int i) { float u = U; return new Rectangle(220 * u, (320 + i * 22) * u, Game.W - 440 * u, 18 * u); }
     int sliderDragging = -1;
 
+    // the map's mode (stable's Advanced tab: Allowed Modes)
+    static readonly string[] ModeNames = ["osu!", "Taiko", "Catch the Beat", "osu!mania"];
+    static Rectangle ModeRect() { float u = U; return new Rectangle(Game.W - 200 * u - 150 * u, 80 * u, 146 * u, 14 * u); }
+
     void UpdateSetup(Vector2 mouse, float u)
     {
+        if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, ModeRect()))
+        {
+            undo.Add(string.Join("\n", Write())); redo.Clear();
+            mode = (mode + 1) % 4;
+            SetKv("General", "Mode", mode.ToString());
+            tool = Math.Min(tool, ToolNames.Length - 1);
+            selected.Clear();
+            info = ReloadInfo();
+            Rebuild();
+            return;
+        }
         if (Input.IsMouseButtonPressed(MouseButton.Left))
         {
             for (int i = 0; i < Fields.Length; i++)
@@ -1650,6 +1668,9 @@ sealed class Editor : Screen
             Game.Text(text, r.X + 4 * u - (field == i ? over : 0), r.Y + 4 * u, 12 * u, Color.White);
             EndScissorMode();
         }
+        var mr = ModeRect();
+        DrawRectangleRec(mr, new Color(40, 40, 40, 255));
+        Game.Text($"Mode: {ModeNames[Math.Clamp(mode, 0, 3)]} (click to change)", mr.X + 4 * u, mr.Y + 1 * u, 11 * u, Color.White);
         for (int i = 0; i < Sliders.Length; i++)
         {
             var r = SliderRect(i);
