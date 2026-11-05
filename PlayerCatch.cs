@@ -252,9 +252,9 @@ sealed partial class Player
             switch (f.Kind)
             {
                 case CKind.Fruit: n300++; ScoreHit(300); combo++; health.Apply(HpEvent.Hit300); break;
-                case CKind.Droplet: n100++; ScoreHit(100); combo++; health.Apply(HpEvent.SliderTick); break;
-                case CKind.Tiny: n50++; score += 10; break;
-                case CKind.Banana: score += 1000; break;
+                case CKind.Droplet: n100++; score += 100; combo++; health.Apply(HpEvent.SliderTick); break; // (stable: a flat 100)
+                case CKind.Tiny: n50++; score += 10; health.Add(health.mul * 3 * 0.1f); break;
+                case CKind.Banana: score += 1100; health.Add(health.mul * 2); break; // (a bonus: no combo)
             }
             maxCombo = Math.Max(maxCombo, combo);
             cFailUntil = double.MinValue;
