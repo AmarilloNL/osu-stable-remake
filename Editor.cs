@@ -11,7 +11,8 @@ namespace OsuStableRemake;
 // hitsound toggles on the right (Q, W / E / R), and the song's position, playback and rate along the bottom.
 // F1 Compose, F3 Timing, F4 Song Setup, F5 test play, Ctrl+S save, Ctrl+Z / Ctrl+Y undo / redo, Ctrl+C / X / V,
 // Ctrl+A, Delete; the Edit menu's Ctrl+H / J (flip), Ctrl+< / > (rotate 90°), Ctrl+G (reverse), Ctrl+D (clone);
-// Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them;
+// Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them; a selected slider's points drag, a
+// Ctrl+click on its body adds one and a right click on one removes it;
 // the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
 // Like stable's, a taiko map's circles are red (blue with a whistle or clap) and its sliders yellow, a catch map's
@@ -161,7 +162,7 @@ sealed class Editor : Screen
         catch (FormatException) { return null; }
     }
 
-    static string Num(double v) => v.ToString("R", Inv);
+    static string Num(double v) => v.ToString("G15", Inv); // (stable writes doubles to 15 significant digits)
 
     static string WriteTiming(ETiming t) =>
         t.Raw != null && ParseTiming(t.Raw) is { } p && (p.Time, p.Beat, p.Meter, p.Set, p.Index, p.Volume, p.Red, p.Effects) == (t.Time, t.Beat, t.Meter, t.Set, t.Index, t.Volume, t.Red, t.Effects)
@@ -667,7 +668,13 @@ sealed class Editor : Screen
         // the playfield
         var fieldPos = ToField(mouse);
         bool inField = fieldPos.X >= -20 && fieldPos.X <= 532 && fieldPos.Y >= -20 && fieldPos.Y <= 404 && mouse.Y > tl.Y + tl.Height;
-        // stable: a right click deletes the object under the cursor (not while drawing a slider)
+        // stable: a right click on a selected slider's point removes it (keeping two), else deletes the object under the
+        // cursor (not while drawing a slider)
+        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && inField && PointAt(fieldPos) is { } rp)
+        {
+            if (rp.Slider.Anchors.Count >= 2) Change(() => { rp.Slider.Anchors.RemoveAt(rp.Index); FitLength(rp.Slider, retype: true); });
+            return;
+        }
         if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && inField
             && Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius) is { } gone)
         {
@@ -787,21 +794,71 @@ sealed class Editor : Screen
         if (pts.Count < 2) return;
         Change(() =>
         {
-            var o = new EObj { X = pts[0].X, Y = pts[0].Y, Time = sliderDraftTime, Type = 2 | (newComboNext ? 4 : 0), HitSound = soundNext, Curve = pts.Count == 2 ? 'L' : pts.Count == 3 ? 'P' : 'B', Anchors = pts.Skip(1).ToList() };
-            // stable snaps the length down to the beat snap's ticks (at least one)
-            double drawn = 0;
-            var built = SliderPath.Build(o.Curve, pts, ref drawn, version);
-            for (int i = 1; i < built.Length; i++) drawn += Vector2.Distance(built[i - 1], built[i]);
-            double perTick = 100 * SliderMultiplier * SvAt(o.Time) / divisor;
-            o.Length = Math.Max(1, Math.Floor(drawn / perTick)) * perTick;
+            var o = new EObj { X = pts[0].X, Y = pts[0].Y, Time = sliderDraftTime, Type = 2 | (newComboNext ? 4 : 0), HitSound = soundNext, Anchors = pts.Skip(1).ToList() };
+            FitLength(o, retype: true);
             objs.Add(o);
             newComboNext = false;
             selected.Clear();
         });
     }
 
+    // A slider's length after its points change, like stable's: the longest the beat snap's ticks fit into its path
+    // (at least one); its curve from its point count when that changed (two: linear, three: perfect circle, more: bezier).
+    void FitLength(EObj o, bool retype = false)
+    {
+        var pts = new List<Vector2> { new((float)o.X, (float)o.Y) };
+        pts.AddRange(o.Anchors);
+        if (retype && o.Curve != 'C') o.Curve = pts.Count == 2 ? 'L' : pts.Count == 3 ? 'P' : 'B';
+        double drawn = 0;
+        SliderPath.Build(o.Curve, pts, ref drawn, version); // (a length of 0 comes back as the whole path's)
+        double perTick = 100 * SliderMultiplier * SvAt(o.Time) / divisor;
+        o.Length = Math.Max(1, Math.Floor(drawn / perTick)) * perTick;
+        o.Raw = null;
+    }
+
+    // a selected slider's point (after its head) under the cursor
+    (EObj Slider, int Index)? PointAt(Vector2 fieldPos)
+    {
+        foreach (var o in selected)
+            if (o.Slider)
+                for (int i = o.Anchors.Count - 1; i >= 0; i--)
+                    if (Vector2.Distance(o.Anchors[i], fieldPos) <= 6) return (o, i);
+        return null;
+    }
+
+    (EObj Slider, int Index)? pointDrag;
+
     void UpdateSelect(Vector2 mouse, Vector2 fieldPos, bool click, bool held, bool inField)
     {
+        // a slider's point being dragged (on the grid with grid snap); the slider refits as it goes
+        if (pointDrag is { } pd)
+        {
+            var p = GridSnap(fieldPos);
+            if (held && pd.Slider.Anchors[pd.Index] != p) { pd.Slider.Anchors[pd.Index] = p; FitLength(pd.Slider); modified = true; Rebuild(); }
+            if (!held) pointDrag = null;
+            return;
+        }
+        if (click && inField && PointAt(fieldPos) is { } pt)
+        {
+            undo.Add(string.Join("\n", Write())); redo.Clear();
+            pointDrag = pt;
+            return;
+        }
+        // Ctrl+click on a selected slider's body: a new point there, in the part of its outline nearest, dragged on
+        if (click && inField && Input.CtrlHeld
+            && selected.FirstOrDefault(o => o.Slider && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) > Radius && Enumerable.Range(1, o.Path.Length - 1).Any(i => SegmentDistance(fieldPos, o.Path[i - 1], o.Path[i]) <= Radius)) is { } body)
+        {
+            undo.Add(string.Join("\n", Write())); redo.Clear();
+            var pts = new List<Vector2> { new((float)body.X, (float)body.Y) };
+            pts.AddRange(body.Anchors);
+            int seg = Enumerable.Range(0, pts.Count - 1).MinBy(i => SegmentDistance(fieldPos, pts[i], pts[i + 1]));
+            body.Anchors.Insert(seg, GridSnap(fieldPos));
+            FitLength(body, retype: true);
+            modified = true;
+            Rebuild();
+            pointDrag = (body, seg);
+            return;
+        }
         if (click && inField)
         {
             // the topmost visible object under the cursor (its head)
@@ -845,6 +902,13 @@ sealed class Editor : Screen
                 boxFrom = null;
             }
         }
+    }
+
+    static float SegmentDistance(Vector2 p, Vector2 a, Vector2 b)
+    {
+        var ab = b - a;
+        float t = ab.LengthSquared() < 1e-6f ? 0 : Math.Clamp(Vector2.Dot(p - a, ab) / ab.LengthSquared(), 0, 1);
+        return Vector2.Distance(p, a + ab * t);
     }
 
     void ToggleCombo()
@@ -1190,12 +1254,14 @@ sealed class Editor : Screen
                 var inner = ColorAlpha(new Color(col.R / 3, col.G / 3, col.B / 3, 255), alpha);
                 foreach (var pass in new[] { (radius, border), (radius * 0.86f, inner) })
                 {
-                    Vector2? last = null;
-                    foreach (var pt in o.Path)
+                    // along each segment of the path (a straight one is only its two ends)
+                    float carry = 0;
+                    for (int i = 1; i < o.Path.Length; i++)
                     {
-                        if (last is { } l && Vector2.Distance(l, pt) < step) continue;
-                        DrawCircleV(ToScreen(pt.X, pt.Y), pass.Item1 * fs, pass.Item2);
-                        last = pt;
+                        Vector2 a = o.Path[i - 1], b = o.Path[i];
+                        float d = Vector2.Distance(a, b), t = carry;
+                        for (; t < d; t += step) { var pt = Vector2.Lerp(a, b, t / d); DrawCircleV(ToScreen(pt.X, pt.Y), pass.Item1 * fs, pass.Item2); }
+                        carry = t - d;
                     }
                     var end = o.Path[^1];
                     DrawCircleV(ToScreen(end.X, end.Y), pass.Item1 * fs, pass.Item2);
@@ -1218,6 +1284,21 @@ sealed class Editor : Screen
             {
                 float a = (float)((o.Time - time) / pre);
                 skin.Tex("approachcircle")?.Draw(ToScreen(o.X, o.Y), cs * (1 + 3 * a), ColorAlpha(col, alpha));
+            }
+        }
+        // the selected sliders' points: joined by lines, a square on each (red where two meet: a segment's end)
+        foreach (var o in selected)
+        {
+            if (!o.Slider) continue;
+            var pts = new List<Vector2> { new((float)o.X, (float)o.Y) };
+            pts.AddRange(o.Anchors);
+            for (int i = 1; i < pts.Count; i++) DrawLineV(ToScreen(pts[i - 1].X, pts[i - 1].Y), ToScreen(pts[i].X, pts[i].Y), ColorAlpha(Color.White, 0.6f));
+            for (int i = 0; i < pts.Count; i++)
+            {
+                bool red = i > 0 && pts[i] == pts[i - 1] || i + 1 < pts.Count && pts[i] == pts[i + 1];
+                var s = ToScreen(pts[i].X, pts[i].Y);
+                DrawRectangleV(s - new Vector2(3 * u), new Vector2(6 * u), red ? Color.Red : Color.White);
+                DrawRectangleLinesEx(new Rectangle(s.X - 3 * u, s.Y - 3 * u, 6 * u, 6 * u), 1, Color.Black);
             }
         }
         // the slider being drawn
