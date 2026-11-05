@@ -59,10 +59,10 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 <summary><b>Game modes</b></summary>
 
 - Switch modes like stable (`Ctrl+1`-`4` or the Mode button); every map is listed in every mode, taiko / catch / mania maps with their mode's icon, and play in their own mode; osu! maps convert to the chosen one
-- **osu!taiko**: stable's hit windows and scroll speed per timing point, osu! sliders converted to hits or drumrolls, swells, big notes for both hands, bar lines, health from empty (a pass needs it over half) and scoring, the drum and hit target from your skin. Keys: `Z` `X` `C` `V` (rim, centre, centre, rim)
-- **osu!catch**: fruits, droplets, tiny droplets and banana showers converted like stable (its seeded randomness included), the catcher's size from CS, walking and dashing, hyperdashes, fruit piling on the plate. Keys: `←` `→`, `Shift` to dash
-- **osu!mania**: 1-10 keys, notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring, mania health, stable's default stage and scroll speed (`F3` / `F4`); osu! maps convert with stable's key count (shown in song select) and its pattern generator, seeded the same way, so they get the same notes as in stable. Default keys like stable's (4K: `D` `F` `J` `K`)
-- Each mode's mod select like stable's: mania's key mods (1K-9K for osu! maps), Fade In, Mirror and Random (Key Coop isn't in); no Autopilot or Spun Out in taiko and catch; Relax in taiko (either colour, swells in any order) and catch (the mouse moves the catcher); Hidden in every mode
+- **osu!taiko**: stable's hit windows and scroll speed per timing point, osu! sliders converted to hits or drumrolls, swells (their count plus one hits, a bonus that leaves the combo alone), big notes for both hands, bar lines, health from empty (a pass needs it over half) and stable's scoring (kiai 1.2x). The drum, hit target and the mascot (idle, kiai, fail, cheering at combo milestones) from your skin, hit notes thrown to the health bar, combo flowers. Keys: `Z` `X` `C` `V` (rim, centre, centre, rim)
+- **osu!catch**: fruits, droplets, tiny droplets and banana showers converted like stable (its seeded randomness included), the catcher's size from CS, walking and dashing, hyperdashes, fruit piling on the plate and thrown off at a combo's end, the catch flashes, dash and hyperdash after-images, `comboburst-fruits`. Keys: `←` `→`, `Shift` to dash
+- **osu!mania**: 1-10 keys, notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring (a full combo of MAXes is exactly 1,000,000), mania health, stable's default stage and scroll speed (`F3` / `F4`), the hit lighting and combo bursts; osu! maps convert with stable's key count (shown in song select) and its pattern generator, seeded the same way, so they get the same notes as in stable. Your key layouts from stable's settings (`ManiaLayouts`), else stable's defaults (4K: `D` `F` `J` `K`)
+- Each mode's mod select like stable's: mania's key mods (1K-9K for osu! maps), Fade In, Mirror and Random (Key Coop isn't in); no Autopilot or Spun Out in taiko and catch; Relax in taiko (either colour, swells in any order) and catch (the mouse moves the catcher); Hidden, Flashlight and Perfect in every mode; each mode's own score multipliers
 - Ranking screens with each mode's judgements, replays (stable's `.osr` of these modes too), per-mode leaderboards
 </details>
 
@@ -71,9 +71,11 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 
 - From the main menu's **Edit** (pick a map in song select) or **Beatmap options** (`F3`) → **Edit**
 - **Compose** (`F1`): the timeline with beat ticks coloured by snap (`Alt`+wheel changes the divisor, `Ctrl`+wheel zooms), the playfield with its grid; tools `1`-`4` (select, circle, slider, spinner), new combo `Q` and hitsounds `W` `E` `R`, grid snap `T` and size `G`; drag-select, move, drag in time, copy / cut / paste, delete, undo / redo (`Ctrl+Z` / `Ctrl+Y`)
-- Sliders: click the head and each point, right-click (or click the last point again) to finish; the length snaps to the beat
+- Sliders: click the head and each point, right-click (or click the last point again) to finish; the length snaps to the beat. A selected slider's points drag, `Ctrl`+click on its body adds one, right-click removes one
+- Stable's Edit menu keys: flip (`Ctrl+H` / `J`), rotate 90° (`Ctrl+<` / `>`), Rotate by / Scale by (`Ctrl+Shift+R` / `S`, previewed as you drag), reverse (`Ctrl+G`), clone (`Ctrl+D`); bookmarks (`Ctrl+B`, `Ctrl+Shift+B`, `Ctrl+←` / `→`); live mapping (`Ctrl+Tab`: tap your taiko or mania keys while the song plays)
+- Each mode like stable's editor: taiko maps red and blue (whistle / clap for kat), catch's distance snap across only, and mania maps in their own compose view: a column stage with the beat snap's lines, the song's note density beside it, Note and Hold tools
 - **Timing** (`F3`): add, move and delete red and green points, BPM, offset, meter, slider velocity, volume, sample set and kiai
-- **Song setup** (`F4`): artist, title, creator, difficulty name, source, tags and the difficulty sliders
+- **Song setup** (`F4`): artist, title, creator, difficulty name, source, tags, the difficulty sliders (mania's Key Count) and the map's mode
 - Playback with hitsounds at 25-100% speed (`Space`, `Z` `X` `C` `V` `B`), the wheel and arrow keys step through the beat snap
 - `F5` test-plays the map as it stands from the current position (like stable) and comes back; `Ctrl+S` saves; `Esc` asks to save. Lines you didn't touch are written back exactly as they were
 </details>
