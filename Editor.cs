@@ -36,6 +36,7 @@ sealed partial class Editor : Screen
         public string? Raw; // the line as read, written back as long as nothing changed
         public Vector2[] Path = []; // (built for drawing)
         public int Combo, Colour;
+        public int Stack; // (stable's stacking, as the editor shows it)
         public bool Circle => (Type & 1) != 0;
         public bool Slider => (Type & 2) != 0;
         public bool Spinner => (Type & 8) != 0;
@@ -101,7 +102,8 @@ sealed partial class Editor : Screen
     float FieldScale => fieldAsPlay ? U : 0.9f * U;
     Vector2 FieldOrigin => fieldAsPlay ? new((Game.W - 512 * U) / 2, (Game.H - 384 * U) / 2 + 8 * U) : new((Game.W - 512 * FieldScale) / 2, 78 * U);
     bool fieldAsPlay; // (Design's Hit Objects: the playfield where play has it, over the storyboard)
-    Vector2 ToScreen(double x, double y) => FieldOrigin + new Vector2((float)x, (float)y) * FieldScale;
+    Vector2 ToScreen(double x, double y) => FieldOrigin + (new Vector2((float)x, (float)y) + stackShift) * FieldScale;
+    Vector2 stackShift; // (while an object is drawn: its stack's offset)
     Vector2 ToField(Vector2 s) => (s - FieldOrigin) / FieldScale;
 
     public Editor(string file, SongSelect back)
@@ -301,6 +303,54 @@ sealed partial class Editor : Screen
             o.Combo = combo;
             o.Colour = colour;
         }
+        foreach (var o in objs) o.Stack = 0;
+        if (mode == 0 && stacking) ApplyStacking();
+    }
+
+    // View → Stacking (the options' too): stable's stacking as in a play - objects at (almost) one spot within
+    // StackLeniency x preempt pushed up-left by a tenth of the radius per level
+    bool stacking = Config.GetBool("EditorStacking", true);
+    static Vector2 PosOf(EObj o) => new((float)o.X, (float)o.Y);
+    static Vector2 EndPosOf(EObj o) => o.Slider && o.Path.Length > 0 ? (o.Slides % 2 == 1 ? o.Path[^1] : o.Path[0]) : PosOf(o);
+    Vector2 StackShift(EObj o) { float off = o.Stack * (Radius * 1.00041f / 10f); return new(-off, -off); }
+    Vector2 StackedPos(EObj o) => PosOf(o) + StackShift(o);
+    void ApplyStacking()
+    {
+        float threshold = (float)Preempt * (float)(double.TryParse(Kv("General", "StackLeniency"), NumberStyles.Float, Inv, out double sl) ? sl : 0.7);
+        const float dist = 3;
+        for (int i = objs.Count - 1; i > 0; i--)
+        {
+            var oi = objs[i];
+            if (oi.Stack != 0 || oi.Spinner) continue;
+            int n = i;
+            if (oi.Circle)
+            {
+                while (--n >= 0)
+                {
+                    var on = objs[n];
+                    if (on.Spinner) continue;
+                    if ((float)(oi.Time - on.End) > threshold) break;
+                    if (on.Slider && Vector2.Distance(EndPosOf(on), PosOf(oi)) < dist)
+                    {
+                        int offset = oi.Stack - on.Stack + 1;
+                        for (int j = n + 1; j <= i; j++)
+                            if (Vector2.Distance(EndPosOf(on), PosOf(objs[j])) < dist) objs[j].Stack -= offset;
+                        break;
+                    }
+                    if (Vector2.Distance(PosOf(on), PosOf(oi)) < dist) { on.Stack = oi.Stack + 1; oi = on; }
+                }
+            }
+            else
+            {
+                while (--n >= 0)
+                {
+                    var on = objs[n];
+                    if (on.Spinner) continue;
+                    if ((float)(oi.Time - on.Time) > threshold) break;
+                    if (Vector2.Distance(EndPosOf(on), PosOf(oi)) < dist) { on.Stack = oi.Stack + 1; oi = on; }
+                }
+            }
+        }
     }
 
     // a slider's end as the game has it (stable's): its segments' times added up over every span, in whole ms
@@ -476,6 +526,7 @@ sealed partial class Editor : Screen
         if (tab != 2) setupColourPick = -1; // (the palette closes with the tab)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.L)) { RevertPrompt(full: Input.ShiftHeld); return; }
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Y)) Restore(redo, undo);
         if (Input.CtrlHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.A)) OpenAiMod();
@@ -814,7 +865,7 @@ sealed partial class Editor : Screen
             return;
         }
         if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && pointDrag == null && inField
-            && Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius) is { } gone)
+            && Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius) is { } gone)
         {
             Change(() => { objs.Remove(gone); selected.Remove(gone); });
             return;
@@ -1107,7 +1158,7 @@ sealed partial class Editor : Screen
 
     // stable's follow points (View > Follow points), as in a play: every 32 units from 48 in between a combo's
     // objects, each fading in from 800ms (x preempt / 450 under 450) before its time, sliding in, and out after it
-    bool followPoints = true;
+    bool followPoints = Config.GetBool("EditorFollowPoints", true); // (the options' too)
 
     void DrawFollowPoints(float fs)
     {
@@ -1326,8 +1377,22 @@ sealed partial class Editor : Screen
     }
 
     void RecalcSliders() => Change(() => { foreach (var o in objs) if (o.Slider) FitLength(o); });
-    void RevertToSaved()
+    // File → Revert to Saved (stable's: asked first when there are changes); Full reads the map's images again too
+    void RevertPrompt(bool full)
     {
+        if (!modified && !osbModified) RevertToSaved(full);
+        else prompt = new("Revert file to last saved state?", null, _ => RevertToSaved(full), "Yes", "No");
+    }
+
+    void RevertToSaved(bool full = false)
+    {
+        if (full)
+        {
+            if (bg is { Id: not 0 } old) UnloadTexture(old);
+            bg = null;
+            sbView?.Unload();
+            sbView = null;
+        }
         Read(File.ReadAllLines(path));
         LoadOsb();
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
@@ -1383,7 +1448,7 @@ sealed partial class Editor : Screen
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
             new("Open .osb in Notepad", "", Directory.EnumerateFiles(info.Folder, "*.osb").FirstOrDefault() is { } osb ? () => System.Diagnostics.Process.Start("notepad.exe", osb) : null), Sep,
-            new("Revert to Saved", "", modified ? RevertToSaved : null), Sep, new("Exit...", "Esc", AskExit)],
+            new("Revert to Saved", "Ctrl+L", () => RevertPrompt(false)), new("Revert to Saved (Full)", "Ctrl+Shift+L", () => RevertPrompt(true)), Sep, new("Exit...", "Esc", AskExit)],
         1 => [new("Undo", "Ctrl+Z", undo.Count > 0 ? () => Restore(undo, redo) : null), new("Redo", "Ctrl+Y", redo.Count > 0 ? () => Restore(redo, undo) : null), Sep,
             new("Cut", "Ctrl+X", Sel(() => CopySel(cut: true))), new("Copy", "Ctrl+C", Sel(() => CopySel(cut: false))), new("Paste", "Ctrl+V", clipboard.Count > 0 ? PasteClip : null),
             new("Delete", "Del", Sel(DeleteSel)), Sep, new("Select All", "Ctrl+A", SelectAll), new("Clone", "Ctrl+D", Sel(() => Change(CloneSelection))), Sep,
@@ -1395,7 +1460,9 @@ sealed partial class Editor : Screen
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => SetTab(0), tab == 0), new("Design", "F2", () => SetTab(3), tab == 3), new("Timing", "F3", () => SetTab(1), tab == 1), Sep,
             new("Song Setup...", "F4", () => SetTab(2), tab == 2), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
-            new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => followPoints = !followPoints, followPoints)],
+            new("Grid Level", Sub: [.. new[] { ("1 (Most sparse)", 32), ("2", 16), ("3", 8), ("4 (Most precise)", 4) }.Select(g => new MenuItem(g.Item1, "", () => gridSize = g.Item2, gridSize == g.Item2))]),
+            new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => Config.SetOwn("EditorFollowPoints", (followPoints = !followPoints) ? "1" : "0"), followPoints),
+            new("Stacking", "", () => { Config.SetOwn("EditorStacking", (stacking = !stacking) ? "1" : "0"); Rebuild(); }, stacking)],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
@@ -1635,7 +1702,7 @@ sealed partial class Editor : Screen
         // its outline nearest, dragged on
         if (click && inField && Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } body
             && Vector2.Distance(new((float)body.X, (float)body.Y), fieldPos) > Radius
-            && !Visible().Any(o => o != body && !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius))
+            && !Visible().Any(o => o != body && !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius))
         {
             undo.Add(Snapshot()); redo.Clear();
             var pts = new List<Vector2> { new((float)body.X, (float)body.Y) };
@@ -1651,7 +1718,7 @@ sealed partial class Editor : Screen
         if (click && inField)
         {
             // the topmost visible object under the cursor (its head)
-            var hit = Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius);
+            var hit = Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius);
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
@@ -2146,6 +2213,7 @@ sealed partial class Editor : Screen
         for (int k = vis.Count - 1; k >= 0; k--)
         {
             var o = vis[k];
+            stackShift = StackShift(o);
             // past its end it fades over 800ms, or (Hit animations) like a hit in play: out over 240ms, growing to 1.4x
             float alpha = time < o.Time - pre + 400 ? (float)((time - (o.Time - pre)) / 400) : time > o.End ? 1 - (float)((time - o.End) / (hitAnimations ? 240 : 800)) : 1;
             float hitScale = hitAnimations && time > o.End ? 1 + 0.4f * (float)Math.Min(1, (time - o.End) / 240) : 1;
@@ -2201,6 +2269,7 @@ sealed partial class Editor : Screen
             else if (o.Circle && !hitAnimations) // (a circle's approach circle stays, opening to 1.1x over 100ms)
                 skin.Tex("approachcircle")?.Draw(ToScreen(o.X, o.Y), cs * (1 + 0.1f * (float)Math.Min(1, (time - o.Time) / 100)), ColorAlpha(col, alpha));
         }
+        stackShift = Vector2.Zero;
         // the selected (visible) sliders' points: joined by lines, a square on each (red where two meet: a segment's end)
         foreach (var o in vis)
         {
