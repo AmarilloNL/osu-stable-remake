@@ -130,7 +130,8 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Other modes: osu!taiko, osu!catch, osu!mania (their own maps and osu! conversions)
 - [x] The beatmap editor (compose, timing, song setup, test play, saving)
 - [x] Replays for taiko, catch and mania; stable's osu!mania conversion patterns
-- [ ] The editor's Design (storyboard) tab
+- [ ] The editor's Design (storyboard) tab, AiMod and sample import
+- [ ] osu!mania Key Coop (two stages) and maps with more than 10 keys
 - [ ] Linux / macOS (currently uses Windows fonts and Windows BASS builds)
 
 **Accuracy vs stable**
