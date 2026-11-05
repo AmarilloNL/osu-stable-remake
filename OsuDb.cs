@@ -71,7 +71,7 @@ sealed class DbBeatmap
     public float StarsFor(Mods m)
     {
         if (stars == null) return 0;
-        int b = ViewMode * 16;
+        int b = (Mode is >= 1 and <= 3 ? Mode : ViewMode) * 16; // (a taiko / catch / mania map: its own mode's)
         float s = stars[b + StarSlot((int)m)];
         return float.IsNaN(s) ? float.IsNaN(stars[b]) ? 0 : stars[b] : s;
     }

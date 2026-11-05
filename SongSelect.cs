@@ -410,9 +410,10 @@ sealed partial class SongSelect : Screen
         return double.NaN;
     }
 
-    // stable's mania key count for an osu! map: from the share of sliders and spinners, CS and OD
+    // stable's mania key count: a mania map's CS; for an osu! map from the share of sliders and spinners, CS and OD
     static int ManiaKeys(DbBeatmap b)
     {
+        if (b.Mode == 3) return (int)Math.Round(b.CS);
         float ratio = (float)(b.Sliders + b.Spinners) / Math.Max(1, b.Circles + b.Sliders + b.Spinners);
         if (ratio < 0.2) return 7;
         if (ratio < 0.3 || Math.Round(b.CS) >= 5) return Math.Round(b.OD) > 5 ? 7 : 6;
@@ -528,7 +529,7 @@ sealed partial class SongSelect : Screen
         bool InRange(DbBeatmap b) => !starRange || b.StarsFor(mods) is var st && st >= lo && (hi >= 10 || st <= hi);
         foreach (var set in sets)
         {
-            var diffs = filter.Length == 0 && !starRange && set.Diffs.All(Shown) ? set.Diffs : set.Diffs.Where(b => Shown(b) && InRange(b) && terms.All(t => t(b))).ToList();
+            var diffs = filter.Length == 0 && !starRange ? set.Diffs : set.Diffs.Where(b => InRange(b) && terms.All(t => t(b))).ToList();
             if (diffs.Count > 0) all.Add((set, diffs));
         }
         BuildGroups(all);
@@ -1948,10 +1949,16 @@ sealed partial class SongSelect : Screen
         // (measured on the default skin at 720p).
         float tx = x + (slot + edge + (grade != null ? 20 : 3)) * u, lx = tx + 1.67f * u, dy = oy - u;
         var faded = d >= 0 && !selected && !entry ? new Color(text.R, text.G, text.B, (byte)50) : text; // an open set's other difficulties: title and artist at alpha 50
+        // a taiko / catch / mania map: its mode's icon before the text, which moves 16 units right (measured)
+        if (b.Mode is >= 1 and <= 3 && Game.Skin.Tex(new[] { "", "mode-taiko-small", "mode-fruits-small", "mode-mania-small" }[b.Mode]) is { } modeIcon)
+        {
+            modeIcon.Draw(new Vector2(lx - 2 * u, cy - 12 * u + dy), 15 * u / Math.Max(1, modeIcon.Width), faded);
+            lx += 16 * u; tx += 16 * u;
+        }
         Game.Text(b.ShownTitle, lx, cy - 16 * u - 8 * u + dy, 16.55f * u, faded); // stable says 16; renders this wide (measured)
         Game.Text(b.PanelSubtitle, lx + u, cy - 4 * u - 6 * u + dy, 12.1f * u, faded);
         if (d < 0 && !entry) return;
-        Game.TextBold(b.Version, lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
+        Game.TextBold(b.Version + KeyCountText(b), lx + u, cy + 7 * u - 6 * u + dy + u, 12.3f * u, text); // a further unit lower (measured)
         if (d >= 0 && RowEntries[si].Set != starsSet) { starsSet = RowEntries[si].Set; starsAt = Game.NowMs; } // a set just opened: pop its stars in
         float step = (Game.Skin.Tex("star")?.Width ?? 46) * 0.6f * s;
         DrawStars(b.StarsFor(mods), tx + step / 2, cy + oy + 18 * u, u, text, d >= 0 ? Game.NowMs - starsAt : double.MaxValue, old);
@@ -2297,8 +2304,8 @@ sealed partial class SongSelect : Screen
     internal static int PlayMode = DbBeatmap.ViewMode = Config.Get("LastPlayMode", "Osu") switch { "Taiko" => 1, "CatchTheBeat" => 2, "OsuMania" => 3, _ => 0 };
     static readonly string[] ModeKeys = ["Osu", "Taiko", "CatchTheBeat", "OsuMania"];
     internal static string ModeIcon(string size = "") => new[] { "mode-osu", "mode-taiko", "mode-fruits", "mode-mania" }[PlayMode] + size;
-    static bool Shown(DbBeatmap b) => b.Mode == PlayMode || PlayMode != 0 && b.Mode == 0 && Converts(PlayMode);
-    internal static bool Converts(int mode) => mode is 1 or 2 or 3;
+    // stable lists every map in every mode: taiko / catch / mania maps (marked with their mode's icon) play in their own
+    // mode, osu! maps in the chosen one (converted)
     void SetMode(int mode)
     {
         if (mode == PlayMode) return;
@@ -2307,6 +2314,9 @@ sealed partial class SongSelect : Screen
         rankedFor = null;
         ApplyFilter(Selected);
     }
+
+    // stable's key count after a mania map's version (an osu! map's too in mania, marked converted)
+    static string KeyCountText(DbBeatmap b) => b.Mode == 3 ? $" ({ManiaKeys(b)}K)" : b.Mode == 0 && PlayMode == 3 ? $" ({ManiaKeys(b)}K↓)" : "";
 
     double modeMenuAt = -1, modeMenuClosedAt = double.NegativeInfinity;
     int modeHover = -1;
