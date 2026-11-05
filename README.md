@@ -20,7 +20,7 @@ in a new client written from the ground up in C#. The goal is to judge, look and
 while running with sub-millisecond frame times and handling frames better.
 
 It is **offline only**: it never talks to any osu! server. Everything it saves (its own settings, replays,
-screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, delete a beatmap (to the Recycle Bin, like stable), export your skin (`Exports`), change collections (`collection.db`) or use Remove from Unplayed / Mark all maps as played (flags in `osu!.db`); the last ones only while stable is closed.
+screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, save a beatmap in the editor, delete a beatmap (to the Recycle Bin, like stable), export your skin (`Exports`), change collections (`collection.db`) or use Remove from Unplayed / Mark all maps as played (flags in `osu!.db`); the last ones only while stable is closed.
 
 > [!NOTE]
 > This is a personal hobby project. It is not affiliated with, endorsed by, or connected to ppy Pty Ltd
@@ -34,6 +34,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 | 🎯 **Stable judging** | Hit windows, notelock, slider tracking (stable's button rules and segmented ball), slider curves, stacking, the momentum spinner and HP drain are re-implemented to behave like stable. Checked against real stable replays: **983 of 1088** re-judge to the exact same 300/100/50/miss counts and max combo. |
 | ⚡ **Fast** | ~0.2 ms average frame time during gameplay, almost no per-frame allocation, sprites decoded in the background while you pick a map. Judging runs in fixed 1 ms steps, so results never depend on your frame rate. |
 | 🎨 **Your skin, your way** | Reads your skins (with stable's default skin as fallback) and recreates stable's HUD: score, combo, accuracy pie, hit error meter, key overlay, health bar and the animated in-game leaderboard. |
+| 🥁 **All four modes** | osu!taiko, osu!catch and osu!mania play their own maps, and osu! maps convert to them, with stable's hit windows, scoring, health and Auto. |
+| ✏️ **Beatmap editor** | Place and move circles, sliders and spinners on stable's timeline and grid, edit timing points and song setup, test-play and save. |
 | 🎬 **Storyboards** | Sprites, animations, all commands and 35 easings, loops, triggers, variables, layers and pass/fail states. |
 | 📼 **Replays** | Its own exact replay format, plus import and playback of your stable `.osr` replays, with stable's replay overlay and speed control. |
 | 🎵 **Low-latency audio** | BASS audio with a clock that stays within ~0.15 ms of the music. |
@@ -51,6 +53,28 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Stable's keyboard bindings (Options → Change keyboard bindings), F7 frame limiter (with stable's menu, pause and background rates), F10 mouse buttons, F12 screenshots, the Boss key (hides to a notification-area icon)
 - Mouse back / forward buttons as Escape / Skip; the cursor kept in the window during a play, raw input included
 - Stable's window behaviour: minimise on alt-tab in fullscreen, display kept awake while focused, Windows pen gestures off, the map in the window title during a play
+</details>
+
+<details>
+<summary><b>Game modes</b></summary>
+
+- Switch modes like stable (`Ctrl+1`-`4` or the Mode button); every map is listed in every mode, taiko / catch / mania maps with their mode's icon, and play in their own mode; osu! maps convert to the chosen one
+- **osu!taiko**: stable's hit windows and scroll speed per timing point, osu! sliders converted to hits or drumrolls, swells, big notes for both hands, bar lines, health from empty (a pass needs it over half) and scoring, the drum and hit target from your skin. Keys: `Z` `X` `C` `V` (rim, centre, centre, rim)
+- **osu!catch**: fruits, droplets, tiny droplets and banana showers converted like stable (its seeded randomness included), the catcher's size from CS, walking and dashing, hyperdashes, fruit piling on the plate. Keys: `←` `→`, `Shift` to dash
+- **osu!mania**: 1-10 keys, notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring, mania health, stable's default stage and scroll speed; osu! maps get stable's key count (shown in song select) with notes in the column under their position (stable's pattern generator isn't reproduced yet). Default keys like stable's (4K: `D` `F` `J` `K`)
+- Ranking screens with each mode's judgements; replays are recorded for osu! plays only so far
+</details>
+
+<details>
+<summary><b>Beatmap editor</b></summary>
+
+- From the main menu's **Edit** (pick a map in song select) or **Beatmap options** (`F3`) → **Edit**
+- **Compose** (`F1`): the timeline with beat ticks coloured by snap (`Alt`+wheel changes the divisor, `Ctrl`+wheel zooms), the playfield with its grid; tools `1`-`4` (select, circle, slider, spinner), new combo `Q` and hitsounds `W` `E` `R`, grid snap `T` and size `G`; drag-select, move, drag in time, copy / cut / paste, delete, undo / redo (`Ctrl+Z` / `Ctrl+Y`)
+- Sliders: click the head and each point, right-click (or click the last point again) to finish; the length snaps to the beat
+- **Timing** (`F3`): add, move and delete red and green points, BPM, offset, meter, slider velocity, volume, sample set and kiai
+- **Song setup** (`F4`): artist, title, creator, difficulty name, source, tags and the difficulty sliders
+- Playback with hitsounds at 25-100% speed (`Space`, `Z` `X` `C` `V` `B`), the wheel and arrow keys step through the beat snap
+- `F5` test-plays the map as it stands and comes back; `Ctrl+S` saves; `Esc` asks to save. Lines you didn't touch are written back exactly as they were
 </details>
 
 <details>
@@ -99,7 +123,9 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Own replays (exact playback) and stable `.osr` import
 - [x] Main menu, options, ranking screen, pause/fail menus
 - [x] Background videos (decoded by Windows Media Foundation, no extra libraries; the Video option turns them off)
-- [ ] Other modes: osu!taiko, osu!catch, osu!mania
+- [x] Other modes: osu!taiko, osu!catch, osu!mania (their own maps and osu! conversions)
+- [x] The beatmap editor (compose, timing, song setup, test play, saving)
+- [ ] Replays for taiko, catch and mania; stable's osu!mania conversion patterns; the editor's Design (storyboard) tab
 - [ ] Linux / macOS (currently uses Windows fonts and Windows BASS builds)
 
 **Accuracy vs stable**
@@ -123,8 +149,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Options: Preview gameplay (after stable's confirmation, Auto on a random map from your library)
 
 **Not planned**
-- Online features of any kind (login, multiplayer, online leaderboards, score submission)
-- The beatmap editor
+- Online features of any kind (login, multiplayer, online leaderboards, score submission, beatmap uploading)
 
 ## 🚀 Getting started
 
