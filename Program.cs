@@ -718,6 +718,13 @@ static class Game
             foreach (var n in DefaultSkin.Names.Where(n => n.Contains(listFilter, StringComparison.OrdinalIgnoreCase)).Order()) Console.WriteLine(n);
             return;
         }
+        // test hook: one of stable's default skin images, written to <name>.png here
+        if (Arg("--dump-default") is { } dumpName)
+        {
+            Config.Load();
+            if (DefaultSkin.Get(dumpName) is { } png) File.WriteAllBytes(dumpName + ".png", png);
+            return;
+        }
         // test hook: a map's taiko conversion, one "start end kind strong" line a note
         if (Arg("--taiko-convert") is { } taikoFile)
         {

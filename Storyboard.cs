@@ -55,6 +55,7 @@ sealed class Storyboard
     int nextSample;
 
     public bool IsEmpty => elements.Count == 0 && samples.Count == 0;
+    public int CountIn(params int[] layers) => elements.Count(e => layers.Contains(e.Layer));
     // The earliest event (sprite command or sample), capped at 0: stable starts the map early enough to show it.
     // the last event's end (stable holds the ranking screen back until 500ms before it)
     public double LatestEvent => Math.Max(elements.Count > 0 ? elements.Max(e => e.End) : double.NegativeInfinity, samples.Count > 0 ? samples.Max(s => s.Time) : double.NegativeInfinity);

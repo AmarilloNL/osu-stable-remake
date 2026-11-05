@@ -256,6 +256,7 @@ sealed partial class Player
                         // stable: 300 a tick, 1.2x in kiai (the roll's start), a big roll's a fifth more
                         int tick = map.PointAt(n.Time).Kiai ? 360 : 300;
                         score += n.Big ? tick + tick / 5 : tick;
+                        SetSliderFail(false);
                         health.Add(0.0001);
                     }
                     return;
@@ -290,6 +291,7 @@ sealed partial class Player
         {
             // stable: a cleared swell is a bonus (300 with the combo's bonus, 1.2x in kiai, doubled) leaving the combo
             // and the counts alone; one not cleared just costs some health
+            SetSliderFail(false);
             if (result > 0) { tLastJudge = (300, false, Game.NowMs); score += 2 * TaikoValue(300, map.PointAt(at).Kiai); }
             else health.Add(Beatmap.Range(map.HP, -4, -15, -28));
             tFailing = false;
@@ -297,6 +299,7 @@ sealed partial class Player
         }
         tLastJudge = (result, false, Game.NowMs);
         tFailing = result == 0;
+        SetSliderFail(result == 0);
         Count(result);
         if (result > 0 && n.Kind is TKind.Don or TKind.Kat)
             tFlying.Add(new TFly { X = TaikoHitX, Y = TaikoLaneY, Scale = n.Big ? 1 : 0.65f, Vy = 169, Colour = n.Kind == TKind.Don ? new Color(235, 69, 44, 255) : new Color(67, 142, 172, 255), Big = n.Big });
@@ -341,6 +344,7 @@ sealed partial class Player
         float laneY = TaikoLaneY * u, hitX = TaikoHitX * u;
 
         UpdateComboBursts();
+        DrawTaikoSlider(w, u);
         DrawFlowers(u, sd);
 
         // the bar: a black backing, the stretched right part (its glow in kiai), then the drum on the left
@@ -525,6 +529,38 @@ sealed partial class Player
             float s = (0.6f + 0.4f * (float)Easing.Apply(1, Math.Min(1, age / 800))) * sd;
             float a = Math.Min(1, (float)(age / 200)) * (1 - (float)Easing.Apply(2, Math.Clamp((age - 1600) / 300, 0, 1)));
             DrawTexturePro(tex.Tex, new Rectangle(0, 0, tex.Tex.Width, tex.Tex.Height), new Rectangle(54 * u - tex.Width * s / 2, 141 * u - tex.Height * s, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, a * playfieldAlpha));
+        }
+    }
+
+    // stable's taiko-slider: tiled across the top of the screen from y 0 at 1.4x, scrolling left 1400 units every
+    // 34.4s, unless the map has a storyboard to speak of (10 or more background / foreground sprites); every judgement
+    // crossfades it (200ms) to taiko-slider-fail after a miss, back to taiko-slider after anything else
+    bool tSliderFail, tSliderWasFail;
+    double tSliderSwapAt = double.NegativeInfinity;
+    bool? tSliderShown;
+
+    void SetSliderFail(bool fail)
+    {
+        if (fail == tSliderFail) return;
+        tSliderWasFail = tSliderFail;
+        tSliderFail = fail;
+        tSliderSwapAt = Game.NowMs;
+    }
+
+    void DrawTaikoSlider(int w, float u)
+    {
+        tSliderShown ??= storyboard == null || storyboard.CountIn(0, 3) < 10;
+        if (tSliderShown != true) return;
+        float fade = (float)Math.Clamp((Game.NowMs - tSliderSwapAt) / 200, 0, 1);
+        foreach (var (fail, a) in fade < 1 ? new[] { (tSliderWasFail, 1f), (tSliderFail, fade) } : [(tSliderFail, 1f)])
+        {
+            if (skin.Tex(fail ? "taiko-slider-fail" : "taiko-slider") is not { } t) continue;
+            float tw = t.Width * 1.4f / 1.6f * u, th = t.Height * 1.4f / 1.6f * u;
+            if (tw < 1) continue;
+            float x0 = -(float)(time * 1400 / 34400 * u % tw);
+            if (x0 > 0) x0 -= tw;
+            for (float x = x0; x < w; x += tw)
+                DrawTexturePro(t.Tex, new Rectangle(0, 0, t.Tex.Width, t.Tex.Height), new Rectangle(x, 0, tw + 1, th), Vector2.Zero, 0, ColorAlpha(Color.White, a * playfieldAlpha));
         }
     }
 
