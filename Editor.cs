@@ -54,7 +54,7 @@ sealed class Editor : Screen
         public double Sv => Beat < 0 ? -100 / Beat : 1;
     }
 
-    readonly string path;
+    string path; // (a new difficulty moves it)
     readonly SongSelect back;
     string header = "osu file format v14";
     readonly List<Section> sections = [];
@@ -1047,37 +1047,67 @@ sealed class Editor : Screen
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notification.Show($"Couldn't export {name}: {e.Message}", 3000); }
     }
 
-    // a one-line prompt (Timing > Move all notes in time...): Enter or OK takes it, Escape or Cancel doesn't
-    (string Title, string Text, Action<string> Ok)? prompt;
+    // a small prompt: a line to type (Text not null) or a question; Enter / the first button takes it, Escape / the
+    // second doesn't
+    sealed class Prompt(string title, string? text, Action<string> ok, string yes = "OK", string no = "Cancel", Action? cancel = null)
+    {
+        public string Title = title, Yes = yes, No = no;
+        public string? Text = text;
+        public Action<string> Ok = ok;
+        public Action? Cancel = cancel;
+    }
+    Prompt? prompt;
 
-    void MoveAllPrompt() => prompt = ("Enter the amount of milliseconds to move all notes by:", "", text =>
+    void MoveAllPrompt() => prompt = new("Enter the amount of milliseconds to move all notes by:", "", text =>
     {
         if (!int.TryParse(text.Trim(), NumberStyles.Integer, Inv, out int ms) || ms == 0) return;
         Change(() => { foreach (var o in objs) { o.Time += ms; o.End += ms; o.Raw = null; } });
     });
 
+    // File > Create a new Difficulty...: its name, then this map as that difficulty's file (Artist - Title (Creator)
+    // [Name].osu), stable's question whether to start it empty, saved
+    void NewDifficultyPrompt() => prompt = new("Enter a name for the new difficulty:", "", name =>
+    {
+        name = name.Trim();
+        if (name.Length == 0) return;
+        string file = $"{Kv("Metadata", "Artist")} - {Kv("Metadata", "Title")} ({Kv("Metadata", "Creator")}) [{name}].osu";
+        foreach (char c in Path.GetInvalidFileNameChars()) file = file.Replace(c.ToString(), "");
+        string full = Path.Combine(info.Folder, file);
+        if (File.Exists(full)) { Notification.Show("A difficulty with that name already exists.", 3000); return; }
+        path = full;
+        SetKv("Metadata", "Version", name);
+        if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
+        undo.Clear(); redo.Clear();
+        prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); Save(); }, "Yes", "No", Save);
+    });
+
     void UpdatePrompt(Vector2 mouse)
     {
-        var p = prompt!.Value;
-        for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32) p.Text += char.ConvertFromUtf32(c);
-        if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && p.Text.Length > 0) p.Text = p.Text[..^1];
-        prompt = p;
+        var p = prompt!;
+        if (p.Text != null)
+        {
+            for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32) p.Text += char.ConvertFromUtf32(c);
+            if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && p.Text.Length > 0) p.Text = p.Text[..^1];
+        }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (Input.IsKeyPressed(KeyboardKey.Escape) || click && CheckCollisionPointRec(mouse, XformButton(1))) { prompt = null; return; }
-        if (Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.KpEnter) || click && CheckCollisionPointRec(mouse, XformButton(0))) { prompt = null; p.Ok(p.Text); }
+        if (Input.IsKeyPressed(KeyboardKey.Escape) || click && CheckCollisionPointRec(mouse, XformButton(1))) { prompt = null; p.Cancel?.Invoke(); return; }
+        if (Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.KpEnter) || click && CheckCollisionPointRec(mouse, XformButton(0))) { prompt = null; p.Ok(p.Text ?? ""); }
     }
 
     void DrawPrompt(float u)
     {
-        var p = prompt!.Value;
+        var p = prompt!;
         var panel = XformPanel();
         DrawRectangleRounded(panel, 0.06f, 8, new Color(20, 20, 30, 235));
         DrawRectangleRoundedLinesEx(panel, 0.06f, 8, 1, ColorAlpha(Color.White, 0.4f));
         Game.Text(p.Title, panel.X + 16 * u, panel.Y + 20 * u, 11 * u, Color.LightGray);
-        var box = new Rectangle(panel.X + 16 * u, panel.Y + 50 * u, panel.Width - 32 * u, 22 * u);
-        DrawRectangleRec(box, new Color(70, 70, 90, 255));
-        Game.Text(p.Text + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : ""), box.X + 4 * u, box.Y + 4 * u, 12 * u, Color.White);
-        for (int i = 0; i < 2; i++) DrawButton(XformButton(i), i == 0 ? "OK" : "Cancel", false);
+        if (p.Text != null)
+        {
+            var box = new Rectangle(panel.X + 16 * u, panel.Y + 50 * u, panel.Width - 32 * u, 22 * u);
+            DrawRectangleRec(box, new Color(70, 70, 90, 255));
+            Game.Text(p.Text + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : ""), box.X + 4 * u, box.Y + 4 * u, 12 * u, Color.White);
+        }
+        for (int i = 0; i < 2; i++) DrawButton(XformButton(i), i == 0 ? p.Yes : p.No, false);
     }
 
     // ---- stable's Polygonal Circle Creation (Ctrl+Shift+D): Points circles round the playfield's centre, Repeat
@@ -1199,7 +1229,7 @@ sealed class Editor : Screen
     {
         0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
             new("Open Difficulty...", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), Sep,
-            new("Save", "Ctrl+S", Save), new("Create a new Difficulty..."), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod"), Sep,
+            new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod"), Sep,
             new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package", "", ExportPackage), new("Import from..."), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
