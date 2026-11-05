@@ -79,6 +79,7 @@ sealed class Editor : Screen
     List<Vector2>? sliderDraft; double sliderDraftTime;
     (Vector2 From, Dictionary<EObj, (double X, double Y)> Start)? drag; // moving the selection on the playfield
     (double From, Dictionary<EObj, double> Start)? timeDrag; // ... or in time on the timeline
+    EObj? endDrag; // a spinner's end, on the timeline
     Vector2? boxFrom; // drag-selecting
     double scrubFrom = double.NaN, scrubTime;
     int timingSel = -1;
@@ -503,6 +504,13 @@ sealed class Editor : Screen
         var tl = TimelineRect();
         if (click && CheckCollisionPointRec(mouse, tl))
         {
+            // a spinner's end: dragged to a new (snapped) end
+            if (objs.LastOrDefault(o => o.Spinner && Math.Abs(TimelineX(o.End) - mouse.X) < 6 * u) is { } sp)
+            {
+                undo.Add(string.Join("\n", Write())); redo.Clear();
+                endDrag = sp;
+                return;
+            }
             var hit = objs.LastOrDefault(o => Math.Abs(TimelineX(o.Time) - mouse.X) < 10 * u);
             if (hit != null)
             {
@@ -511,6 +519,16 @@ sealed class Editor : Screen
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
             }
             else { scrubFrom = mouse.X; scrubTime = time; }
+            return;
+        }
+        if (endDrag is { } ed)
+        {
+            if (held)
+            {
+                double end = Math.Max(ed.Time + RedAt(ed.Time).Beat / divisor, Snap(TimeAtX(mouse.X)));
+                if (end != ed.End) { ed.End = end; ed.Raw = null; modified = true; }
+            }
+            else { endDrag = null; Rebuild(); }
             return;
         }
         if (timeDrag is { } td)
@@ -537,6 +555,13 @@ sealed class Editor : Screen
         // the playfield
         var fieldPos = ToField(mouse);
         bool inField = fieldPos.X >= -20 && fieldPos.X <= 532 && fieldPos.Y >= -20 && fieldPos.Y <= 404 && mouse.Y > tl.Y + tl.Height;
+        // stable: a right click deletes the object under the cursor (not while drawing a slider)
+        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && inField
+            && Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius) is { } gone)
+        {
+            Change(() => { objs.Remove(gone); selected.Remove(gone); });
+            return;
+        }
         switch (tool)
         {
             case 0: UpdateSelect(mouse, fieldPos, click, held, inField); break;
