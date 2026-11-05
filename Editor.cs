@@ -2216,7 +2216,7 @@ sealed partial class Editor : Screen
     (double Time, int Column, Dictionary<EObj, (double Time, double End, int Column)> Start)? mDrag;
     (float X, float Y, double Time)? mBox;
     int MKeys => Math.Clamp((int)Math.Round(double.TryParse(Kv("Difficulty", "CircleSize"), NumberStyles.Float, Inv, out double cs) ? cs : 4), 1, 18);
-    static float MColW(int keys) => Math.Min(30, (Game.W / U - MLeft - 70) / keys);
+    static float MColW(int keys) => Math.Min(30, (Game.W / U - MLeft - 200) / keys); // (ending before the snap panel)
     double MFrom => time - 6000 / zoom / 12;
     double MTo => time + 6000 / zoom / 3;
     float MY(double t) => MBottom - (float)((t - MFrom) / (MTo - MFrom)) * (MBottom - MTop);
