@@ -1369,11 +1369,17 @@ sealed partial class Editor : Screen
         _ => [new("Show in-game help"), new("View FAQ")],
     };
 
+    // the menu titles' text size: smaller on a narrow screen (4:3), so they end before the tabs
+    float MenuFont()
+    {
+        float u = U, full = 4 * u + MenuTitles.Sum(t => Game.TextWidth(t, 12 * u) + 12 * u), room = TabRect(0).X - 4 * u;
+        return full > room ? 12 * u * room / full : 12 * u;
+    }
     Rectangle MenuTitleRect(int i)
     {
-        float u = U, x = 4 * u;
-        for (int k = 0; k < i; k++) x += Game.TextWidth(MenuTitles[k], 12 * u) + 12 * u;
-        return new Rectangle(x - 4 * u, 0, Game.TextWidth(MenuTitles[i], 12 * u) + 8 * u, 17 * u);
+        float u = U, s = MenuFont(), x = 4 * u;
+        for (int k = 0; k < i; k++) x += Game.TextWidth(MenuTitles[k], s) + s;
+        return new Rectangle(x - 4 * u, 0, Game.TextWidth(MenuTitles[i], s) + 8 * u, 17 * u);
     }
 
     // the dropdown's rows: separators short, items 16 units
@@ -1422,7 +1428,7 @@ sealed partial class Editor : Screen
         {
             var r = MenuTitleRect(i);
             if (menuOpen == i) DrawRectangleRec(r, new Color(255, 160, 40, 200));
-            Game.Text(MenuTitles[i], r.X + 4 * u, 1 * u, 12 * u, Color.White);
+            Game.Text(MenuTitles[i], r.X + 4 * u, 1 * u + (12 * u - MenuFont()) / 2, MenuFont(), Color.White);
         }
         if (menuOpen < 0) return;
         var mouse = Input.GetMousePosition();
