@@ -92,8 +92,14 @@ sealed partial class Editor
             if (CheckCollisionPointRec(mouse, SetupRow(246 + i * 14))) { SetGeneral(toggles[i], General(toggles[i], "0") == "1" ? "0" : "1"); return true; }
         if (CheckCollisionPointRec(mouse, SetupRow(318)))
         {
-            string set = General("SampleSet", "Normal");
-            SetGeneral("SampleSet", set == "Normal" ? "Soft" : set == "Soft" ? "Drum" : "Normal");
+            string set = General("SampleSet", "Normal"), next = set == "Normal" ? "Soft" : set == "Soft" ? "Drum" : "Normal";
+            static int No(string s) => s switch { "Soft" => 2, "Drum" => 3, _ => 1 };
+            // (timing lines without a sample set of their own follow the map's, and are still written as they were)
+            Change(() =>
+            {
+                SetKv("General", "SampleSet", next);
+                foreach (var p in timing) if (p.Raw != null && p.Raw.Split(',').Length <= 3 && p.Set == No(set)) p.Set = No(next);
+            });
             return true;
         }
         // the map-wide volume and custom sample set: every timing point's (only when they all share one, like stable's)

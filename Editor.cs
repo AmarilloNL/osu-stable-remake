@@ -112,6 +112,7 @@ sealed partial class Editor : Screen
         samples = new BeatmapSamples(info.Folder);
         Read(File.ReadAllLines(file));
         LoadOsb();
+        if (timing.Count == 0) tab = 1; // (stable's: an untimed song opens in Timing)
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
         music = Track.Load(Path.Combine(info.Folder, info.AudioFilename), tempo: true);
         if (music != null) { music.Volume = Config.MusicVolume; length = Math.Max(1, music.LengthMs); }
@@ -436,11 +437,11 @@ sealed partial class Editor : Screen
             else AskExit();
             return;
         }
-        if (Input.IsKeyPressed(KeyboardKey.F1)) tab = 0;
-        if (Input.IsKeyPressed(KeyboardKey.F2)) tab = 3;
-        if (Input.IsKeyPressed(KeyboardKey.F3)) tab = 1;
-        if (Input.IsKeyPressed(KeyboardKey.F4)) tab = 2;
-        if (Input.IsKeyPressed(KeyboardKey.F6)) tab = 1; // (stable's Timing Setup: this editor's Timing tab)
+        if (Input.IsKeyPressed(KeyboardKey.F1)) SetTab(0);
+        if (Input.IsKeyPressed(KeyboardKey.F2)) SetTab(3);
+        if (Input.IsKeyPressed(KeyboardKey.F3)) SetTab(1);
+        if (Input.IsKeyPressed(KeyboardKey.F4)) SetTab(2);
+        if (Input.IsKeyPressed(KeyboardKey.F6)) SetTab(1); // (stable's Timing Setup: this editor's Timing tab)
         if (tab != 2) setupColourPick = -1; // (the palette closes with the tab)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
@@ -505,11 +506,10 @@ sealed partial class Editor : Screen
         // the top tabs, the bottom bar
         if (Input.IsMouseButtonPressed(MouseButton.Left))
         {
-            for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { tab = TabOrder[i]; return; }
+            for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { SetTab(TabOrder[i]); return; }
             if (UpdateBottomBar(mouse)) return;
         }
         if (UpdateSnapPanel(mouse)) return;
-        else if (Input.IsMouseButtonDown(MouseButton.Left) && !double.IsNaN(scrubFrom)) { }
 
         switch (tab)
         {
@@ -1348,8 +1348,8 @@ sealed partial class Editor : Screen
             new("Reset selected objects' samples", "", Sel(() => ResetSamples(selected))), new("Reset all samples", "", () => ResetSamples(objs)),
             new("Reset combo colours", "", ResetComboColours), new("Reset breaks", "", ResetBreaks), Sep,
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
-        2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2", () => tab = 3, tab == 3), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
-            new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6", () => tab = 1), Sep,
+        2 => [new("Compose", "F1", () => SetTab(0), tab == 0), new("Design", "F2", () => SetTab(3), tab == 3), new("Timing", "F3", () => SetTab(1), tab == 1), Sep,
+            new("Song Setup...", "F4", () => SetTab(2), tab == 2), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
             new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => followPoints = !followPoints, followPoints)],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
@@ -1366,7 +1366,7 @@ sealed partial class Editor : Screen
             new("Delete All Timing Sections", "", timing.Count > 0 ? () => Change(() => { timing.Clear(); timingSel = -1; }) : null), Sep,
             new("Set Current Position as Preview Point", "", () => Change(() => SetKv("General", "PreviewTime", ((int)Math.Round(time)).ToString())))],
         6 => [new("This Beatmap's Information Page"), new("This Beatmap's Thread")],
-        _ => [new("Show in-game help"), new("View FAQ")],
+        _ => [new("Show in-game help", "", () => { }), new("View FAQ")], // (stable's in-game help does nothing)
     };
 
     // the menu titles' text size: smaller on a narrow screen (4:3), so they end before the tabs
@@ -1864,6 +1864,17 @@ sealed partial class Editor : Screen
     }
 
     const float PromptY = 120;
+
+    // a tab change (stable's: Compose and Design only once the song has a timing point)
+    void SetTab(int t)
+    {
+        if (t is 0 or 3 && timing.Count == 0)
+        {
+            Notification.Show("Please time the song first!  This is imperative to creating a good beatmap.\nRead the guide on the site if you don't understand timing,\nor ask in the Beatmap Help forum.", 5000);
+            return;
+        }
+        tab = t;
+    }
 
     // ---- drawing
     Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }

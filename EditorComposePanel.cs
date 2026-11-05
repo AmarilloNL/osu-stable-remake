@@ -21,10 +21,10 @@ sealed partial class Editor
     {
         if (tab != 0) { snapDragging = false; return false; }
         // a right-click on a break in the timeline takes it out - not one stable would put back (in 5s of room)
-        if (Input.IsMouseButtonPressed(MouseButton.Right) && CheckCollisionPointRec(mouse, TimelineRect())
+        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && CheckCollisionPointRec(mouse, TimelineRect())
             && info.Breaks.FirstOrDefault(b => TimeAtX(mouse.X) > b.Start && TimeAtX(mouse.X) < b.End) is { End: > 0 } hovered)
         {
-            if (!AutoBreak(hovered)) Change(() => EventsOrNull()?.Lines.RemoveAll(l => IsBreakLine(l, hovered)));
+            if (!AutoBreak(hovered)) Change(() => EventsSection.Lines.RemoveAll(l => IsBreakLine(l, hovered)));
             return true;
         }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
@@ -48,7 +48,7 @@ sealed partial class Editor
         if (next > 0 && objs[next].Time != t)
         {
             int from = (int)objs.Take(next).Max(o => o.End), to = (int)objs[next].Time;
-            bool taken = info.Breaks.Any(b => b.Start <= from && b.End > from || b.End > from && b.End <= to);
+            bool taken = info.Breaks.Any(b => b.Start < to && b.End > from); // (stable's check, and a break an object was put into)
             if (from < t && t < to && to - from >= 1200 && !taken)
             {
                 int start = from + 200, end = to - (int)Preempt;
@@ -56,11 +56,12 @@ sealed partial class Editor
                 {
                     Change(() =>
                     {
-                        var ev = EventsOrNull() ?? AddEventsSection();
-                        // with the other breaks, in time order (under stable's "//Break Periods")
-                        int at = ev.Lines.FindIndex(l => l.Trim() == "//Break Periods");
-                        int after = ev.Lines.FindLastIndex(l => l.StartsWith("2,") && int.TryParse(l.Split(',')[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int bs) && bs < start);
-                        at = after >= 0 ? after + 1 : at >= 0 ? at + 1 : ev.Lines.Count;
+                        var ev = EventsSection;
+                        // with the other breaks, in time order (the game reads them in file order): after the last one
+                        // before it, else before the first, else under stable's "//Break Periods"
+                        int after = ev.Lines.FindLastIndex(l => BreakStart(l) < start), first = ev.Lines.FindIndex(l => BreakStart(l) >= start);
+                        int comment = ev.Lines.FindIndex(l => l.Trim() == "//Break Periods");
+                        int at = after >= 0 ? after + 1 : first >= 0 ? first : comment >= 0 ? comment + 1 : ev.Lines.Count;
                         ev.Lines.Insert(at, $"2,{start},{end}");
                     });
                     return;
@@ -71,13 +72,11 @@ sealed partial class Editor
         Notification.Show("There isn't enough room to place a break here!  Make sure you are between two well-spaced beats.", 3000);
     }
 
-    Section? EventsOrNull() => sections.FirstOrDefault(s => s.Name == "Events");
-    Section AddEventsSection() // (a map without [Events]: before its timing points)
+    // a break line's start (either form; null for any other line)
+    static double? BreakStart(string l)
     {
-        var ev = new Section("Events");
-        int i = sections.FindIndex(s => s.Name is "TimingPoints" or "Colours" or "HitObjects");
-        sections.Insert(i >= 0 ? i : sections.Count, ev);
-        return ev;
+        var f = l.Split(',');
+        return f.Length >= 3 && f[0].Trim() is "2" or "Break" && double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double s) ? s : null;
     }
     static bool IsBreakLine(string l, (double Start, double End) b)
     {

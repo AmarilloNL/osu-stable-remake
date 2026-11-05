@@ -134,6 +134,7 @@ sealed partial class Player
         mSplit = SplitStages(mKeys, coop);
         mBind = ManiaKeys(mKeys, mSplit);
         mAltBind = AltKeys(mKeys, mSplit);
+        for (int c = 0; c < mAltBind.Length; c++) if (mBind.Contains(mAltBind[c])) mAltBind[c] = KeyboardKey.Null; // (a layout's own column on Ctrl)
         mDown = new bool[mKeys];
         mStartAt = Game.NowMs;
         mLitAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();

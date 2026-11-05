@@ -895,7 +895,7 @@ sealed partial class Player : Screen
         if (paused) return;
         // stable's quick retry: holding the Quick Retry key (or Ctrl+R) fills 10 a 60Hz tick and retries at 100;
         // letting go drains 3 a tick. The screen fades to black with it.
-        bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.CtrlHeld && Input.IsKeyDown(KeyboardKey.R);
+        bool retryHeld = Input.IsKeyDown(Config.Key("keyQuickRetry", KeyboardKey.Grave)) || Input.CtrlHeld && Input.IsKeyDown(KeyboardKey.R) && !mBind.Contains(KeyboardKey.R); // (not when R is a mania column)
         if (!retryHeld) retryArmed = true; // a retry needs the key let go first (it's usually still held when the new play starts)
         retryHold = retryHeld && retryArmed ? Math.Min(100, retryHold + 10 * dtMs / (1000 / 60.0)) : Math.Max(0, retryHold - 3 * dtMs / (1000 / 60.0));
         if (retryHold >= 100) { Retry(quick: true); return; }
