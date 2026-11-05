@@ -1188,15 +1188,14 @@ sealed partial class Editor : Screen
     }
 
     // File > Open Difficulty: the set's other difficulties (once the changes here are saved or reverted)
-    MenuItem[] OtherDifficulties()
+    // the set's other difficulties (their names from the file names)
+    string[] OtherDifficultyFiles()
     {
-        try
-        {
-            return [.. Directory.EnumerateFiles(info.Folder, "*.osu").Where(f => !string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)).Order()
-                .Select(f => new MenuItem(Path.GetFileNameWithoutExtension(f) is var n && n.LastIndexOf('[') is var a and >= 0 && n.LastIndexOf(']') > a ? n[(a + 1)..n.LastIndexOf(']')] : n, "", () => OpenOther(f)))];
-        }
+        try { return [.. Directory.EnumerateFiles(info.Folder, "*.osu").Where(f => !string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)).Order()]; }
         catch (IOException) { return []; }
     }
+    static string DifficultyName(string f) => Path.GetFileNameWithoutExtension(f) is var n && n.LastIndexOf('[') is var a and >= 0 && n.LastIndexOf(']') > a ? n[(a + 1)..n.LastIndexOf(']')] : n;
+    MenuItem[] OtherDifficulties() => [.. OtherDifficultyFiles().Select(f => new MenuItem(DifficultyName(f), "", () => OpenOther(f)))];
 
     void OpenOther(string file)
     {
@@ -1418,7 +1417,7 @@ sealed partial class Editor : Screen
     }
     static readonly MenuItem Sep = new("-");
     static readonly string[] MenuTitles = ["File", "Edit", "View", "Compose", "Design", "Timing", "Web", "Help"];
-    int menuOpen = -1, menuSub = -1;
+    int menuOpen = -1, menuSub = -1, menuSub2 = -1; // (menuSub2: a submenu's own submenu, like Open Difficulty's)
     Action? Sel(Action a) => selected.Count > 0 ? a : null;
     Action? NotMania(Action? a) => mode == 3 ? null : a;
 
@@ -1442,7 +1441,7 @@ sealed partial class Editor : Screen
     MenuItem[] MenuItems(int i) => i switch
     {
         0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
-            new("Open Difficulty...", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), Sep,
+            new("Open Difficulty...", Sub: [new("For Editing", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), new("For Reference", Sub: mode == 3 ? ReferenceItems() : null)]), Sep,
             new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod", "Ctrl+Shift+A", OpenAiMod), Sep,
             new("Upload Beatmap..."), new("Extract Map Package", "", () => Notification.Show("Your beatmap is already extracted!", 3000)), new("Export Package", "", ExportPackage), new("Import from...", Sub: [new("bms/bme", "", OpenBmsImport)]), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
@@ -1518,17 +1517,20 @@ sealed partial class Editor : Screen
         int title = Enumerable.Range(0, MenuTitles.Length).FirstOrDefault(i => CheckCollisionPointRec(mouse, MenuTitleRect(i)), -1);
         if (menuOpen < 0)
         {
-            if (click && title >= 0) { menuOpen = title; menuSub = -1; return true; }
+            if (click && title >= 0) { menuOpen = title; menuSub = menuSub2 = -1; return true; }
             return false;
         }
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { menuOpen = -1; return true; }
-        if (title >= 0 && title != menuOpen) { menuOpen = title; menuSub = -1; }
+        if (title >= 0 && title != menuOpen) { menuOpen = title; menuSub = menuSub2 = -1; }
         var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, 17 * U);
         int hover = rows.FindIndex(r => CheckCollisionPointRec(mouse, r.Rect));
-        if (hover >= 0 && rows[hover].Item.Sub != null) menuSub = hover;
+        if (hover >= 0 && rows[hover].Item.Sub != null) { if (menuSub != hover) menuSub2 = -1; menuSub = hover; }
         List<(MenuItem Item, Rectangle Rect)> sub = menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s ? MenuRows(s, rows[menuSub].Rect.X + rows[menuSub].Rect.Width, rows[menuSub].Rect.Y) : [];
+        int hover2 = sub.FindIndex(r => CheckCollisionPointRec(mouse, r.Rect));
+        if (hover2 >= 0 && sub[hover2].Item.Sub != null) menuSub2 = hover2;
+        var sub2 = SubRows(sub, menuSub2);
         if (!click) return true;
-        var hit = sub.FirstOrDefault(r => CheckCollisionPointRec(mouse, r.Rect)).Item ?? (hover >= 0 ? rows[hover].Item : null);
+        var hit = sub2.FirstOrDefault(r => CheckCollisionPointRec(mouse, r.Rect)).Item ?? sub.FirstOrDefault(r => CheckCollisionPointRec(mouse, r.Rect)).Item ?? (hover >= 0 ? rows[hover].Item : null);
         if (title == menuOpen && hit == null) { menuOpen = -1; return true; }
         if (hit?.Sub != null) return true;
         menuOpen = -1;
@@ -1566,8 +1568,15 @@ sealed partial class Editor : Screen
         }
         var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, 17 * u);
         Panel(rows);
-        if (menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s) Panel(MenuRows(s, rows[menuSub].Rect.X + rows[menuSub].Rect.Width, rows[menuSub].Rect.Y));
+        if (menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s)
+        {
+            var sub = MenuRows(s, rows[menuSub].Rect.X + rows[menuSub].Rect.Width, rows[menuSub].Rect.Y);
+            Panel(sub);
+            Panel(SubRows(sub, menuSub2));
+        }
     }
+    List<(MenuItem Item, Rectangle Rect)> SubRows(List<(MenuItem Item, Rectangle Rect)> rows, int at) =>
+        at >= 0 && at < rows.Count && rows[at].Item.Sub is { } s ? MenuRows(s, rows[at].Rect.X + rows[at].Rect.Width, rows[at].Rect.Y) : [];
 
     // the selection's positions (slider points too) through f
     void Transform(Func<Vector2, Vector2> f)
@@ -2349,7 +2358,8 @@ sealed partial class Editor : Screen
     (double Time, int Column, Dictionary<EObj, (double Time, double End, int Column)> Start)? mDrag;
     (float X, float Y, double Time)? mBox;
     int MKeys => Math.Clamp((int)Math.Round(double.TryParse(Kv("Difficulty", "CircleSize"), NumberStyles.Float, Inv, out double cs) ? cs : 4), 1, 18);
-    static float MColW(int keys) => Math.Min(30, (Game.W / U - MLeft - 200) / keys); // (ending before the snap panel)
+    // (ending before the snap panel, with a reference difficulty's stage beside it too)
+    float MColW(int keys) => Math.Min(30, (Game.W / U - MLeft - 200) / (keys + (reference != null ? referenceKeys + 1 : 0)));
     double MFrom => time - 6000 / zoom / 12;
     double MTo => time + 6000 / zoom / 3;
     float MY(double t) => MBottom - (float)((t - MFrom) / (MTo - MFrom)) * (MBottom - MTop);
@@ -2519,6 +2529,19 @@ sealed partial class Editor : Screen
             }
         for (int i = 0; i <= keys; i++) DrawRectangleRec(R(MLeft + colW * i, MTop, 1, h), Color.White);
         foreach (float x in new[] { MStrip, MStrip + 60 }) DrawRectangleRec(R(x, MTop, 1, h), Color.White);
+        float refLeft = MLeft + colW * (keys + 1), refW = referenceKeys * colW;
+        if (reference != null)
+        {
+            DrawRectangleRec(R(refLeft, MTop, refW + 1, h), new Color(50, 50, 50, 255));
+            if (step > 1e-5)
+                for (long n = (long)Math.Ceiling((MFrom - red.Time) / step), last = (long)Math.Floor((MTo - red.Time) / step); n <= last; n++)
+                {
+                    long inBeat = ((n % divisor) + divisor) % divisor, beat = (long)Math.Floor(n / (double)divisor);
+                    bool bar = inBeat == 0 && ((beat % red.Meter) + red.Meter) % red.Meter == 0;
+                    DrawRectangleRec(R(refLeft, MY(red.Time + n * step) - (bar ? 1 : 0), refW, bar ? 3 : 1), TickColour(inBeat, divisor));
+                }
+            for (int i = 0; i <= referenceKeys; i++) DrawRectangleRec(R(refLeft + colW * i, MTop, 1, h), Color.White);
+        }
         DrawRectangleRec(R(MLeft, MBottom - h / 5, stageW, 4), new Color(173, 255, 47, 255));
 
         // the notes
@@ -2541,6 +2564,21 @@ sealed partial class Editor : Screen
             // View → Show Sample Name: the note's own sample file (without its extension), else its additions
             if (showSampleName && o.Time > MFrom && o.Time < MTo && SampleName(o) is { Length: > 0 } name)
                 Game.Text(name, (MLeft + colW * c) * u, (MY(o.Time) - 10) * u, 8 * u, Color.White);
+        }
+        // the reference's notes
+        foreach (var o in reference ?? [])
+        {
+            if (o.End < MFrom) continue;
+            if (o.Time > MTo) break;
+            int c = MColumn(o, referenceKeys);
+            var tint = Player.ManiaColumnKind(c, referenceKeys) switch { "2" => new Color(250, 170, 212, 255), "S" => new Color(247, 236, 0, 255), _ => Color.White };
+            if ((o.Type & 128) != 0 && body is { } bd)
+            {
+                float y0 = Math.Min(MBottom, MY(o.Time)), y1 = Math.Max(MTop, MY(o.End));
+                DrawTexturePro(bd.Tex, new Rectangle(0, 0, bd.Tex.Width, bd.Tex.Height), R(refLeft + colW * c, y1, bd.Width * 0.1875f / 1.6f * colW / 30, y0 - y1), Vector2.Zero, 0, tint);
+                if (o.End < MTo) { var re = MNote(c, o.End, colW); Note(re with { X = re.X - MLeft + refLeft }, tint); }
+            }
+            if (o.Time >= MFrom) { var rn = MNote(c, o.Time, colW); Note(rn with { X = rn.X - MLeft + refLeft }, tint); }
         }
         // the note about to be placed, at the cursor
         var m = Input.GetMousePosition() / u;
