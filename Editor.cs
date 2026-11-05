@@ -1347,7 +1347,7 @@ sealed partial class Editor : Screen
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
             new("Metronome Clicks", "", () => metronome = !metronome, metronome), Sep,
             new("Add Timing Section", "Ctrl+P", () => TimingAction(0)), new("Add Inheriting Section", "Ctrl+Shift+P", () => TimingAction(1)),
-            new("Reset Current Section"), new("Delete Timing Section", "Ctrl+I", DeleteTimingHere), new("Resnap Current Section", "", ResnapSection), Sep,
+            new("Reset Current Section", "", ResetCurrentSectionPrompt), new("Delete Timing Section", "Ctrl+I", DeleteTimingHere), new("Resnap Current Section", "", ResnapSection), Sep,
             new("Resnap All Notes", "", ResnapAll), new("Move all notes in time...", "", objs.Count > 0 ? MoveAllPrompt : null), new("Recalculate Slider Lengths", "", RecalcSliders),
             new("Delete All Timing Sections", "", timing.Count > 0 ? () => Change(() => { timing.Clear(); timingSel = -1; }) : null), Sep,
             new("Set Current Position as Preview Point", "", () => Change(() => SetKv("General", "PreviewTime", ((int)Math.Round(time)).ToString())))],
@@ -1692,6 +1692,7 @@ sealed partial class Editor : Screen
         var list = timing.OrderBy(t => t.Time).ToList();
         if (Input.GetMouseWheelMove() != 0 && mouse.X < Game.W - 220 * u) { }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (Input.IsKeyPressed(KeyboardKey.T) && !Input.CtrlHeld || click && CheckCollisionPointRec(mouse, TapButton())) { TimingTap(); return; } // (stable's Tap Here!)
         if (!click) return;
         for (int i = 0; i < 18 && i + timingScroll < list.Count; i++)
             if (CheckCollisionPointRec(mouse, TimingRow(i))) { timingSel = timing.IndexOf(list[i + timingScroll]); Seek(list[i + timingScroll].Time); return; }
@@ -2448,6 +2449,7 @@ sealed partial class Editor : Screen
         }
         if (list.Count > 18) Game.Text($"{timingScroll + 1}-{Math.Min(list.Count, timingScroll + 18)} of {list.Count} (click above / below to scroll)", 82 * u, 428 * u, 10 * u, Color.LightGray);
         for (int i = 0; i < TimingButtons.Length; i++) DrawButton(TimingButton(i), TimingButtons[i], false);
+        DrawTapButton(u);
         if (timingSel >= 0 && timingSel < timing.Count)
         {
             var t = timing[timingSel];
