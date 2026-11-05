@@ -298,6 +298,7 @@ sealed partial class Player
         if (result > 0)
         {
             combo++; maxCombo = Math.Max(maxCombo, combo); mComboAt = Game.NowMs;
+            if (result < 300 && mods.HasFlag(Mods.Perfect)) Fail(); // (Perfect: 300s and MAXes only)
         }
         else BreakCombo();
 

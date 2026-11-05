@@ -294,6 +294,7 @@ sealed partial class Player
             combo++;
             maxCombo = Math.Max(maxCombo, combo);
             TaikoScore(result == 300 ? 300 : 150);
+            if (result != 300 && mods.HasFlag(Mods.Perfect)) Fail(); // (Perfect: greats only)
             health.Add(result == 300 ? tHpMul * 6 : tHpMul * Beatmap.Range(map.HP, 17.6, 2.2, 2.2));
         }
         else

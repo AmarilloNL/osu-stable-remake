@@ -318,7 +318,7 @@ sealed partial class Player
             {
                 case CKind.Fruit: nMiss++; health.Apply(HpEvent.Miss); BreakCombo(); cFailUntil = time + 1000; break;
                 case CKind.Droplet: nMiss++; health.Apply(HpEvent.SliderBreak); BreakCombo(); cFailUntil = time + 1000; break;
-                case CKind.Tiny: nKatu++; break;
+                case CKind.Tiny: nKatu++; if (mods.HasFlag(Mods.Perfect)) Fail(); break; // (Perfect: not even a tiny droplet)
             }
             if (f.LastInCombo) ClearPlate(thrown: false, shower: f.Kind == CKind.Banana);
             if (f.Kind is CKind.Fruit or CKind.Droplet) cHyperDir = 0;
