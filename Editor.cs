@@ -489,7 +489,7 @@ sealed partial class Editor : Screen
         bool press = Input.IsMouseButtonPressed(MouseButton.Left);
         if (press) windowPress = false;
         bool editorDrag = Input.IsMouseButtonDown(MouseButton.Left) && !press && !windowPress;
-        if (!editorDrag && (sampleImport != null && UpdateSampleImport(mouse) || aimod != null && UpdateAiMod(mouse)))
+        if (!editorDrag && (volumeWindow != null && UpdateVolumeWindow(mouse) || sampleImport != null && UpdateSampleImport(mouse) || aimod != null && UpdateAiMod(mouse)))
         {
             windowPress |= press;
             Input.MouseTaken = true;
@@ -1460,6 +1460,7 @@ sealed partial class Editor : Screen
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => SetTab(0), tab == 0), new("Design", "F2", () => SetTab(3), tab == 3), new("Timing", "F3", () => SetTab(1), tab == 1), Sep,
             new("Song Setup...", "F4", () => SetTab(2), tab == 2), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
+            new("Volume", "", () => volumeWindow ??= new VolumeWindow()),
             new("Grid Level", Sub: [.. new[] { ("1 (Most sparse)", 32), ("2", 16), ("3", 8), ("4 (Most precise)", 4) }.Select(g => new MenuItem(g.Item1, "", () => gridSize = g.Item2, gridSize == g.Item2))]),
             new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => Config.SetOwn("EditorFollowPoints", (followPoints = !followPoints) ? "1" : "0"), followPoints),
             new("Snaking sliders", "", () => Config.SetOwn("EditorSnakingSliders", (snakingSliders = !snakingSliders) ? "1" : "0"), snakingSliders),
@@ -2034,6 +2035,7 @@ sealed partial class Editor : Screen
         DrawBottomBar(u);
         if (aimod != null) DrawAiMod(u);
         if (sampleImport != null) DrawSampleImport();
+        if (volumeWindow != null) DrawVolumeWindow();
         if (bmsWindow != null) DrawBmsImport();
         DrawMenu(u);
         if (xform != null) DrawXform(u);
