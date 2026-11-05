@@ -1174,7 +1174,7 @@ sealed partial class Editor : Screen
         {
             EObj a = objs[i - 1], b = objs[i];
             if (b.Combo == 1 || a.Spinner || b.Spinner || a.End - lead > time || b.Time + fade < time) continue;
-            Vector2 from = a.Slider && a.Path.Length > 0 ? (a.Slides % 2 == 1 ? a.Path[^1] : a.Path[0]) : new((float)a.X, (float)a.Y), to = new((float)b.X, (float)b.Y);
+            Vector2 from = EndPosOf(a) + StackShift(a), to = StackedPos(b); // (where they're drawn, stacked)
             int dist = (int)Vector2.Distance(from, to);
             float rot = MathF.Atan2(to.Y - from.Y, to.X - from.X) * 180 / MathF.PI;
             for (int d = 48; d < dist - 32; d += 32)
@@ -1192,8 +1192,8 @@ sealed partial class Editor : Screen
         }
     }
 
-    // File > Open Difficulty: the set's other difficulties (once the changes here are saved or reverted)
-    // the set's other difficulties (their names from the file names)
+    // File > Open Difficulty: the set's other difficulties (their names from the file names; one opens for editing once
+    // the changes here are saved or reverted)
     string[] OtherDifficultyFiles()
     {
         try { return [.. Directory.EnumerateFiles(info.Folder, "*.osu").Where(f => !string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)).Order()]; }
