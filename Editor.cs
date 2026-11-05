@@ -2015,6 +2015,7 @@ sealed partial class Editor : Screen
                 DrawRectangle((int)x, (int)(r.Y + r.Height * (1 - hgt)), Math.Max(1, (int)u), (int)(r.Height * hgt), ColorAlpha(c, 0.8f));
             }
         }
+        if (tab == 0) DrawBreakLabels(r, u);
         // the objects
         var colours = Colours;
         foreach (var o in tab == 3 ? [] : objs) // (Design: the picked sprite's transformations instead)
