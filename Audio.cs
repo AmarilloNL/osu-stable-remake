@@ -103,6 +103,21 @@ sealed class Track : IDisposable
     Track(int handle) { this.handle = handle; Bass.Register(handle, true); }
 
     // tempo: always go through BASS_FX so the rate can change later (replay speed).
+    // A file's length and bitrate (kbps, 0 when BASS can't tell) without playing it; null when BASS can't decode it.
+    public static (double LengthMs, float Kbps)? Probe(string path)
+    {
+        Bass.UseDevice();
+        int h = Bass.BASS_StreamCreateFile(0, path, 0, 0, Bass.StreamPrescan | Bass.StreamDecode | Bass.Unicode);
+        if (h == 0) return null;
+        try
+        {
+            float kbps = 0;
+            Bass.BASS_ChannelGetAttribute(h, 12, ref kbps); // BASS_ATTRIB_BITRATE
+            return (Bass.BASS_ChannelBytes2Seconds(h, Bass.BASS_ChannelGetLength(h, Bass.PosByte)) * 1000, kbps);
+        }
+        finally { Bass.BASS_StreamFree(h); }
+    }
+
     public static Track? Load(string path, double rate = 1, bool nightcore = false, bool tempo = false)
     {
         Bass.UseDevice();

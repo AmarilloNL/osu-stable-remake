@@ -18,7 +18,7 @@ namespace OsuStableRemake;
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
 // Like stable's, a taiko map's circles are red (blue with a whistle or clap) and its sliders yellow, a catch map's
 // distance snap only measures across, and a mania map gets its own compose view (Select / Note / Hold).
-sealed class Editor : Screen
+sealed partial class Editor : Screen
 {
     // ---- the file: its sections as written, key-value sections editable, timing points and objects parsed
     sealed class Section(string name) { public string Name = name; public List<string> Lines = []; public int Blanks = 1; } // Blanks: the empty lines after it, as written
@@ -372,6 +372,9 @@ sealed class Editor : Screen
     {
         music?.Dispose();
         music = null;
+        video?.Dispose();
+        video = null;
+        storyboard?.Unload();
         samples.Unload();
         Game.FadeTo(back);
     }
@@ -385,6 +388,7 @@ sealed class Editor : Screen
         if (prompt != null) { UpdatePrompt(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(mouse)) return;
+        if (aimod != null && UpdateAiMod(mouse)) return;
 
         // the clock
         if (music != null && playing)
@@ -412,6 +416,7 @@ sealed class Editor : Screen
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Y)) Restore(redo, undo);
+        if (Input.CtrlHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.A)) OpenAiMod();
 
         // stable's live mapping (Compose: Ctrl+Tab)
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Tab)) ToggleLiveMapping();
@@ -645,7 +650,7 @@ sealed class Editor : Screen
             if (mode != 3 && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.F)) SliderToStream();
             if (Input.IsKeyPressed(KeyboardKey.D) && !Input.ShiftHeld) Change(CloneSelection);
         }
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) SelectAll();
+        if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.A)) SelectAll();
         if (mode != 3 && Input.CtrlHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.D)) { OpenPoly(); return; }
         if (Input.CtrlHeld && (Input.IsKeyPressed(KeyboardKey.C) || Input.IsKeyPressed(KeyboardKey.X)) && selected.Count > 0) CopySel(cut: Input.IsKeyPressed(KeyboardKey.X));
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.V) && clipboard.Count > 0) PasteClip();
@@ -1267,7 +1272,7 @@ sealed class Editor : Screen
     {
         0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
             new("Open Difficulty...", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), Sep,
-            new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod"), Sep,
+            new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod", "Ctrl+Shift+A", OpenAiMod), Sep,
             new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package", "", ExportPackage), new("Import from..."), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
@@ -1284,7 +1289,7 @@ sealed class Editor : Screen
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2"), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
             new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6", () => tab = 1), Sep,
-            new("Show Video/Storyboard"), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name"), Sep, new("Hit animations"), new("Follow points", "", () => followPoints = !followPoints, followPoints)],
+            new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => followPoints = !followPoints, followPoints)],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
@@ -1807,6 +1812,7 @@ sealed class Editor : Screen
             float s = Math.Max(w / (float)tex.Width, h / (float)tex.Height);
             DrawTexturePro(tex, new Rectangle(0, 0, tex.Width, tex.Height), new Rectangle((w - tex.Width * s) / 2, (h - tex.Height * s) / 2, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, dimBg ? 0.3f : 1));
         }
+        if (showVideo && tab == 0) DrawStoryboard(w, h);
         switch (tab)
         {
             case 0: DrawCompose(u); break;
@@ -1816,6 +1822,7 @@ sealed class Editor : Screen
         DrawTimeline(u);
         DrawTopBar(u);
         DrawBottomBar(u);
+        if (aimod != null) DrawAiMod(u);
         DrawMenu(u);
         if (xform != null) DrawXform(u);
         if (prompt != null) DrawPrompt(u);
@@ -1831,6 +1838,42 @@ sealed class Editor : Screen
             Dialog.Button(2, "Cancel", new Color(120, 120, 120, 255), PromptY + 100, age, mouse);
         }
         SongSelect.DrawCursor();
+    }
+
+    // View → Show Video/Storyboard (stable's EditorVideo, on by default): the map's video and storyboard behind the
+    // playfield, at the editor's time and dim
+    bool showVideo = Config.GetBool("EditorVideo", true), storyboardLoaded;
+    bool hitAnimations = Config.GetBool("EditorHitAnimations", false); // View → Hit animations
+    bool showSampleName = true; // View → Show Sample Name (the mania view's)
+    static string SampleName(EObj o)
+    {
+        var f = o.Sample.Split(':');
+        if (f.Length > 4 && f[4].Length > 0) return f[4].LastIndexOf('.') > 0 ? f[4][..f[4].LastIndexOf('.')] : f[4];
+        return string.Join('|', new[] { (2, "W"), (4, "F"), (8, "C") }.Where(s => (o.HitSound & s.Item1) != 0).Select(s => s.Item2));
+    }
+    Storyboard? storyboard;
+    Video? video;
+    void EnsureStoryboard()
+    {
+        if (storyboardLoaded) return;
+        storyboardLoaded = true;
+        try { storyboard = Storyboard.Load(info, textures: true); }
+        catch (IOException e) { Console.Error.WriteLine($"storyboard not loaded: {e.Message}"); }
+        var videoPath = Path.Combine(info.Folder, info.VideoFile);
+        if (info.VideoFile.Length > 0 && File.Exists(videoPath)) video = new Video(videoPath);
+    }
+    void DrawStoryboard(int w, int h)
+    {
+        EnsureStoryboard();
+        float alpha = dimBg ? 0.3f : 1;
+        if (video != null && time >= info.VideoOffset && !video.Failed && video.Frame(time - info.VideoOffset) is { } vt)
+        {
+            float s = Math.Min(w / (float)vt.Width, h / (float)vt.Height);
+            DrawRectangle(0, 0, w, h, Color.Black); // (it replaces the background, like in play)
+            DrawTexturePro(vt, new Rectangle(0, 0, vt.Width, vt.Height), new Rectangle((w - vt.Width * s) / 2, (h - vt.Height * s) / 2, vt.Width * s, vt.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, alpha));
+        }
+        storyboard?.Draw(time, w, h, alpha, overlay: false);
+        storyboard?.Draw(time, w, h, alpha, overlay: true);
     }
 
     Texture2D? bg;
@@ -1950,7 +1993,9 @@ sealed class Editor : Screen
         for (int k = vis.Count - 1; k >= 0; k--)
         {
             var o = vis[k];
-            float alpha = time < o.Time - pre + 400 ? (float)((time - (o.Time - pre)) / 400) : time > o.End ? 1 - (float)((time - o.End) / 800) : 1;
+            // past its end it fades over 800ms, or (Hit animations) like a hit in play: out over 240ms, growing to 1.4x
+            float alpha = time < o.Time - pre + 400 ? (float)((time - (o.Time - pre)) / 400) : time > o.End ? 1 - (float)((time - o.End) / (hitAnimations ? 240 : 800)) : 1;
+            float hitScale = hitAnimations && time > o.End ? 1 + 0.4f * (float)Math.Min(1, (time - o.End) / 240) : 1;
             alpha = Math.Clamp(alpha, 0, 1);
             var col = ObjColour(o, colours);
             if (o.Spinner)
@@ -1994,12 +2039,14 @@ sealed class Editor : Screen
                     skin.Tex("sliderb0")?.Draw(ToScreen(ball.X, ball.Y), cs, ColorAlpha(col, alpha));
                 }
             }
-            DrawHitCircle(new((float)o.X, (float)o.Y), o.Combo, col, alpha, cs, selected.Contains(o), number: true);
+            DrawHitCircle(new((float)o.X, (float)o.Y), o.Combo, col, alpha, cs * hitScale, selected.Contains(o), number: true);
             if (time < o.Time)
             {
                 float a = (float)((o.Time - time) / pre);
                 skin.Tex("approachcircle")?.Draw(ToScreen(o.X, o.Y), cs * (1 + 3 * a), ColorAlpha(col, alpha));
             }
+            else if (o.Circle && !hitAnimations) // (a circle's approach circle stays, opening to 1.1x over 100ms)
+                skin.Tex("approachcircle")?.Draw(ToScreen(o.X, o.Y), cs * (1 + 0.1f * (float)Math.Min(1, (time - o.Time) / 100)), ColorAlpha(col, alpha));
         }
         // the selected (visible) sliders' points: joined by lines, a square on each (red where two meet: a segment's end)
         foreach (var o in vis)
@@ -2258,6 +2305,9 @@ sealed class Editor : Screen
             }
             if (o.Time >= MFrom && o.Time < MTo) Note(MNote(c, o.Time, colW), tint);
             if (hold && o.End >= MFrom && o.End < MTo) Note(MNote(c, o.End, colW), tint);
+            // View → Show Sample Name: the note's own sample file (without its extension), else its additions
+            if (showSampleName && o.Time > MFrom && o.Time < MTo && SampleName(o) is { Length: > 0 } name)
+                Game.Text(name, (MLeft + colW * c) * u, (MY(o.Time) - 10) * u, 8 * u, Color.White);
         }
         // the note about to be placed, at the cursor
         var m = Input.GetMousePosition() / u;

@@ -62,6 +62,8 @@ sealed class Storyboard
     public double EarliestEvent => Math.Min(0, Math.Min(elements.Count > 0 ? elements.Min(e => e.Start) : 0, samples.Count > 0 ? samples.Min(s => s.Time) : 0));
     readonly HashSet<string> referenced = new(StringComparer.OrdinalIgnoreCase);
     public bool UsesFile(string file) => referenced.Contains(file);
+    public IEnumerable<string> ReferencedFiles => referenced;
+    public int CountShorterThan(double ms) => elements.Count(e => e.End - e.Start < ms); // (AiMod's epilepsy check)
 
     Storyboard(string folder, bool widescreen)
     {

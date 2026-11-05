@@ -90,10 +90,25 @@ sealed unsafe class Video : IDisposable
             lock (gate) { Width = w; Height = h; pixels = new byte[w * h * 4]; }
 
             IntPtr next = 0;
-            long nextTime = 0;
-            bool ended = false;
+            long nextTime = 0, reached = 0; // reached: the latest frame shown, or where a seek went (it starts at the key frame before)
+            bool ended = false, seekable = true;
+            byte* position = stackalloc byte[24]; // a PROPVARIANT: VT_I8 and the time in 100ns units
             while (!stop)
             {
+                // a jump back (the editor) or far ahead (a skip): read on from there instead of decoding the way there
+                double want = Volatile.Read(ref wanted);
+                if (seekable && !double.IsInfinity(want) && (want < reached - 100 || !ended && want > Math.Max(reached, next != 0 ? nextTime : 0) + 3000))
+                {
+                    if (next != 0) { Release(next); next = 0; }
+                    new Span<byte>(position, 24).Clear();
+                    *(ushort*)position = 20;
+                    *(long*)(position + 8) = (long)(Math.Max(0, want) * 10000);
+                    Guid timeFormat = Guid.Empty;
+                    seekable = ((delegate* unmanaged[Stdcall]<IntPtr, Guid*, byte*, int>)Slot(reader, 8))(reader, &timeFormat, position) >= 0; // SetCurrentPosition
+                    ended = false;
+                    reached = (long)Math.Max(0, want);
+                    continue;
+                }
                 if (next == 0 && !ended)
                 {
                     uint actual, flags;
@@ -110,6 +125,7 @@ sealed unsafe class Video : IDisposable
                     Publish(next, ref buffer, w, h, stride);
                     Release(next);
                     next = 0;
+                    reached = Math.Max(reached, nextTime);
                     continue;
                 }
                 Thread.Sleep(2);
