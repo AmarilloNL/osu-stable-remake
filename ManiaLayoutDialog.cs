@@ -14,8 +14,9 @@ sealed class ManiaLayoutDialog
     int keys = 4, column = -1;
 
     static float U => Game.H / 480f;
-    static Rectangle CountRect(int i) { float u = U; return new Rectangle(Game.W / 2f + (i - 5) * 44 * u + 2 * u, 70 * u, 40 * u, 20 * u); }
-    Rectangle ColumnRect(int c) { float u = U, cw = Math.Min(40, 400f / keys); return new Rectangle(Game.W / 2f + (c - keys / 2f) * cw * u, 120 * u, (cw - 2) * u, 220 * u); }
+    static readonly int[] Counts = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18]; // (stable's: past 10, the two-stage counts)
+    static Rectangle CountRect(int i) { float u = U; return new Rectangle(Game.W / 2f + (i - Counts.Length / 2f) * 40 * u + 2 * u, 70 * u, 36 * u, 20 * u); }
+    Rectangle ColumnRect(int c) { float u = U, cw = Math.Min(40, 560f / keys); return new Rectangle(Game.W / 2f + (c - keys / 2f) * cw * u, 120 * u, (cw - 2) * u, 220 * u); }
     static Rectangle DefaultRect() { float u = U; return new Rectangle(Game.W / 2f - 60 * u, 360 * u, 120 * u, 22 * u); }
 
     public void Update()
@@ -38,8 +39,8 @@ sealed class ManiaLayoutDialog
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { Closed = true; return; }
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) return;
         var mouse = Input.GetMousePosition();
-        for (int i = 0; i < 10; i++)
-            if (CheckCollisionPointRec(mouse, CountRect(i))) { keys = i + 1; Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume); return; }
+        for (int i = 0; i < Counts.Length; i++)
+            if (CheckCollisionPointRec(mouse, CountRect(i))) { keys = Counts[i]; Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume); return; }
         for (int c = 0; c < keys; c++)
             if (CheckCollisionPointRec(mouse, ColumnRect(c))) { column = c; Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume); return; }
         if (CheckCollisionPointRec(mouse, DefaultRect()))
@@ -57,13 +58,13 @@ sealed class ManiaLayoutDialog
         Dialog.Backdrop(a);
         Dialog.Title("osu!mania layout", a);
         var mouse = Input.GetMousePosition();
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < Counts.Length; i++)
         {
             var r = CountRect(i);
-            bool on = keys == i + 1, hover = column < 0 && CheckCollisionPointRec(mouse, r);
+            bool on = keys == Counts[i], hover = column < 0 && CheckCollisionPointRec(mouse, r);
             DrawRectangleRec(r, ColorAlpha(on ? new Color(255, 160, 40, 255) : hover ? Xna.Gray : Color.Black, a));
             DrawRectangleLinesEx(r, 1, ColorAlpha(Xna.LightGray, a));
-            Centred($"{i + 1}K", r, 12 * u, ColorAlpha(Color.White, a));
+            Centred($"{Counts[i]}K", r, 12 * u, ColorAlpha(Color.White, a));
         }
         var layout = Player.ManiaKeys(keys);
         for (int c = 0; c < keys; c++)
