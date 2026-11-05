@@ -132,10 +132,11 @@ sealed partial class Editor : Screen
             if (cur == null && line.StartsWith("osu file format v")) { header = line.Trim(); int.TryParse(line.Trim()["osu file format v".Length..], out version); continue; }
             if (line.StartsWith('[') && line.EndsWith(']')) { cur = new Section(line[1..^1]); sections.Add(cur); continue; }
             if (cur == null) continue;
-            if (cur.Name == "TimingPoints" && line.Trim().Length > 0 && !line.StartsWith("//")) { if (ParseTiming(line) is { } t) timing.Add(t); cur.Blanks = 0; continue; }
-            if (cur.Name == "HitObjects" && line.Trim().Length > 0) { if (ParseObject(line) is { } o) objs.Add(o); cur.Blanks = 0; continue; }
+            // (lines are kept as written, trailing spaces too: only parsed trimmed)
+            if (cur.Name == "TimingPoints" && line.Trim().Length > 0 && !line.StartsWith("//")) { if (ParseTiming(line) is { } t) { t.Raw = raw; timing.Add(t); } cur.Blanks = 0; continue; }
+            if (cur.Name == "HitObjects" && line.Trim().Length > 0) { if (ParseObject(line) is { } o) { o.Raw = raw; objs.Add(o); } cur.Blanks = 0; continue; }
             if (line.Trim().Length == 0 && cur.Name is "TimingPoints" or "HitObjects") { cur.Blanks++; continue; }
-            cur.Lines.Add(line);
+            cur.Lines.Add(raw);
         }
         foreach (var name in new[] { "General", "Editor", "Metadata", "Difficulty", "Events", "TimingPoints", "HitObjects" })
             if (sections.All(s => s.Name != name)) sections.Add(new Section(name));
