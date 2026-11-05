@@ -35,13 +35,13 @@ sealed partial class Player
     // (the end of a banana shower: 400 up, with a wide white flash); after a miss it drops. Thrown things fall at
     // 480/s² and fade over 2s (dropped: 1s). A hyperdashing catcher leaves half-faded copies of itself every 16ms
     // (gone over 250ms, 100 if it didn't move) and one in the after-image colour where it lands (growing 1.2x and
-    // fading over 1.2s).
+    // fading over 1.2s). (The copies come while the dash key is held: white, red while hyperdashing.)
     readonly List<(float Dx, Color Colour, double At, float Stretch, bool Banana)> cFlashes = [];
     readonly List<(float X, float Y, float Vx, float Vy, string Tex, Color Colour, float Scale, double At, double Fade)> cThrown = [];
     readonly List<(float X, Sprite Tex, bool Flip, Color Tint, double At, double Fade, bool Landing)> cGhosts = [];
     double cShowerFlashAt = double.NegativeInfinity, cGhostAt = double.NegativeInfinity, cThrownTicks;
     float cGhostX = float.NaN;
-    bool cWasHyper;
+    bool cWasHyper, cDashing;
     KeyboardKey cLeft, cRight, cDash;
     (float X, bool Dash) cRecorded = (float.NaN, false);
     (float X, double T) cAutoFrom = (256, double.MinValue);
@@ -222,6 +222,7 @@ sealed partial class Player
             bool dash = Down(cDash);
             float speed = (dash ? 1f : 0.5f) * (cHyperDir != 0 ? cHyperSpeed : 1);
             int move = (Down(cRight) ? 1 : 0) - (Down(cLeft) ? 1 : 0);
+            cDashing = dash;
             if (relax)
             {
                 // Relax: the catcher follows the mouse
@@ -239,6 +240,7 @@ sealed partial class Player
             // a replay: the catcher where its latest frame put it
             while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
             {
+                cDashing = (playback[pbIndex].Keys & 1) != 0;
                 float x = Math.Clamp(playback[pbIndex++].X, 0, 512);
                 if (x != cX) cDir = x > cX ? 1 : -1;
                 cX = x;
@@ -266,6 +268,7 @@ sealed partial class Player
         float from = cAutoFrom.X;
         double t0 = Math.Max(cAutoFrom.T, next.Time - 1000); // (a long gap: setting off a second before)
         float x = next.Time > t0 ? from + (next.X - from) * (float)Math.Clamp((time - t0) / (next.Time - t0), 0, 1) : next.X;
+        cDashing = next.Time > t0 && Math.Abs(next.X - from) / (next.Time - t0) > 0.5; // (dashing where walking wouldn't make it)
         if (x != cX) cDir = x > cX ? 1 : -1;
         cX = x;
     }
@@ -349,9 +352,9 @@ sealed partial class Player
         bool hyper = cHyperDir != 0;
         if (catcher is { } ct)
         {
-            if (hyper && now - cGhostAt > 16)
+            if (cDashing && now - cGhostAt > 16)
             {
-                cGhosts.Add((cX, ct, cDir < 0, skin.HyperDash, now, cX != cGhostX ? 250 : 100, false));
+                cGhosts.Add((cX, ct, cDir < 0, hyper ? skin.HyperDash : Color.White, now, cX != cGhostX ? 250 : 100, false));
                 cGhostAt = now; cGhostX = cX;
             }
             if (cWasHyper && !hyper) cGhosts.Add((cX, ct, cDir < 0, skin.HyperDashAfterImage ?? skin.HyperDash, now, 1200, true));
