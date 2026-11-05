@@ -711,6 +711,14 @@ static class Game
             foreach (var n in notes) Console.WriteLine($"{n.Time} {n.End} {n.Column}");
             return;
         }
+        // test hook: a map's taiko conversion, one "start end kind strong" line a note
+        if (Arg("--taiko-convert") is { } taikoFile)
+        {
+            var taikoMods = ModInfo.Parse(Arg("--mods") ?? "");
+            var m = Beatmap.Load(taikoFile, mods: taikoMods);
+            foreach (var n in Player.TaikoConvert(m, taikoMods)) Console.WriteLine($"{n.Time} {n.End} {n.Kind} {(n.Big ? 1 : 0)}");
+            return;
+        }
         // test hook: an osu! map's catch conversion, one "time x hyperdash" line an object
         if (Arg("--catch-convert") is { } catchFile)
         {

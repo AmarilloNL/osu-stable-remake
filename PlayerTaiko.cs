@@ -9,9 +9,9 @@ namespace OsuStableRemake;
 // (screen units: x 160, y 197). Centre (don) and rim (kat) keys, big notes for both hands, drumrolls and swells.
 sealed partial class Player
 {
-    enum TKind { Don, Kat, Roll, Swell }
+    internal enum TKind { Don, Kat, Roll, Swell }
 
-    sealed class TNote
+    internal sealed class TNote
     {
         public TKind Kind;
         public bool Big;
@@ -57,57 +57,8 @@ sealed partial class Player
         tTravel = hidden ? 600 : (int)Math.Ceiling(widthUnits) - 40;
         // stable: HardRock scrolls 1.4x faster (times the screen's width over 640), Easy 0.8x
         double speedMul = mods.HasFlag(Mods.HardRock) ? 1.4 * (int)Math.Ceiling(widthUnits) / 640.0 : mods.HasFlag(Mods.Easy) ? 0.8 : 1;
-        double sm = map.SliderMultiplier * 1.4;
-        double BeatSv(double t) => map.UninheritedAt(t).BeatLength / map.SliderVelocityAt(t);
-        double Speed(double t) => 100 * sm / BeatSv(t) * speedMul; // units a ms
-
-        bool native = map.Mode == 1;
-        double tickRate = Math.Clamp(map.SliderTickRate, 0.5, 8);
-        foreach (var o in objs)
-        {
-            bool big = (o.HitSound & 4) != 0;
-            if (o.Type == ObjType.Circle)
-                tNotes.Add(new TNote { Kind = (o.HitSound & 10) != 0 ? TKind.Kat : TKind.Don, Big = big, Time = o.Time, End = o.Time, Speed = Speed(o.Time) });
-            else if (o.Type == ObjType.Slider)
-            {
-                // stable's conversion: the slider's length x 1.4 over its spans gives a drumroll's length; an osu! slider
-                // short enough (under two beats at the slider's speed) becomes hits every min(beat / tick rate,
-                // span) instead, their sounds taken from the slider's edges in turn
-                double dist = o.Length * 1.4 * o.Slides;
-                double beat = BeatSv(o.Time);
-                double end = o.Time + (int)(dist / (100 * sm) * beat);
-                double osuSpeed = 100 * sm * 1000 / beat;
-                double splitBeat = map.FormatVersion < 8 ? beat : map.UninheritedAt(o.Time).BeatLength;
-                double spacing = Math.Min(splitBeat / tickRate, (end - o.Time) / o.Slides);
-                if (spacing > 0 && !native && dist / osuSpeed * 1000 < 2 * splitBeat)
-                {
-                    int edge = 0;
-                    for (double t = o.Time; t <= end + spacing / 8; t += spacing)
-                    {
-                        int sound = o.EdgeSounds.Length == 0 ? o.HitSound : o.EdgeSounds[edge];
-                        if (o.EdgeSounds.Length > 0) edge = (edge + 1) % o.EdgeSounds.Length;
-                        tNotes.Add(new TNote { Kind = (sound & 10) != 0 ? TKind.Kat : TKind.Don, Big = (sound & 4) != 0, Time = (int)t, End = (int)t, Speed = Speed((int)t) });
-                    }
-                }
-                else
-                {
-                    var roll = new TNote { Kind = TKind.Roll, Big = big, Time = o.Time, End = end, Speed = Speed(o.Time) };
-                    roll.TickSpacing = map.UninheritedAt(o.Time).BeatLength / (map.SliderTickRate == 3 ? 3 : 4);
-                    if (roll.TickSpacing > 0)
-                        for (double t = o.Time; t < end + roll.TickSpacing / 2; t += roll.TickSpacing) roll.Ticks.Add(t);
-                    tNotes.Add(roll);
-                }
-            }
-            else if (o.Type == ObjType.Spinner)
-            {
-                // stable: the spinner's spins x 1.65 hits (x 0.75 under DoubleTime, x 1.5 under HalfTime)
-                int hits = (int)Math.Max(1f, SpinsRequired(o) * 1.65f);
-                if (mods.HasFlag(Mods.DoubleTime)) hits = Math.Max(1, (int)(hits * 0.75f));
-                if (mods.HasFlag(Mods.HalfTime)) hits = Math.Max(1, (int)(hits * 1.5f));
-                tNotes.Add(new TNote { Kind = TKind.Swell, Time = o.Time, End = o.EndTime, HitsNeeded = hits, Speed = Speed(o.Time) });
-            }
-        }
-        tNotes.Sort((a, b) => a.Time.CompareTo(b.Time));
+        tNotes.AddRange(TaikoConvert(map, mods, speedMul));
+        double Speed(double t) => 100 * map.SliderMultiplier * 1.4 / (map.UninheritedAt(t).BeatLength / map.SliderVelocityAt(t)) * speedMul; // (bar lines)
         int circles = Math.Max(1, tNotes.Count(n => n.Kind is TKind.Don or TKind.Kat));
         tHpMul = 200.0 / (0.36 * circles * Beatmap.Range(map.HP, 0.5, 0.75, 0.98));
 
@@ -131,6 +82,71 @@ sealed partial class Player
                 if (k + 1 < reds.Count && t >= reds[k + 1].Time) t = reds[++k].Time;
             }
         }
+    }
+
+    // stable's taiko conversion (an osu! map's sliders become hits or drumrolls, spinners swells), each note with its
+    // scroll speed (units a ms, times speedMul)
+    internal static List<TNote> TaikoConvert(Beatmap map, Mods mods, double speedMul = 1)
+    {
+        var notes = new List<TNote>();
+        double sm = map.SliderMultiplier * 1.4;
+        double BeatSv(double t) => map.UninheritedAt(t).BeatLength / map.SliderVelocityAt(t);
+        double Speed(double t) => 100 * sm / BeatSv(t) * speedMul; // units a ms
+
+        bool native = map.Mode == 1;
+        foreach (var o in map.Objects)
+        {
+            bool big = (o.HitSound & 4) != 0;
+            if (o.Type == ObjType.Circle)
+                notes.Add(new TNote { Kind = (o.HitSound & 10) != 0 ? TKind.Kat : TKind.Don, Big = big, Time = o.Time, End = o.Time, Speed = Speed(o.Time) });
+            else if (o.Type == ObjType.Slider)
+            {
+                // stable's conversion: the slider's length x 1.4 over its spans gives a drumroll's length; an osu! slider
+                // short enough (under two beats at the slider's speed) becomes hits every min(beat / tick rate,
+                // span) instead, their sounds taken from the slider's edges in turn. The arithmetic is stable's to the
+                // bit (1.4 is a float; a duration of 999.99... is 999), which decides borderline sliders.
+                const double vm = 1.4f;
+                double dist = o.Length;
+                dist *= vm;
+                dist *= o.Slides;
+                var red = map.UninheritedAt(o.Time);
+                var point = map.PointAt(o.Time);
+                double beat = red.BeatLength * (!point.Uninherited && point.Time >= red.Time && point.BeatLength < 0 ? Math.Clamp((float)-point.BeatLength, 10f, 10000f) / 100.0 : 1);
+                double taikoSpeed = 100 * (map.SliderMultiplier * vm) / map.SliderTickRate * map.SliderTickRate;
+                double end = o.Time + (int)(dist / taikoSpeed * beat);
+                double osuSpeed = taikoSpeed * (1000f / beat);
+                double splitBeat = map.FormatVersion >= 8 ? red.BeatLength : beat;
+                double spacing = Math.Min(splitBeat / map.SliderTickRate, (double)(int)(dist / taikoSpeed * beat) / o.Slides);
+                if (spacing > 0 && !native && dist / osuSpeed * 1000 < 2 * splitBeat)
+                {
+                    int edge = 0;
+                    for (double t = o.Time; t <= end + spacing / 8; t += spacing)
+                    {
+                        int sound = o.EdgeSounds.Length == 0 ? o.HitSound : o.EdgeSounds[edge];
+                        if (o.EdgeSounds.Length > 0) edge = (edge + 1) % o.EdgeSounds.Length;
+                        notes.Add(new TNote { Kind = (sound & 10) != 0 ? TKind.Kat : TKind.Don, Big = (sound & 4) != 0, Time = (int)t, End = (int)t, Speed = Speed((int)t) });
+                    }
+                }
+                else
+                {
+                    var roll = new TNote { Kind = TKind.Roll, Big = big, Time = o.Time, End = end, Speed = Speed(o.Time) };
+                    roll.TickSpacing = map.UninheritedAt(o.Time).BeatLength / (map.SliderTickRate == 3 ? 3 : 4);
+                    if (roll.TickSpacing > 0)
+                        for (double t = o.Time; t < end + roll.TickSpacing / 2; t += roll.TickSpacing) roll.Ticks.Add(t);
+                    notes.Add(roll);
+                }
+            }
+            else if (o.Type == ObjType.Spinner)
+            {
+                // stable: the spinner's spins x 1.65 hits (x 0.75 under DoubleTime, x 1.5 under HalfTime)
+                int hits = (int)Math.Max(1f, (int)((float)(o.EndTime - o.Time) / 1000f * map.SpinsPerSecond) * 1.65f);
+                if (mods.HasFlag(Mods.DoubleTime)) hits = Math.Max(1, (int)(hits * 0.75f));
+                if (mods.HasFlag(Mods.HalfTime)) hits = Math.Max(1, (int)(hits * 1.5f));
+                notes.Add(new TNote { Kind = TKind.Swell, Time = o.Time, End = o.EndTime, HitsNeeded = hits, Speed = Speed(o.Time) });
+            }
+        }
+        notes.Sort((a, b) => a.Time.CompareTo(b.Time));
+        return notes;
     }
 
     bool TaikoDone => tNext >= tNotes.Count;
