@@ -49,6 +49,19 @@ sealed partial class Player
         [KeyboardKey.Q, KeyboardKey.W, KeyboardKey.E, KeyboardKey.R, KeyboardKey.V, KeyboardKey.N, KeyboardKey.U, KeyboardKey.I, KeyboardKey.O, KeyboardKey.P],
     ];
 
+    // The player's keys for this key count, from stable's cfg: ManiaLayouts{n}K holds layouts split by ';' (each the
+    // columns' key names, "None" for a column without one) and ManiaLayoutSelected{n}K picks one (-1 or none: stable's
+    // default layout).
+    static KeyboardKey[] ManiaKeys(int keys)
+    {
+        var def = ManiaDefaultKeys[keys - 1];
+        var layouts = Config.Get($"ManiaLayouts{keys}K", "").Split(';');
+        int pick = Config.GetInt($"ManiaLayoutSelected{keys}K", -1);
+        if (pick < 0 || pick >= layouts.Length || layouts[pick].Trim().Length == 0) return def;
+        var names = layouts[pick].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return [.. Enumerable.Range(0, keys).Select(i => i < names.Length ? Config.ParseKey(names[i]) ?? KeyboardKey.Null : KeyboardKey.Null)];
+    }
+
     // stable's key count for an osu! map: by how much of it is sliders and spinners, and its (rounded) CS and OD
     internal static int ManiaConvertKeys(Beatmap m)
     {
@@ -65,7 +78,7 @@ sealed partial class Player
         bool native = map.Mode == 3;
         // stable's key mods set an osu! map's key count
         mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map), 1, 10);
-        mBind = ManiaDefaultKeys[mKeys - 1];
+        mBind = ManiaKeys(mKeys);
         mDown = new bool[mKeys];
         mAutoRelease = Enumerable.Repeat(double.MinValue, mKeys).ToArray();
         mColumns = Enumerable.Range(0, mKeys).Select(_ => new List<MNote>()).ToArray();

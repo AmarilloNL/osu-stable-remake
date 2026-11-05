@@ -63,13 +63,17 @@ static class Config
         File.WriteAllLines(OwnPath, own.Select(kv => $"{kv.Key} = {kv.Value}"));
     }
 
-    public static KeyboardKey Key(string key, KeyboardKey def)
+    public static KeyboardKey Key(string key, KeyboardKey def) => ParseKey(Get(key, "")) ?? def;
+
+    // a key by the .NET name stable's cfg uses: D0-D9, NumPad0-9, the Oem keys ... (null: none or unknown)
+    public static KeyboardKey? ParseKey(string v)
     {
-        string v = Get(key, "");
-        // stable's cfg uses .NET key names: D0-D9 and the Oem keys
         if (v.Length == 2 && v[0] == 'D' && char.IsDigit(v[1])) return (KeyboardKey)v[1];
+        if (v.Length == 7 && v.StartsWith("NumPad") && char.IsDigit(v[6])) return KeyboardKey.Kp0 + (v[6] - '0');
         KeyboardKey? oem = v switch
         {
+            "Back" => KeyboardKey.Backspace, "Multiply" => KeyboardKey.KpMultiply, "Add" => KeyboardKey.KpAdd,
+            "Subtract" => KeyboardKey.KpSubtract, "Divide" => KeyboardKey.KpDivide, "Decimal" => KeyboardKey.KpDecimal,
             "OemTilde" => KeyboardKey.Grave, "OemMinus" => KeyboardKey.Minus, "OemPlus" => KeyboardKey.Equal,
             "OemOpenBrackets" => KeyboardKey.LeftBracket, "OemCloseBrackets" => KeyboardKey.RightBracket, "OemPipe" => KeyboardKey.Backslash,
             "OemSemicolon" => KeyboardKey.Semicolon, "OemQuotes" => KeyboardKey.Apostrophe, "OemComma" => KeyboardKey.Comma,
@@ -78,6 +82,6 @@ static class Config
         };
         if (oem is { } o) return o;
         if (v.Length == 1 && char.IsAsciiLetterOrDigit(v[0])) return (KeyboardKey)char.ToUpperInvariant(v[0]);
-        return Enum.TryParse<KeyboardKey>(v, true, out var k) ? k : def;
+        return Enum.TryParse<KeyboardKey>(v, true, out var k) && k != KeyboardKey.Null ? k : null;
     }
 }
