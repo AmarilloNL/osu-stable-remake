@@ -64,6 +64,7 @@ sealed partial class Editor
                     uint c = BasicColours[i];
                     var colours = ComboColours();
                     var picked = ((int)(c >> 16 & 0xFF), (int)(c >> 8 & 0xFF), (int)(c & 0xFF));
+                    if (setupColourPick < colours.Count && colours[setupColourPick] == picked) break; // (the same colour)
                     if (setupColourPick < colours.Count) colours[setupColourPick] = picked; else colours.Add(picked);
                     SetComboColours(colours);
                 }

@@ -40,7 +40,8 @@ sealed partial class Editor
         {
             if (taps.Count < 2) return;
             average = (float)(taps[^1] - taps[1]) / ((float)taps.Count - 2f);
-            // a gap far off the average: that tap (and the next) taken out, the later ones moved back
+            // a gap far off the average: that tap (and the next) taken out, the later ones moved back (in the taps kept, like
+            // stable's - so taps after it, timed from where they really were, keep being taken out until reset or a seek back)
             int k = 0;
             while (k < taps.Count - 1 && Math.Abs(taps[k + 1] - taps[k]) <= average * 1.4) k++;
             if (k < taps.Count - 1) { DropTaps(k); continue; }
@@ -95,6 +96,7 @@ sealed partial class Editor
         red.Time = red.Time == 0 ? offset : red.Time - (red.Time - last) / 2;
         red.Raw = null;
         modified = true;
+        info = ReloadInfo();
         Rebuild();
     }
 
@@ -108,6 +110,7 @@ sealed partial class Editor
         int i = reds.IndexOf(cur);
         Change(() => { cur.Beat = 0; cur.Time = i == 0 ? 0 : reds[i - 1].Time + 1000; cur.Raw = null; });
         taps.Clear();
+        timingSel = timing.IndexOf(cur); // (the section the taps will time)
         Seek(cur.Time);
         Notification.Show("This timing section is not yet timed.\nTo begin, tap from the first beat.", 5000);
     }, "Yes", "No");

@@ -150,7 +150,8 @@ sealed partial class Editor : Screen
         }
     }
 
-    static ETiming? ParseTiming(string line)
+    // (missing fields: the map's default sample set and custom set 1, like the game reads them)
+    ETiming? ParseTiming(string line)
     {
         var f = line.Split(',');
         if (f.Length < 2) return null;
@@ -159,8 +160,8 @@ sealed partial class Editor : Screen
             return new ETiming
             {
                 Time = double.Parse(f[0], Inv), Beat = double.Parse(f[1], Inv),
-                Meter = f.Length > 2 && int.Parse(f[2], Inv) is > 0 and var mt ? mt : 4, Set = f.Length > 3 ? int.Parse(f[3], Inv) : 1,
-                Index = f.Length > 4 ? int.Parse(f[4], Inv) : 0, Volume = f.Length > 5 ? int.Parse(f[5], Inv) : 100,
+                Meter = f.Length > 2 && int.Parse(f[2], Inv) is > 0 and var mt ? mt : 4, Set = f.Length > 3 ? int.Parse(f[3], Inv) : Kv("General", "SampleSet") switch { "Soft" => 2, "Drum" => 3, _ => 1 },
+                Index = f.Length > 4 ? int.Parse(f[4], Inv) : 1, Volume = f.Length > 5 ? int.Parse(f[5], Inv) : 100,
                 Red = f.Length <= 6 || f[6].Trim() == "1", Effects = f.Length > 7 ? int.Parse(f[7], Inv) : 0, Raw = line,
             };
         }
@@ -169,7 +170,7 @@ sealed partial class Editor : Screen
 
     static string Num(double v) => v.ToString("G15", Inv); // (stable writes doubles to 15 significant digits)
 
-    static string WriteTiming(ETiming t) =>
+    string WriteTiming(ETiming t) =>
         t.Raw != null && ParseTiming(t.Raw) is { } p && (p.Time, p.Beat, p.Meter, p.Set, p.Index, p.Volume, p.Red, p.Effects) == (t.Time, t.Beat, t.Meter, t.Set, t.Index, t.Volume, t.Red, t.Effects)
             ? t.Raw : $"{Num(t.Time)},{Num(t.Beat)},{t.Meter},{t.Set},{t.Index},{t.Volume},{(t.Red ? 1 : 0)},{t.Effects}";
 
@@ -309,6 +310,8 @@ sealed partial class Editor : Screen
         redo.Clear();
         edit();
         modified = true;
+        tapUndoAt = double.NegativeInfinity;
+        info = ReloadInfo();
         Rebuild();
     }
 
@@ -323,6 +326,7 @@ sealed partial class Editor : Screen
         Read((osb < 0 ? state : state[..osb]).Split('\n'));
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0; // (an undone mode or difficulty change)
         tool = Math.Min(tool, ToolNames.Length - 1);
+        tapUndoAt = double.NegativeInfinity;
         info = ReloadInfo();
         selected.Clear();
         modified = true;
@@ -423,7 +427,7 @@ sealed partial class Editor : Screen
 
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
-            if (tab == 2 && setupColourPick >= 0) setupColourPick = -1;
+            if (setupColourPick >= 0) setupColourPick = -1;
             else if (tab == 3 && sbColourPick) sbColourPick = false;
             else if (tab == 3 && sbLibrary) sbLibrary = false;
             else if (tab == 3 && sbSel != null) sbSel = null;
@@ -437,6 +441,7 @@ sealed partial class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F3)) tab = 1;
         if (Input.IsKeyPressed(KeyboardKey.F4)) tab = 2;
         if (Input.IsKeyPressed(KeyboardKey.F6)) tab = 1; // (stable's Timing Setup: this editor's Timing tab)
+        if (tab != 2) setupColourPick = -1; // (the palette closes with the tab)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
@@ -503,6 +508,7 @@ sealed partial class Editor : Screen
             for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { tab = TabOrder[i]; return; }
             if (UpdateBottomBar(mouse)) return;
         }
+        if (UpdateSnapPanel(mouse)) return;
         else if (Input.IsMouseButtonDown(MouseButton.Left) && !double.IsNaN(scrubFrom)) { }
 
         switch (tab)
@@ -1719,12 +1725,14 @@ sealed partial class Editor : Screen
             {
                 if (!CheckCollisionPointRec(mouse, StepRect(i, dir))) continue;
                 double big = Input.ShiftHeld ? 10 : 1;
+                if (i == 3 ? Math.Clamp(t.Meter + dir, 1, 16) == t.Meter : i == 4 ? Math.Clamp(t.Volume + dir * 5, 5, 100) == t.Volume
+                    : i == 6 && Math.Clamp(t.Index + dir, 0, 100) == t.Index) return; // (at its end: no change, no undo state)
                 Change(() =>
                 {
                     switch (i)
                     {
                         case 0: t.Time += dir * big; break;
-                        case 1: if (t.Red) t.Beat = 60000 / Math.Max(1, t.Bpm + dir * (Input.ShiftHeld ? 0.1 : 1)); break;
+                        case 1: if (t.Red) t.Beat = 60000 / Math.Max(1, (t.Beat > 0 ? t.Bpm : 120) + dir * (Input.ShiftHeld ? 0.1 : 1)); break; // (an untimed section from 120)
                         case 2: if (!t.Red) t.Beat = -100 / Math.Clamp(Math.Round((t.Sv + dir * (Input.ShiftHeld ? 0.01 : 0.05)) * 100) / 100, 0.1, 10); break;
                         case 3: if (t.Red) t.Meter = Math.Clamp(t.Meter + dir, 1, 16); break;
                         case 4: t.Volume = Math.Clamp(t.Volume + dir * 5, 5, 100); break;
@@ -1854,7 +1862,7 @@ sealed partial class Editor : Screen
     // ---- drawing
     Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }
     static readonly int[] TabOrder = [0, 3, 1, 2]; // Compose, Design, Timing, Song Setup (tab numbers)
-    Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - 150 * u, 44 * u); }
+    Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab == 0 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right)
     float PxPerMs() => 50 * U * zoom / (float)RedAt(time).Beat;
     float TimelineX(double t) { var r = TimelineRect(); return r.X + r.Width / 2 + (float)((t - time) * PxPerMs()); }
     double TimeAtX(float x) { var r = TimelineRect(); return time + (x - r.X - r.Width / 2) / PxPerMs(); }
@@ -2020,13 +2028,7 @@ sealed partial class Editor : Screen
         if (tab == 3) DrawDesignLaneLabels(r, u);
         // the current time
         DrawRectangle((int)(r.X + r.Width / 2), (int)r.Y, Math.Max(2, (int)(2 * u)), (int)r.Height, new Color(255, 255, 255, 230));
-        // the beat snap divisor
-        // (stable's: with Alt held it shows the distance spacing instead)
-        bool spacingShown = Input.AltHeld;
-        string snap = spacingShown ? $"{DistanceSpacing.ToString("0.0#", Inv)}x" : $"1/{divisor}";
-        Game.TextBold(spacingShown ? "Distance Spacing:" : "Beat Snap Divisor:", r.X + r.Width + 6 * u, r.Y + 1 * u, 9 * u, Color.White);
-        Game.TextBold(snap, r.X + r.Width + 6 * u, r.Y + 14 * u, 20 * u, Color.White);
-        Game.Text(spacingShown ? "Alt+wheel" : "Ctrl+wheel", r.X + r.Width + 6 * u, r.Y + 34 * u, 9 * u, Color.Gray);
+        if (tab == 0) DrawSnapPanel(u);
     }
 
     static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
