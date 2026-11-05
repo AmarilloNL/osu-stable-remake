@@ -711,6 +711,13 @@ static class Game
             foreach (var n in notes) Console.WriteLine($"{n.Time} {n.End} {n.Column}");
             return;
         }
+        // test hook: the default skin's resources whose names contain a text
+        if (Arg("--list-default") is { } listFilter)
+        {
+            Config.Load();
+            foreach (var n in DefaultSkin.Names.Where(n => n.Contains(listFilter, StringComparison.OrdinalIgnoreCase)).Order()) Console.WriteLine(n);
+            return;
+        }
         // test hook: a map's taiko conversion, one "start end kind strong" line a note
         if (Arg("--taiko-convert") is { } taikoFile)
         {

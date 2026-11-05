@@ -455,9 +455,17 @@ sealed class BeatmapSamples
         return cache["file:" + name] = pool;
     }
 
+    // taiko: stable looks for "taiko-" samples first (the map's, then the skin's), then the usual ones
+    public string Prefix = "";
+
     SoundPool? Resolve(int set, string name, int index)
     {
-        string sample = $"{SetNames[Math.Clamp(set, 0, 3)]}-{name}";
+        if (Prefix.Length > 0 && ResolveNamed(Prefix + $"{SetNames[Math.Clamp(set, 0, 3)]}-{name}", index) is { } prefixed) return prefixed;
+        return ResolveNamed($"{SetNames[Math.Clamp(set, 0, 3)]}-{name}", index);
+    }
+
+    SoundPool? ResolveNamed(string sample, int index)
+    {
         // Everything in the folder was preloaded, so a cache miss means "not in the map": use the skin.
         if (index > 0 && UseMapSamples && cache.TryGetValue(index > 1 ? sample + index : sample, out var pool) && pool != null) return pool;
         return Config.GetBool("SkinSamples", true) ? Game.Skin.Sound(sample) : Game.Skin.DefaultSound(sample);

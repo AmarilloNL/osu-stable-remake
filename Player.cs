@@ -253,7 +253,7 @@ sealed partial class Player : Screen
             if (localOffset != 0) Notification.Show($"Using local beatmap offset ({localOffset}ms)", 1000);
         }
         SetupCountdown();
-        if (mode == 1) TaikoSetup();
+        if (mode == 1) { TaikoSetup(); samples.Prefix = "taiko-"; }
         else if (mode == 2) CatchSetup();
         else if (mode == 3) ManiaSetup();
 

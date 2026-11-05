@@ -380,9 +380,10 @@ sealed partial class Player
         double age = Game.NowMs - tLastJudge.At;
         if (age < 400 && tLastJudge.Result >= 0)
         {
-            string name = tLastJudge.Result switch { 300 => tLastJudge.Big ? "taiko-hit300g" : "taiko-hit300", 100 => tLastJudge.Big ? "taiko-hit100k" : "taiko-hit100", _ => "taiko-hit0" };
+            // stable: a big note hit with both hands shows the "k" judgement; a great in kiai the "g" one
+            string name = tLastJudge.Result switch { 300 => tLastJudge.Big ? "taiko-hit300k" : map.PointAt(time).Kiai ? "taiko-hit300g" : "taiko-hit300", 100 => tLastJudge.Big ? "taiko-hit100k" : "taiko-hit100", _ => "taiko-hit0" };
             float a = 1 - (float)(age / 400);
-            (skin.Tex(name) ?? skin.Tex(name.Replace("g", "").Replace("k", "")))?.Draw(new(hitX, tLastJudge.Result == 0 ? laneY - 40 * u : laneY), 0.7f * sd, ColorAlpha(Color.White, a * playfieldAlpha));
+            (skin.AnimFrame(name, age) ?? skin.Tex(name) ?? skin.Tex(name.Replace("g", "").Replace("k", "")))?.Draw(new(hitX, tLastJudge.Result == 0 ? laneY - 40 * u : laneY), 0.7f * sd, ColorAlpha(Color.White, a * playfieldAlpha));
         }
 
         // the drum, each half lighting up when hit
@@ -399,7 +400,9 @@ sealed partial class Player
         {
             string c = combo.ToString();
             float size = 24 * u;
-            Game.TextBold(c, 56 * u - Game.TextWidth(c, size) / 2, laneY - size / 2, size, tint);
+            float cx = 56 * u - Game.TextWidth(c, size) / 2;
+            Game.TextBold(c, cx + 2 * u / 2.25f, laneY - size / 2 + 2 * u / 2.25f, size, ColorAlpha(Color.Black, 0.6f * playfieldAlpha)); // (a shadow: the drum is pale)
+            Game.TextBold(c, cx, laneY - size / 2, size, tint);
         }
     }
 

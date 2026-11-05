@@ -324,7 +324,7 @@ sealed partial class Player
         {
             string name = mLastJudge.Result switch { 320 => "mania-hit300g", 300 => "mania-hit300", 200 => "mania-hit200", 100 => "mania-hit100", 50 => "mania-hit50", _ => "mania-hit0" };
             float pop = age < 40 ? 0.8f + 0.2f * (float)(age / 40) : 1;
-            skin.Tex(name)?.Draw(new(left + stageW * u / 2, 325 * u), sd * 0.8f * pop, ColorAlpha(Color.White, alpha * (age > 300 ? 1 - (float)((age - 300) / 100) : 1)));
+            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + stageW * u / 2, 325 * u), sd * 0.8f * pop, ColorAlpha(Color.White, alpha * (age > 300 ? 1 - (float)((age - 300) / 100) : 1)));
         }
         if (combo > 0)
         {
