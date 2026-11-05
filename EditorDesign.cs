@@ -29,13 +29,13 @@ sealed partial class Editor
         public List<SbCmd> Cmds = [];
         public string Layer => Head.Length > 1 ? Head[1] : "";
         public string Origin => Head.Length > 2 ? Head[2] : "TopLeft";
-        public string File => Head.Length > 3 ? Head[3].Trim('"') : "";
+        public string File => Head.Length > 3 ? Head[3].Trim().Trim('"').Replace('\\', '/') : ""; // (as the storyboard keys its images)
         public double X, Y;
     }
 
     static readonly string[] SbLayerNames = ["Background", "Fail", "Pass", "Foreground", "Overlay"];
     static int Dims(string type) => type switch { "M" or "V" => 2, "C" => 3, "MX" or "MY" or "S" or "F" or "R" => 1, _ => 0 };
-    static string SbNum(double v) => Math.Round(v, 3).ToString(CultureInfo.InvariantCulture);
+    static string SbNum(double v) => v.ToString("G15", CultureInfo.InvariantCulture);
 
     List<SbSprite> sbSprites = [];
     Section? sbParsed;
@@ -44,7 +44,7 @@ sealed partial class Editor
     string sbTool = "M";
     readonly bool[] sbShow = [true, true, true, true, true];
     bool sbLanesAlt, sbLibrary, sbHitObjects;
-    (string Type, double Offset)? sbLaneDrag;
+    (string Type, double Offset, bool Undo)? sbLaneDrag;
     Storyboard? sbView;
     bool sbDirty = true;
     double sbBuiltAt = double.NegativeInfinity;
@@ -58,22 +58,30 @@ sealed partial class Editor
     const string OsbMark = "\n\0osb\n";
     List<string>? osbLines, sbParsedOsb;
     string? osbPath;
-    bool osbModified;
+    bool osbModified, osbUnreadable;
     int sbParsedOsbCount = -1;
+    // the .osb's versions the undo states refer to (each kept once; an undo state holds its number)
+    readonly List<string> osbStates = [];
+    int osbState = -1; // osbLines' version in osbStates, -1 while it has changes not in there yet
 
     void LoadOsb()
     {
-        osbModified = false;
+        osbModified = osbUnreadable = false;
         osbLines = null;
+        osbStates.Clear();
+        osbState = -1;
         try
         {
             var all = Directory.EnumerateFiles(info.Folder, "*.osb").ToList();
             osbPath = all.FirstOrDefault(f => string.Equals(Path.GetFileName(f), Path.GetFileName(NewOsbPath()), StringComparison.OrdinalIgnoreCase)) ?? all.FirstOrDefault();
             if (osbPath != null) osbLines = [.. File.ReadAllLines(osbPath)];
         }
-        catch (IOException) { osbPath = null; osbLines = null; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { osbUnreadable = true; osbLines = null; } // (left alone: never written over)
         sbParsed = null;
     }
+    // an edit of the .osb's lines
+    void OsbChanged() { osbModified = true; osbState = -1; }
+    bool OsbWritable() { if (osbUnreadable) Notification.Show("The map's .osb couldn't be read, so it isn't changed.", 3000); return !osbUnreadable; }
     // stable's name for a map's .osb
     string NewOsbPath()
     {
@@ -81,13 +89,28 @@ sealed partial class Editor
         foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c.ToString(), "");
         return Path.Combine(info.Folder, name);
     }
-    // an undo state: the .osu as it would be written, then the .osb's lines
-    string Snapshot() => string.Join("\n", Write()) + (osbLines != null ? OsbMark + string.Join("\n", osbLines) : "");
-    // the .osb's [Events] lines (from, to)
+    // an undo state: the .osu as it would be written, then which version of the .osb (-1: none)
+    string Snapshot()
+    {
+        if (osbLines != null && osbState < 0) { osbStates.Add(string.Join("\n", osbLines)); osbState = osbStates.Count - 1; }
+        return string.Join("\n", Write()) + OsbMark + (osbLines == null ? -1 : osbState).ToString(CultureInfo.InvariantCulture);
+    }
+    // an undo state's .osb back (changed for saving only if it differs from now)
+    void RestoreOsb(string state)
+    {
+        int id = int.TryParse(state, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : -1;
+        int now = osbLines == null ? -1 : osbState;
+        osbLines = id < 0 || id >= osbStates.Count ? null : [.. osbStates[id].Split('\n')];
+        osbState = osbLines == null ? -1 : id;
+        if (id != now) osbModified = true;
+    }
+    // the .osb's [Events] lines (from, to); none without that section
     (int From, int To) OsbEvents()
     {
         if (osbLines == null) return (0, 0);
-        int s = osbLines.FindIndex(l => l.Trim() == "[Events]") + 1, e = s;
+        int s = osbLines.FindIndex(l => l.Trim() == "[Events]");
+        if (s < 0) return (osbLines.Count, osbLines.Count);
+        int e = ++s;
         while (e < osbLines.Count && !osbLines[e].TrimStart().StartsWith('[')) e++;
         return (s, e);
     }
@@ -115,12 +138,15 @@ sealed partial class Editor
     void SbParseLines(List<string> lines, int from, int to, bool osb)
     {
         SbSprite? cur = null;
+        bool gap = false; // (a blank or comment line after a sprite: the game reads on past it, so one with commands after it isn't edited here)
         for (int i = from; i < to; i++)
         {
             string line = lines[i];
+            if (line.Trim().Length == 0 || line.TrimStart().StartsWith("//")) { gap |= cur != null; continue; }
             if (line.Length > 0 && line[0] is ' ' or '_')
             {
                 if (cur == null) continue;
+                if (gap) cur.Editable = false;
                 cur.Count = i - cur.Line + 1;
                 int depth = line.TakeWhile(c => c is ' ' or '_').Count();
                 var f = line[depth..].Split(',');
@@ -143,6 +169,7 @@ sealed partial class Editor
                 continue;
             }
             cur = null;
+            gap = false;
             if (!line.StartsWith("Sprite,") && !line.StartsWith("Animation,")) continue;
             cur = new SbSprite { Line = i, Count = 1, Head = line.Split(','), RawHead = line, Osb = osb };
             if (cur.Head.Length < 6 || !double.TryParse(cur.Head[4], NumberStyles.Float, CultureInfo.InvariantCulture, out cur.X)
@@ -169,7 +196,7 @@ sealed partial class Editor
         into.RemoveRange(sp.Line, sp.Count);
         into.InsertRange(sp.Line, lines);
         modified = true;
-        osbModified |= sp.Osb;
+        if (sp.Osb) OsbChanged();
         SbParse();
     }
 
@@ -198,6 +225,7 @@ sealed partial class Editor
         {
             var c = list[i];
             if (c.End == t || c.Start == t) { key = c; break; }
+            // (stable stretches the last instant keyframe it comes to, even across an earlier transformation)
             if (c.Start == c.End) { if (c.End > t) c.Start = t; else c.End = t; c.Raw = null; key = c; break; }
             if (c.Start > t && i == 0) { key = new SbCmd { Type = type, Start = t, End = c.Start, From = [.. value], To = [.. c.From] }; sp.Cmds.Add(key); break; }
             if (i == list.Count - 1 && c.End < t) { key = new SbCmd { Type = type, Start = c.End, End = t, From = [.. c.To], To = [.. value] }; sp.Cmds.Add(key); break; }
@@ -242,7 +270,7 @@ sealed partial class Editor
                 if (list.Any(c => c.Start < t && t < c.End)) return;
                 var before = list.LastOrDefault(c => c.End <= t);
                 var after = list.FirstOrDefault(c => c.Start >= t);
-                if (before == null || after == null || before == after) return;
+                if (before == null || after == null || before == after || before.End >= after.Start) return; // (keyframes already meeting: nothing to join)
                 if (before.Start == before.End) sp.Cmds.Remove(before);
                 if (after.Start == after.End) sp.Cmds.Remove(after);
                 sp.Cmds.Add(new SbCmd { Type = sbTool, Start = before.End, End = after.Start, From = [.. before.To], To = [.. after.From] });
@@ -252,8 +280,9 @@ sealed partial class Editor
                 var c = list.FirstOrDefault(x => x.Start < t && t < x.End);
                 if (c == null) return;
                 sp.Cmds.Remove(c);
-                if (!list.Any(x => x != c && x.End == c.End)) sp.Cmds.Add(new SbCmd { Type = sbTool, Start = c.End, End = c.End, From = [.. c.To], To = [.. c.To] });
-                if (!list.Any(x => x != c && x.End == c.Start)) sp.Cmds.Add(new SbCmd { Type = sbTool, Start = c.Start, End = c.Start, From = [.. c.From], To = [.. c.From] });
+                // (an instant keyframe at each end, unless another transformation starts or ends there)
+                if (!list.Any(x => x != c && (x.Start == c.End || x.End == c.End))) sp.Cmds.Add(new SbCmd { Type = sbTool, Start = c.End, End = c.End, From = [.. c.To], To = [.. c.To] });
+                if (!list.Any(x => x != c && (x.End == c.Start || x.Start == c.Start))) sp.Cmds.Add(new SbCmd { Type = sbTool, Start = c.Start, End = c.Start, From = [.. c.From], To = [.. c.From] });
             }
         });
     }
@@ -276,13 +305,7 @@ sealed partial class Editor
     Vector2 SbToScreen(double x, double y) => SbOrigin + new Vector2((float)x, (float)y) * SbScale;
     Vector2 SbFromScreen(Vector2 p) => (p - SbOrigin) / SbScale;
 
-    static Vector2 OriginOf(string origin) => origin switch
-    {
-        "TopLeft" => new(0, 0), "TopCentre" => new(0.5f, 0), "TopRight" => new(1, 0),
-        "CentreLeft" => new(0, 0.5f), "CentreRight" => new(1, 0.5f),
-        "BottomLeft" => new(0, 1), "BottomCentre" => new(0.5f, 1), "BottomRight" => new(1, 1),
-        _ => new(0.5f, 0.5f),
-    };
+    static Vector2 OriginOf(string origin) => Storyboard.OriginOf(origin.Trim());
 
     // a sprite's corners on screen now (null while it isn't showing)
     Vector2[]? SbCorners(SbSprite sp)
@@ -350,7 +373,7 @@ sealed partial class Editor
                 undo.Add(Snapshot()); redo.Clear();
                 LinesOf(sel).RemoveRange(sel.Line, sel.Count);
                 modified = true;
-                osbModified |= sel.Osb;
+                if (sel.Osb) OsbChanged();
                 sbSel = null;
                 SbParse();
                 return;
@@ -364,7 +387,7 @@ sealed partial class Editor
             }
             // Ctrl+1-4: the sprite to another layer
             for (int k = 0; k < 4; k++)
-                if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.One + k)) SbChange(sel, () => { sel.Head[1] = SbLayerNames[k]; sel.RawHead = null; });
+                if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.One + k) && sel.Layer != SbLayerNames[k]) SbChange(sel, () => { sel.Head[1] = SbLayerNames[k]; sel.RawHead = null; });
         }
 
         // the panel
@@ -383,7 +406,7 @@ sealed partial class Editor
             }
         if (click && CheckCollisionPointRec(mouse, SbRow(2, 440)) && sbSel is { Editable: true } ms) { SbMove(ms); return; }
         for (int o = 0; o < 2; o++)
-            if (click && CheckCollisionPointRec(mouse, SbRow(2, 395 + o * 15)) && sbSel is { Editable: true } os)
+            if (click && CheckCollisionPointRec(mouse, SbRow(2, 395 + o * 15)) && sbSel is { Editable: true } os && os.Origin != (o == 0 ? "TopLeft" : "Centre"))
             {
                 SbChange(os, () => { os.Head[2] = o == 0 ? "TopLeft" : "Centre"; os.RawHead = null; });
                 return;
@@ -405,6 +428,7 @@ sealed partial class Editor
             int delta = (int)Math.Round(Input.ShiftHeld ? want : Snap(want)) - ofType.Min(c => c.Start);
             if (delta != 0 && ofType.All(c => c.Start + delta >= 0 && c.Start + delta < length))
             {
+                if (!ld.Undo) { undo.Add(Snapshot()); redo.Clear(); sbLaneDrag = ld with { Undo = true }; } // (once it moves)
                 foreach (var c in ofType) { c.Start += delta; c.End += delta; c.Raw = null; }
                 SbWrite(ls);
             }
@@ -416,11 +440,7 @@ sealed partial class Editor
             string type = lanes[Math.Clamp((int)((mouse.Y - tl.Y) / (tl.Height / 4)), 0, 3)];
             double at = TimeAtX(mouse.X);
             var hitCmd = lsel.Cmds.FirstOrDefault(c => c.Type == type && TimelineX(c.Start) - 3 * u <= mouse.X && mouse.X <= Math.Max(TimelineX(c.End), TimelineX(c.Start) + 3 * u) + 3 * u);
-            if (hitCmd != null)
-            {
-                undo.Add(Snapshot()); redo.Clear();
-                sbLaneDrag = (type, at - lsel.Cmds.Where(c => c.Type == type).Min(c => c.Start));
-            }
+            if (hitCmd != null) sbLaneDrag = (type, at - lsel.Cmds.Where(c => c.Type == type).Min(c => c.Start), false);
             return;
         }
 
@@ -432,6 +452,7 @@ sealed partial class Editor
             if (!held || sbSel is not { Editable: true } ds) { sbDrag = null; sbDirty = true; return; }
             var m = SbFromScreen(mouse);
             if (Input.ShiftHeld) { if (Math.Abs(m.X - d.Mouse.X) > Math.Abs(m.Y - d.Mouse.Y)) m.Y = d.Mouse.Y; else m.X = d.Mouse.X; }
+            if (!d.Undo && m == d.Mouse) return; // (a click alone picks; only moving keyframes)
             float up = d.Mouse.Y - m.Y; // (dragging up raises scale, fade and rotation)
             double[] value = sbTool switch
             {
@@ -488,7 +509,7 @@ sealed partial class Editor
         int at = LayerInsertAt(lines, from, to, layer);
         lines.InsertRange(at, sprite);
         modified = true;
-        osbModified |= osb;
+        if (osb) OsbChanged();
         SbParse();
         sbSel = sbSprites.FirstOrDefault(s => s.Osb == osb && s.Line == at);
     }
@@ -498,12 +519,14 @@ sealed partial class Editor
     void SbAdd(string file)
     {
         sbLibrary = false;
+        if (!OsbWritable()) return;
         undo.Add(Snapshot()); redo.Clear();
         int t = (int)Math.Round(time);
         string[] lines = [$"Sprite,Foreground,Centre,\"{file}\",320,240", sbTool switch
         {
             "S" => $" S,0,{t},,1", "F" => $" F,0,{t},,1", "R" => $" R,0,{t},,0", _ => $" M,0,{t},,320,240",
         }];
+        if (osbLines != null && !osbLines.Any(l => l.Trim() == "[Events]")) osbLines.Add("[Events]"); // (an .osb without the section)
         osbLines ??= ["[Events]", "//Background and Video events", "//Storyboard Layer 0 (Background)", "//Storyboard Layer 1 (Fail)",
             "//Storyboard Layer 2 (Pass)", "//Storyboard Layer 3 (Foreground)", "//Storyboard Layer 4 (Overlay)", "//Storyboard Sound Samples"];
         SbInsert(osbLines, true, lines, "Foreground");
@@ -512,11 +535,12 @@ sealed partial class Editor
     // Diff Specific: the picked sprite over to the difficulty's [Events], or back to the .osb
     void SbMove(SbSprite sp)
     {
+        if (!sp.Osb && !OsbWritable()) return;
         undo.Add(Snapshot()); redo.Clear();
         var lines = SpriteLines(sp);
         LinesOf(sp).RemoveRange(sp.Line, sp.Count);
         osbModified |= sp.Osb;
-        if (!sp.Osb) osbLines ??= ["[Events]"];
+        if (!sp.Osb) { osbLines ??= ["[Events]"]; if (!osbLines.Any(l => l.Trim() == "[Events]")) osbLines.Add("[Events]"); }
         SbInsert(sp.Osb ? EventsSection.Lines : osbLines!, !sp.Osb, lines, sp.Layer);
     }
 

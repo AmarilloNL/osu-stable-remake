@@ -374,6 +374,7 @@ sealed partial class Editor
             if (i > 0 && next != null && o.Time == next.Time) items.Add(Pair(objs[i - 1], o, 2, "These two objects exist at the same point in time!"));
             if (i > 0 && objs[i - 1].Spinner && !o.Spinner && objs[i - 1].Time > o.Time - Preempt + 400)
                 items.Add(Pair(objs[i - 1], o, 2, "This spinner appears onscreen later than objects which follow it."));
+            if (o.Slider && AbnormalSlider(o.Path, Radius)) items.Add(new(C, 2, "This slider moves in an abnormal way.", o.Time, o));
             if (o.Slider && o.Anchors.Count > 40) items.Add(new(C, 1, "Slider has an absurdly large amount of points!", o.Time, o));
             if (o.Spinner)
             {
@@ -395,6 +396,25 @@ sealed partial class Editor
         }
         if (!hitsounds && objs.Count > 0) items.Add(new(C, 2, "There are no hitsounds on any objects. Hitsounds are required for rankable beatmaps."));
         AiComposeSnap(items);
+    }
+
+    // stable's abnormal slider: at some point of its path, everything over the four circle radii of length before it
+    // stayed within a radius of that point (the path bunched up on itself)
+    static bool AbnormalSlider(Vector2[] path, float radius)
+    {
+        int n = path.Length - 1; // (segment i: path[i] to path[i + 1])
+        if (n < 1) return false;
+        var length = new double[n];
+        for (int i = 0; i < n; i++) length[i] = (i > 0 ? length[i - 1] : 0) + Vector2.Distance(path[i], path[i + 1]);
+        int back = -1;
+        for (int i = 0; i < n; i++)
+        {
+            while (back + 1 < n && length[back + 1] < length[i] - 4 * radius) back++; // (the last segment over 4 radii behind)
+            int k = i;
+            while (k >= Math.Max(0, back) && Vector2.Distance(path[i], path[k + 1]) < radius) k--;
+            if (back >= 0 && k + 1 == back) return true;
+        }
+        return false;
     }
 
     // two objects: the item sits halfway between the first's end and the second's start

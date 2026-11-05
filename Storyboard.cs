@@ -141,7 +141,7 @@ sealed class Storyboard
         "Background" or "0" => 0, "Fail" or "1" => 1, "Pass" or "2" => 2, "Foreground" or "3" => 3, "Overlay" or "4" => 4, _ => 0,
     };
 
-    static Vector2 OriginOf(string s) => s switch
+    internal static Vector2 OriginOf(string s) => s switch
     {
         "TopLeft" or "0" or "Custom" or "6" => new(0, 0),
         "Centre" or "1" => new(0.5f, 0.5f),

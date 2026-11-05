@@ -251,7 +251,10 @@ sealed partial class Editor : Screen
         try
         {
             File.WriteAllLines(path, Write(), new UTF8Encoding(false));
-            if (osbModified && osbLines != null) { File.WriteAllLines(osbPath ??= NewOsbPath(), osbLines, new UTF8Encoding(false)); osbModified = false; }
+            // the .osb, if the Design tab changed it (one undone back to nothing keeps just its [Events])
+            if (osbModified && !osbUnreadable && (osbLines != null || osbPath != null && File.Exists(osbPath)))
+                File.WriteAllLines(osbPath ??= NewOsbPath(), osbLines ?? ["[Events]"], new UTF8Encoding(false));
+            osbModified = false;
             modified = false;
             Notification.Show("Saved!", 1500);
         }
@@ -313,9 +316,8 @@ sealed partial class Editor : Screen
         to.Add(Snapshot());
         string state = from[^1];
         from.RemoveAt(from.Count - 1);
-        int osb = state.IndexOf(OsbMark, StringComparison.Ordinal); // (the .osb's lines, after the .osu's)
-        osbLines = osb < 0 ? null : [.. state[(osb + OsbMark.Length)..].Split('\n')];
-        osbModified = true;
+        int osb = state.IndexOf(OsbMark, StringComparison.Ordinal); // (which .osb, after the .osu's lines)
+        RestoreOsb(osb < 0 ? "-1" : state[(osb + OsbMark.Length)..]);
         Read((osb < 0 ? state : state[..osb]).Split('\n'));
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0; // (an undone mode or difficulty change)
         tool = Math.Min(tool, ToolNames.Length - 1);
