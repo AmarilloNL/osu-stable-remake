@@ -69,6 +69,7 @@ sealed partial class Player
     // default layout).
     internal static KeyboardKey[] ManiaKeys(int keys)
     {
+        if (keys is < 1 or > 10) return new KeyboardKey[Math.Max(0, keys)]; // (no layout: the columns unbound)
         var def = ManiaDefaultKeys[keys - 1];
         var layouts = Config.Get($"ManiaLayouts{keys}K", "").Split(';');
         int pick = Config.GetInt($"ManiaLayoutSelected{keys}K", -1);

@@ -155,12 +155,12 @@ sealed class Editor : Screen
             return new ETiming
             {
                 Time = double.Parse(f[0], Inv), Beat = double.Parse(f[1], Inv),
-                Meter = f.Length > 2 ? int.Parse(f[2], Inv) : 4, Set = f.Length > 3 ? int.Parse(f[3], Inv) : 1,
+                Meter = f.Length > 2 && int.Parse(f[2], Inv) is > 0 and var mt ? mt : 4, Set = f.Length > 3 ? int.Parse(f[3], Inv) : 1,
                 Index = f.Length > 4 ? int.Parse(f[4], Inv) : 0, Volume = f.Length > 5 ? int.Parse(f[5], Inv) : 100,
                 Red = f.Length <= 6 || f[6].Trim() == "1", Effects = f.Length > 7 ? int.Parse(f[7], Inv) : 0, Raw = line,
             };
         }
-        catch (FormatException) { return null; }
+        catch (Exception e) when (e is FormatException or OverflowException or IndexOutOfRangeException) { return null; } // (dropped, like stable)
     }
 
     static string Num(double v) => v.ToString("G15", Inv); // (stable writes doubles to 15 significant digits)
@@ -191,7 +191,7 @@ sealed class Editor : Screen
             else o.Sample = f.Length > 5 ? f[5] : "";
             return o;
         }
-        catch (FormatException) { return null; }
+        catch (Exception e) when (e is FormatException or OverflowException or IndexOutOfRangeException) { return null; } // (dropped, like stable)
     }
 
     static string WriteObject(EObj o)
@@ -311,6 +311,9 @@ sealed class Editor : Screen
         string state = from[^1];
         from.RemoveAt(from.Count - 1);
         Read(state.Split('\n'));
+        mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0; // (an undone mode or difficulty change)
+        tool = Math.Min(tool, ToolNames.Length - 1);
+        info = ReloadInfo();
         selected.Clear();
         modified = true;
         Rebuild();
@@ -415,11 +418,10 @@ sealed class Editor : Screen
         // the Timing menu's keys
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.P)) TimingAction(Input.ShiftHeld ? 1 : 0);
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.I)) DeleteTimingHere();
-        var live = Input.CtrlHeld ? Array.Empty<KeyboardKey>() : LiveMap(mouse);
+        live = Input.CtrlHeld ? [] : LiveMap(mouse);
 
         // playback (stable's bindings): Jump To First Note (Z), Play From Beginning (X), Audio Pause (C), Jump To End
         // (V); Space plays / pauses (the live mapping's keys come first)
-        bool Pressed(KeyboardKey k) => Input.IsKeyPressed(k) && !live.Contains(k);
         if (!Input.CtrlHeld)
         {
             if (Pressed(Bound("keyJumpToBegin", KeyboardKey.Z))) Seek(objs.Count > 0 ? objs[0].Time : 0);
@@ -427,7 +429,7 @@ sealed class Editor : Screen
             if (Pressed(Bound("keyAudioPause", KeyboardKey.C))) SetPlaying(!playing);
             if (Pressed(Bound("keyJumpToEnd", KeyboardKey.V))) Seek(objs.Count > 0 ? objs[^1].End : length);
         }
-        if (Input.IsKeyPressed(KeyboardKey.Space)) SetPlaying(!playing);
+        if (Pressed(KeyboardKey.Space)) SetPlaying(!playing);
         bool leftKey = Input.IsKeyPressedRepeat(KeyboardKey.Left) || Input.IsKeyPressed(KeyboardKey.Left);
         bool rightKey = Input.IsKeyPressedRepeat(KeyboardKey.Right) || Input.IsKeyPressed(KeyboardKey.Right);
         if (Input.CtrlHeld)
@@ -440,8 +442,8 @@ sealed class Editor : Screen
             {
                 // Ctrl+B adds one here, Ctrl+Shift+B removes the one here (within half a beat snap)
                 double near = RedAt(time).Beat / divisor / 2;
-                if (Input.ShiftHeld) SetBookmarks([.. marks.Where(b => Math.Abs(b - time) > near)]);
-                else if (!marks.Contains((int)Math.Round(time))) SetBookmarks([.. marks.Append((int)Math.Round(time)).Order()]);
+                List<int> to = Input.ShiftHeld ? [.. marks.Where(b => Math.Abs(b - time) > near)] : [.. marks.Union([(int)Math.Round(time)]).Order()];
+                if (!to.SequenceEqual(marks)) Change(() => SetBookmarks(to)); // (undoable)
             }
         }
         else
@@ -477,6 +479,8 @@ sealed class Editor : Screen
     // the beat snap (the rims with a clap); in a mania map the column keys put a note in their column, a hold when let
     // go over 300ms later. Gives the keys it took.
     bool liveMapping;
+    KeyboardKey[] live = []; // this frame's live mapping keys (kept from the editor's own keys)
+    bool Pressed(KeyboardKey k) => Input.IsKeyPressed(k) && !live.Contains(k);
     readonly EObj?[] liveHeld = new EObj?[18];
 
     void ToggleLiveMapping()
@@ -617,16 +621,16 @@ sealed class Editor : Screen
     void UpdateCompose(Vector2 mouse, float u)
     {
         string[] toolKeys = ["keySelectTool", "keyNormalTool", "keySliderTool", "keySpinnerTool"];
-        for (int k = 0; k < ToolNames.Length; k++) if (Input.IsKeyPressed(Bound(toolKeys[k], KeyboardKey.One + k)) && !Input.CtrlHeld) { tool = k; sliderDraft = null; }
-        if (Input.IsKeyPressed(Bound("keyNewComboToggle", KeyboardKey.Q))) ToggleCombo();
-        if (Input.IsKeyPressed(Bound("keyWhistleToggle", KeyboardKey.W))) ToggleSound(2);
-        if (Input.IsKeyPressed(Bound("keyFinishToggle", KeyboardKey.E))) ToggleSound(4);
-        if (Input.IsKeyPressed(Bound("keyClapToggle", KeyboardKey.R)) && !Input.CtrlHeld) ToggleSound(8);
-        if (Input.IsKeyPressed(Bound("keyGridSnapToggle", KeyboardKey.T))) gridSnap = !gridSnap;
-        if (Input.IsKeyPressed(Bound("keyDistSnapToggle", KeyboardKey.Y))) distSnap = !distSnap;
-        if (Input.IsKeyPressed(Bound("keyGridChange", KeyboardKey.G)) && !Input.CtrlHeld) gridSize = gridSize == 32 ? 4 : gridSize * 2;
+        for (int k = 0; k < ToolNames.Length; k++) if (Pressed(Bound(toolKeys[k], KeyboardKey.One + k)) && !Input.CtrlHeld) { tool = k; sliderDraft = null; }
+        if (Pressed(Bound("keyNewComboToggle", KeyboardKey.Q))) ToggleCombo();
+        if (Pressed(Bound("keyWhistleToggle", KeyboardKey.W))) ToggleSound(2);
+        if (Pressed(Bound("keyFinishToggle", KeyboardKey.E))) ToggleSound(4);
+        if (Pressed(Bound("keyClapToggle", KeyboardKey.R)) && !Input.CtrlHeld) ToggleSound(8);
+        if (Pressed(Bound("keyGridSnapToggle", KeyboardKey.T))) gridSnap = !gridSnap;
+        if (Pressed(Bound("keyDistSnapToggle", KeyboardKey.Y)) && !Input.CtrlHeld) distSnap = !distSnap;
+        if (Pressed(Bound("keyGridChange", KeyboardKey.G)) && !Input.CtrlHeld) gridSize = gridSize == 32 ? 4 : gridSize * 2;
         // Nudge Left / Right (J / K): the selection a beat snap earlier / later
-        int nudge = Input.CtrlHeld ? 0 : Input.IsKeyPressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Input.IsKeyPressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
+        int nudge = Input.CtrlHeld ? 0 : Pressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Pressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
         if (nudge != 0 && selected.Count > 0) Nudge(nudge);
         if (Input.IsKeyPressed(KeyboardKey.Delete) && selected.Count > 0) DeleteSel();
         // stable's Edit menu keys (see the menu below)
@@ -721,12 +725,12 @@ sealed class Editor : Screen
         bool inField = fieldPos.X >= -20 && fieldPos.X <= 532 && fieldPos.Y >= -20 && fieldPos.Y <= 404 && mouse.Y > tl.Y + tl.Height;
         // stable: a right click on a selected slider's point removes it (keeping two), else deletes the object under the
         // cursor (not while drawing a slider)
-        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && inField && PointAt(fieldPos) is { } rp)
+        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && pointDrag == null && inField && PointAt(fieldPos) is { } rp)
         {
             if (rp.Slider.Anchors.Count >= 2) Change(() => { rp.Slider.Anchors.RemoveAt(rp.Index); FitLength(rp.Slider, retype: true); });
             return;
         }
-        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && inField
+        if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && pointDrag == null && inField
             && Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius) is { } gone)
         {
             Change(() => { objs.Remove(gone); selected.Remove(gone); });
@@ -780,13 +784,15 @@ sealed class Editor : Screen
         public bool Scale, Anticlockwise, SelectionCentre, X = true, Y = true, Dragging, WasModified;
         public double Value;
         public Dictionary<EObj, (double X, double Y, List<Vector2> Anchors, double Length, string? Raw)> Start = [];
+        public List<string> Redo = []; // (given back on Cancel)
     }
     Xform? xform;
 
     void OpenXform(bool scale)
     {
-        undo.Add(string.Join("\n", Write())); redo.Clear();
-        xform = new Xform { Scale = scale, Value = scale ? 1 : 0, WasModified = modified };
+        undo.Add(string.Join("\n", Write()));
+        xform = new Xform { Scale = scale, Value = scale ? 1 : 0, WasModified = modified, Redo = [.. redo] };
+        redo.Clear();
         foreach (var o in selected) xform.Start[o] = (o.X, o.Y, [.. o.Anchors], o.Length, o.Raw);
     }
 
@@ -878,6 +884,7 @@ sealed class Editor : Screen
             // (back exactly as it was)
             foreach (var (o, st) in x.Start) { o.X = st.X; o.Y = st.Y; o.Anchors = [.. st.Anchors]; o.Length = st.Length; o.Raw = st.Raw; }
             undo.RemoveAt(undo.Count - 1);
+            redo.AddRange(x.Redo);
             modified = x.WasModified;
             Rebuild();
         }
@@ -1291,7 +1298,7 @@ sealed class Editor : Screen
             new("Reset Current Section"), new("Delete Timing Section", "Ctrl+I", DeleteTimingHere), new("Resnap Current Section", "", ResnapSection), Sep,
             new("Resnap All Notes", "", ResnapAll), new("Move all notes in time...", "", objs.Count > 0 ? MoveAllPrompt : null), new("Recalculate Slider Lengths", "", RecalcSliders),
             new("Delete All Timing Sections", "", timing.Count > 0 ? () => Change(() => { timing.Clear(); timingSel = -1; }) : null), Sep,
-            new("Set Current Position as Preview Point", "", () => SetKv("General", "PreviewTime", ((int)Math.Round(time)).ToString()))],
+            new("Set Current Position as Preview Point", "", () => Change(() => SetKv("General", "PreviewTime", ((int)Math.Round(time)).ToString())))],
         6 => [new("This Beatmap's Information Page"), new("This Beatmap's Thread")],
         _ => [new("Show in-game help"), new("View FAQ")],
     };

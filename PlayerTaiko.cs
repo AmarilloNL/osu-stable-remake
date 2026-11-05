@@ -197,7 +197,8 @@ sealed partial class Player
                 TaikoJudge(n, 0, n.End); // (not cleared in time)
             }
         }
-        while (tNext < tNotes.Count && tNotes[tNext].Done) tNext++;
+        // (a big note hit with one hand stays in reach of the other for its 30ms)
+        while (tNext < tNotes.Count && tNotes[tNext].Done && !(tNotes[tNext].Pending && time - tNotes[tNext].FirstHitAt < 30)) tNext++;
     }
 
     void TaikoAuto()
@@ -250,6 +251,7 @@ sealed partial class Player
                     if (n.Hits > n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; } // (stable: one more than its count)
                     return;
                 case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
+                    while (n.TicksHit < n.Ticks.Count && n.Ticks[n.TicksHit] < at - n.TickSpacing / 2 - 1) n.TicksHit++; // (ticks gone by unhit)
                     if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
                     {
                         n.TicksHit++;
