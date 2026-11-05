@@ -127,6 +127,7 @@ sealed partial class Player
             list.Add(n);
             mNotes.Add(n);
         }
+        health.CalibrateMania(map, mNotes.Select(n => (n.Time, n.End)).ToList(), map.RawHP); // (stable's gain multiplier for the map)
 
         // the scroll: stable's 21 units a beat at speed 1, its "BPM scale" off by default: normalised to the map's main BPM
         // (the red point covering the most of it) and the mod's rate, so only BPM changes (and, in mania maps, slider
@@ -300,9 +301,9 @@ sealed partial class Player
         double hp = map.RawHP;
         switch (result)
         {
-            case 320: nGeki++; health.Add(1.1 - hp * 0.1); break;
-            case 300: n300++; health.Add(1.0 - hp * 0.1); break;
-            case 200: nKatu++; health.Add(0.8 - hp * 0.08); break;
+            case 320: nGeki++; health.Add(health.mul * (1.1 - hp * 0.1)); break;
+            case 300: n300++; health.Add(health.mul * (1.0 - hp * 0.1)); break;
+            case 200: nKatu++; health.Add(health.mul * (0.8 - hp * 0.08)); break;
             case 100: n100++; break;
             case 50: n50++; health.Add(-(hp + 1) * 0.32); break;
             default: nMiss++; health.Add(-(hp + 1) * 1.5); break;
