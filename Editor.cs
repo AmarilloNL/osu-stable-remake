@@ -109,6 +109,7 @@ sealed partial class Editor : Screen
         info = Beatmap.Load(file);
         samples = new BeatmapSamples(info.Folder);
         Read(File.ReadAllLines(file));
+        LoadOsb();
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
         music = Track.Load(Path.Combine(info.Folder, info.AudioFilename), tempo: true);
         if (music != null) { music.Volume = Config.MusicVolume; length = Math.Max(1, music.LengthMs); }
@@ -249,6 +250,7 @@ sealed partial class Editor : Screen
         try
         {
             File.WriteAllLines(path, Write(), new UTF8Encoding(false));
+            if (osbModified && osbLines != null) { File.WriteAllLines(osbPath ??= NewOsbPath(), osbLines, new UTF8Encoding(false)); osbModified = false; }
             modified = false;
             Notification.Show("Saved!", 1500);
         }
@@ -296,7 +298,7 @@ sealed partial class Editor : Screen
     // A change: the state before it goes on the undo stack.
     void Change(Action edit)
     {
-        undo.Add(string.Join("\n", Write()));
+        undo.Add(Snapshot());
         if (undo.Count > 100) undo.RemoveAt(0);
         redo.Clear();
         edit();
@@ -307,10 +309,13 @@ sealed partial class Editor : Screen
     void Restore(List<string> from, List<string> to)
     {
         if (from.Count == 0) return;
-        to.Add(string.Join("\n", Write()));
+        to.Add(Snapshot());
         string state = from[^1];
         from.RemoveAt(from.Count - 1);
-        Read(state.Split('\n'));
+        int osb = state.IndexOf(OsbMark, StringComparison.Ordinal); // (the .osb's lines, after the .osu's)
+        osbLines = osb < 0 ? null : [.. state[(osb + OsbMark.Length)..].Split('\n')];
+        osbModified = true;
+        Read((osb < 0 ? state : state[..osb]).Split('\n'));
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0; // (an undone mode or difficulty change)
         tool = Math.Min(tool, ToolNames.Length - 1);
         info = ReloadInfo();
@@ -694,7 +699,7 @@ sealed partial class Editor : Screen
             // a spinner's end: dragged to a new (snapped) end
             if (objs.LastOrDefault(o => o.Spinner && Math.Abs(TimelineX(o.End) - mouse.X) < 6 * u) is { } sp)
             {
-                undo.Add(string.Join("\n", Write())); redo.Clear();
+                undo.Add(Snapshot()); redo.Clear();
                 endDrag = sp;
                 return;
             }
@@ -702,7 +707,7 @@ sealed partial class Editor : Screen
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
-                undo.Add(string.Join("\n", Write())); redo.Clear();
+                undo.Add(Snapshot()); redo.Clear();
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
             }
             else { scrubFrom = mouse.X; scrubTime = time; }
@@ -811,7 +816,7 @@ sealed partial class Editor : Screen
 
     void OpenXform(bool scale)
     {
-        undo.Add(string.Join("\n", Write()));
+        undo.Add(Snapshot());
         xform = new Xform { Scale = scale, Value = scale ? 1 : 0, WasModified = modified, Redo = [.. redo] };
         redo.Clear();
         foreach (var o in selected) xform.Start[o] = (o.X, o.Y, [.. o.Anchors], o.Length, o.Raw);
@@ -1263,6 +1268,7 @@ sealed partial class Editor : Screen
     void RevertToSaved()
     {
         Read(File.ReadAllLines(path));
+        LoadOsb();
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
         undo.Clear(); redo.Clear(); selected.Clear();
         modified = false;
@@ -1544,7 +1550,7 @@ sealed partial class Editor : Screen
         }
         if (click && inField && PointAt(fieldPos) is { } pt)
         {
-            undo.Add(string.Join("\n", Write())); redo.Clear();
+            undo.Add(Snapshot()); redo.Clear();
             pointDrag = pt;
             return;
         }
@@ -1552,7 +1558,7 @@ sealed partial class Editor : Screen
         if (click && inField && Input.CtrlHeld
             && selected.FirstOrDefault(o => o.Slider && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) > Radius && Enumerable.Range(1, o.Path.Length - 1).Any(i => SegmentDistance(fieldPos, o.Path[i - 1], o.Path[i]) <= Radius)) is { } body)
         {
-            undo.Add(string.Join("\n", Write())); redo.Clear();
+            undo.Add(Snapshot()); redo.Clear();
             var pts = new List<Vector2> { new((float)body.X, (float)body.Y) };
             pts.AddRange(body.Anchors);
             int seg = Enumerable.Range(0, pts.Count - 1).MinBy(i => SegmentDistance(fieldPos, pts[i], pts[i + 1]));
@@ -1571,7 +1577,7 @@ sealed partial class Editor : Screen
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 else if (Input.CtrlHeld) { selected.Remove(hit); return; }
-                undo.Add(string.Join("\n", Write())); redo.Clear();
+                undo.Add(Snapshot()); redo.Clear();
                 drag = (fieldPos, selected.ToDictionary(o => o, o => (o.X, o.Y)));
             }
             else { if (!Input.CtrlHeld) selected.Clear(); boxFrom = fieldPos; }
@@ -1745,7 +1751,7 @@ sealed partial class Editor : Screen
     {
         if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, ModeRect()))
         {
-            undo.Add(string.Join("\n", Write())); redo.Clear();
+            undo.Add(Snapshot()); redo.Clear();
             mode = (mode + 1) % 4;
             SetKv("General", "Mode", mode.ToString());
             tool = Math.Min(tool, ToolNames.Length - 1);
@@ -1759,7 +1765,7 @@ sealed partial class Editor : Screen
             for (int i = 0; i < Fields.Length; i++)
                 if (CheckCollisionPointRec(mouse, FieldRect(i))) { field = i; fieldText = Kv(Fields[i].Section, Fields[i].Key) ?? ""; return; }
             for (int i = 0; i < Sliders.Length; i++)
-                if (CheckCollisionPointRec(mouse, SliderRect(i))) { sliderDragging = i; undo.Add(string.Join("\n", Write())); redo.Clear(); }
+                if (CheckCollisionPointRec(mouse, SliderRect(i))) { sliderDragging = i; undo.Add(Snapshot()); redo.Clear(); }
         }
         if (sliderDragging >= 0)
         {
@@ -1781,7 +1787,7 @@ sealed partial class Editor : Screen
         if (!done) return;
         var f = Fields[field];
         string value = fieldText.Trim();
-        if ((Kv(f.Section, f.Key) ?? "") != value) { undo.Add(string.Join("\n", Write())); redo.Clear(); SetKv(f.Section, f.Key, value); }
+        if ((Kv(f.Section, f.Key) ?? "") != value) { undo.Add(Snapshot()); redo.Clear(); SetKv(f.Section, f.Key, value); }
         field = Input.IsKeyPressed(KeyboardKey.Tab) && field + 1 < Fields.Length ? field + 1 : -1;
         if (field >= 0) fieldText = Kv(Fields[field].Section, Fields[field].Key) ?? "";
     }
@@ -2252,7 +2258,7 @@ sealed partial class Editor : Screen
         }
         if (!click) return;
         if (!inStage && !(mx > MStrip && mx < MStrip + 60 && my > MTop && my < MBottom)) return;
-        undo.Add(string.Join("\n", Write())); redo.Clear();
+        undo.Add(Snapshot()); redo.Clear();
         if (tool == 0)
         {
             if (hit != null && (tail || Input.ShiftHeld))

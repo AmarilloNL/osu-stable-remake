@@ -25,7 +25,7 @@ sealed partial class Editor
         public int Line, Count; // its header line in [Events] and how many lines it takes (with its commands)
         public string[] Head = []; // Sprite / Animation, layer, origin, "file", x, y (and an animation's frames)
         public string? RawHead;
-        public bool Editable = true;
+        public bool Editable = true, Osb; // Osb: in the .osb, not the difficulty
         public List<SbCmd> Cmds = [];
         public string Layer => Head.Length > 1 ? Head[1] : "";
         public string Origin => Head.Length > 2 ? Head[2] : "TopLeft";
@@ -53,19 +53,70 @@ sealed partial class Editor
 
     Section EventsSection => sections.First(s => s.Name == "Events");
 
-    // ---- the [Events] sprites, parsed from the lines as they stand
+    // ---- the map's .osb (its lines as they stand: kept in the undo states, written back on save when changed)
+    const string OsbMark = "\n\0osb\n";
+    List<string>? osbLines, sbParsedOsb;
+    string? osbPath;
+    bool osbModified;
+    int sbParsedOsbCount = -1;
+
+    void LoadOsb()
+    {
+        osbModified = false;
+        osbLines = null;
+        try
+        {
+            var all = Directory.EnumerateFiles(info.Folder, "*.osb").ToList();
+            osbPath = all.FirstOrDefault(f => string.Equals(Path.GetFileName(f), Path.GetFileName(NewOsbPath()), StringComparison.OrdinalIgnoreCase)) ?? all.FirstOrDefault();
+            if (osbPath != null) osbLines = [.. File.ReadAllLines(osbPath)];
+        }
+        catch (IOException) { osbPath = null; osbLines = null; }
+        sbParsed = null;
+    }
+    // stable's name for a map's .osb
+    string NewOsbPath()
+    {
+        string name = $"{Kv("Metadata", "Artist")} - {Kv("Metadata", "Title")} ({Kv("Metadata", "Creator")}).osb";
+        foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c.ToString(), "");
+        return Path.Combine(info.Folder, name);
+    }
+    // an undo state: the .osu as it would be written, then the .osb's lines
+    string Snapshot() => string.Join("\n", Write()) + (osbLines != null ? OsbMark + string.Join("\n", osbLines) : "");
+    // the .osb's [Events] lines (from, to)
+    (int From, int To) OsbEvents()
+    {
+        if (osbLines == null) return (0, 0);
+        int s = osbLines.FindIndex(l => l.Trim() == "[Events]") + 1, e = s;
+        while (e < osbLines.Count && !osbLines[e].TrimStart().StartsWith('[')) e++;
+        return (s, e);
+    }
+
+    // ---- the sprites (the .osb's, then the difficulty's), parsed from the lines as they stand
     void SbParse()
     {
         var ev = EventsSection;
         sbParsed = ev;
         sbParsedCount = ev.Lines.Count;
+        sbParsedOsb = osbLines;
+        sbParsedOsbCount = osbLines?.Count ?? -1;
         string? selKey = sbSel == null ? null : string.Join(',', sbSel.Head);
         int selLine = sbSel?.Line ?? -1;
+        bool selOsb = sbSel?.Osb ?? false;
         sbSprites = [];
+        if (osbLines != null) { var (from, to) = OsbEvents(); SbParseLines(osbLines, from, to, osb: true); }
+        SbParseLines(ev.Lines, 0, ev.Lines.Count, osb: false);
+        sbSprites = [.. sbSprites.OrderBy(s => Math.Max(0, Array.IndexOf(SbLayerNames, s.Layer)))]; // (drawn, and so picked, layer by layer)
+        sbSel = sbSprites.FirstOrDefault(s => s.Osb == selOsb && s.Line == selLine && string.Join(',', s.Head) == selKey)
+            ?? sbSprites.FirstOrDefault(s => s.Osb == selOsb && string.Join(',', s.Head) == selKey);
+        sbDirty = true;
+    }
+
+    void SbParseLines(List<string> lines, int from, int to, bool osb)
+    {
         SbSprite? cur = null;
-        for (int i = 0; i < ev.Lines.Count; i++)
+        for (int i = from; i < to; i++)
         {
-            string line = ev.Lines[i];
+            string line = lines[i];
             if (line.Length > 0 && line[0] is ' ' or '_')
             {
                 if (cur == null) continue;
@@ -92,26 +143,32 @@ sealed partial class Editor
             }
             cur = null;
             if (!line.StartsWith("Sprite,") && !line.StartsWith("Animation,")) continue;
-            cur = new SbSprite { Line = i, Count = 1, Head = line.Split(','), RawHead = line };
+            cur = new SbSprite { Line = i, Count = 1, Head = line.Split(','), RawHead = line, Osb = osb };
             if (cur.Head.Length < 6 || !double.TryParse(cur.Head[4], NumberStyles.Float, CultureInfo.InvariantCulture, out cur.X)
                 || !double.TryParse(cur.Head[5], NumberStyles.Float, CultureInfo.InvariantCulture, out cur.Y)) cur.Editable = false;
             sbSprites.Add(cur);
         }
-        sbSel = sbSprites.FirstOrDefault(s => s.Line == selLine && string.Join(',', s.Head) == selKey) ?? sbSprites.FirstOrDefault(s => string.Join(',', s.Head) == selKey);
-        sbDirty = true;
     }
 
-    // a sprite's lines, back into [Events]
-    void SbWrite(SbSprite sp)
+    List<string> LinesOf(SbSprite sp) => sp.Osb ? osbLines! : EventsSection.Lines;
+    List<string> SpriteLines(SbSprite sp)
     {
         var lines = new List<string> { sp.RawHead ?? string.Join(',', sp.Head) };
         foreach (var c in sp.Cmds.Where(c => c.Type.Length > 0 && Dims(c.Type) > 0).OrderBy(c => c.Start).Concat(sp.Cmds.Where(c => c.Type.Length == 0 || Dims(c.Type) == 0)))
             lines.Add(c.Raw ?? $" {c.Type},{c.Easing},{c.Start},{(c.End == c.Start ? "" : c.End.ToString(CultureInfo.InvariantCulture))},"
                 + string.Join(',', (c.From.SequenceEqual(c.To) ? c.From : c.From.Concat(c.To)).Select(SbNum)));
-        var ev = EventsSection;
-        ev.Lines.RemoveRange(sp.Line, sp.Count);
-        ev.Lines.InsertRange(sp.Line, lines);
+        return lines;
+    }
+
+    // a sprite's lines, back into its file's [Events]
+    void SbWrite(SbSprite sp)
+    {
+        var lines = SpriteLines(sp);
+        var into = LinesOf(sp);
+        into.RemoveRange(sp.Line, sp.Count);
+        into.InsertRange(sp.Line, lines);
         modified = true;
+        osbModified |= sp.Osb;
         SbParse();
     }
 
@@ -205,7 +262,7 @@ sealed partial class Editor
     // an edit of one sprite: undoable, written back at once
     void SbChange(SbSprite sp, Action edit)
     {
-        undo.Add(string.Join("\n", Write()));
+        undo.Add(Snapshot());
         if (undo.Count > 100) undo.RemoveAt(0);
         redo.Clear();
         edit();
@@ -261,10 +318,10 @@ sealed partial class Editor
     void UpdateDesign(Vector2 mouse, float u)
     {
         var ev = EventsSection;
-        if (!ReferenceEquals(ev, sbParsed) || ev.Lines.Count != sbParsedCount) SbParse();
+        if (!ReferenceEquals(ev, sbParsed) || ev.Lines.Count != sbParsedCount || !ReferenceEquals(osbLines, sbParsedOsb) || (osbLines?.Count ?? -1) != sbParsedOsbCount) SbParse();
         if (sbDirty && (sbDrag == null || Game.NowMs - sbBuiltAt > 150))
         {
-            try { sbView = Storyboard.LoadLines(info, ev.Lines, Kv("General", "WidescreenStoryboard") == "1", sbView); }
+            try { sbView = Storyboard.LoadLines(info, ev.Lines, osbLines, Kv("General", "WidescreenStoryboard") == "1", sbView); }
             catch (IOException) { }
             if (sbView != null) { sbView.BothStates = true; Array.Copy(sbShow, sbView.ShowLayer, 5); }
             sbDirty = false;
@@ -289,9 +346,10 @@ sealed partial class Editor
         {
             if (Input.IsKeyPressed(KeyboardKey.Delete))
             {
-                undo.Add(string.Join("\n", Write())); redo.Clear();
-                ev.Lines.RemoveRange(sel.Line, sel.Count);
+                undo.Add(Snapshot()); redo.Clear();
+                LinesOf(sel).RemoveRange(sel.Line, sel.Count);
                 modified = true;
+                osbModified |= sel.Osb;
                 sbSel = null;
                 SbParse();
                 return;
@@ -321,6 +379,7 @@ sealed partial class Editor
                 SbChange(es, () => { run.Easing = run.Easing == easing ? 0 : easing; run.Raw = null; });
                 return;
             }
+        if (click && CheckCollisionPointRec(mouse, SbRow(2, 440)) && sbSel is { Editable: true } ms) { SbMove(ms); return; }
         for (int o = 0; o < 2; o++)
             if (click && CheckCollisionPointRec(mouse, SbRow(2, 395 + o * 15)) && sbSel is { Editable: true } os)
             {
@@ -348,7 +407,7 @@ sealed partial class Editor
                 "F" => [Math.Clamp((d.Value[0] * 100 + up) / 100, 0, 1)],
                 _ => [Math.Clamp((d.Value[0] * 50 + up) / 50, -50, 50)],
             };
-            if (!d.Undo) { undo.Add(string.Join("\n", Write())); if (undo.Count > 100) undo.RemoveAt(0); redo.Clear(); sbDrag = d with { Undo = true }; }
+            if (!d.Undo) { undo.Add(Snapshot()); if (undo.Count > 100) undo.RemoveAt(0); redo.Clear(); sbDrag = d with { Undo = true }; }
             SbKeyframe(ds, sbTool, (int)Math.Round(time), value);
             SbWrite(ds);
             return;
@@ -379,25 +438,53 @@ sealed partial class Editor
         sbLibraryScroll = 0;
     }
 
-    // stable's new sprite: centred at the storyboard's middle on the foreground, with a keyframe at the current time
+    // where a sprite of a layer goes in a file's events: after that layer's sprites (under stable's layer comment), else
+    // at the end
+    static int LayerInsertAt(List<string> lines, int from, int to, string layer)
+    {
+        int at = lines.FindIndex(from, to - from, l => l.Trim() == $"//Storyboard Layer {Math.Max(0, Array.IndexOf(SbLayerNames, layer))} ({layer})");
+        if (at < 0) return to;
+        at++;
+        while (at < to && !lines[at].TrimStart().StartsWith("//")) at++;
+        return at;
+    }
+
+    void SbInsert(List<string> lines, bool osb, IReadOnlyList<string> sprite, string layer)
+    {
+        var (from, to) = osb ? OsbEvents() : (0, lines.Count);
+        int at = LayerInsertAt(lines, from, to, layer);
+        lines.InsertRange(at, sprite);
+        modified = true;
+        osbModified |= osb;
+        SbParse();
+        sbSel = sbSprites.FirstOrDefault(s => s.Osb == osb && s.Line == at);
+    }
+
+    // stable's new sprite: centred at the storyboard's middle on the foreground, with a keyframe at the current time;
+    // in the .osb (made if the map has none) - "Diff Specific" moves it to the difficulty
     void SbAdd(string file)
     {
         sbLibrary = false;
-        var ev = EventsSection;
-        undo.Add(string.Join("\n", Write())); redo.Clear();
+        undo.Add(Snapshot()); redo.Clear();
         int t = (int)Math.Round(time);
         string[] lines = [$"Sprite,Foreground,Centre,\"{file}\",320,240", sbTool switch
         {
             "S" => $" S,0,{t},,1", "F" => $" F,0,{t},,1", "R" => $" R,0,{t},,0", _ => $" M,0,{t},,320,240",
         }];
-        // after the foreground layer's sprites (its comment, if the file has stable's layer comments)
-        int at = ev.Lines.FindIndex(l => l.Trim() == "//Storyboard Layer 3 (Foreground)");
-        if (at >= 0) { at++; while (at < ev.Lines.Count && !ev.Lines[at].TrimStart().StartsWith("//")) at++; }
-        else at = ev.Lines.Count;
-        ev.Lines.InsertRange(at, lines);
-        modified = true;
-        SbParse();
-        sbSel = sbSprites.FirstOrDefault(s => s.Line == at);
+        osbLines ??= ["[Events]", "//Background and Video events", "//Storyboard Layer 0 (Background)", "//Storyboard Layer 1 (Fail)",
+            "//Storyboard Layer 2 (Pass)", "//Storyboard Layer 3 (Foreground)", "//Storyboard Layer 4 (Overlay)", "//Storyboard Sound Samples"];
+        SbInsert(osbLines, true, lines, "Foreground");
+    }
+
+    // Diff Specific: the picked sprite over to the difficulty's [Events], or back to the .osb
+    void SbMove(SbSprite sp)
+    {
+        undo.Add(Snapshot()); redo.Clear();
+        var lines = SpriteLines(sp);
+        LinesOf(sp).RemoveRange(sp.Line, sp.Count);
+        osbModified |= sp.Osb;
+        if (!sp.Osb) osbLines ??= ["[Events]"];
+        SbInsert(sp.Osb ? EventsSection.Lines : osbLines!, !sp.Osb, lines, sp.Layer);
     }
 
     void DrawDesign(float u)
@@ -449,8 +536,8 @@ sealed partial class Editor
         Header("Origin", 380);
         Check("TopLeft", 395, sbSel?.Origin == "TopLeft", can);
         Check("Centre", 410, sbSel?.Origin == "Centre", can);
-        Header("Advanced", 440);
-        Check("Diff Specific", 455, true, enabled: false);
+        Header("Advanced", 425);
+        Check("Diff Specific", 440, sbSel is { Osb: false }, can); // (a little higher than stable's: this bottom bar is taller)
 
         // the Sprite Library button
         var lb = SbLibraryButton();

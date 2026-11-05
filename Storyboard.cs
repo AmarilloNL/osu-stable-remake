@@ -94,13 +94,12 @@ sealed class Storyboard
 
     // The editor's Design view: the .osb with the difficulty's [Events] as they stand in the editor (not as saved);
     // textures an earlier view already loaded are taken over, so an edit only loads what's new. No sounds.
-    public static Storyboard? LoadLines(Beatmap map, IEnumerable<string> osuEvents, bool widescreenOsu, Storyboard? reuse)
+    public static Storyboard? LoadLines(Beatmap map, IEnumerable<string> osuEvents, IEnumerable<string>? osbLines, bool widescreenOsu, Storyboard? reuse)
     {
         var lines = new List<string>();
         bool widescreen = false;
         var vars = new List<(string Name, string Value)>();
-        foreach (var osb in Directory.EnumerateFiles(map.Folder, "*.osb"))
-            ReadEvents(osb, lines, vars, ref widescreen);
+        if (osbLines != null) ReadEvents(osbLines, lines, vars, ref widescreen);
         lines.AddRange(osuEvents.Where(l => l.Trim().Length > 0 && !l.TrimStart().StartsWith("//")).Select(l => l.TrimEnd()));
         widescreen |= widescreenOsu;
         var sb = new Storyboard(map.Folder, widescreen);
@@ -114,10 +113,11 @@ sealed class Storyboard
     public bool BothStates; // the Design view: the fail and pass layers both, not as the play goes
     public Texture2D? TextureOf(string path) => textures.TryGetValue(path, out var t) && t.Id != 0 ? t : null;
 
-    static void ReadEvents(string path, List<string> into, List<(string, string)> vars, ref bool widescreen)
+    static void ReadEvents(string path, List<string> into, List<(string, string)> vars, ref bool widescreen) => ReadEvents(File.ReadLines(path), into, vars, ref widescreen);
+    static void ReadEvents(IEnumerable<string> fileLines, List<string> into, List<(string, string)> vars, ref bool widescreen)
     {
         string section = "";
-        foreach (var raw in File.ReadLines(path))
+        foreach (var raw in fileLines)
         {
             var t = raw.Trim();
             if (t.Length == 0 || t.StartsWith("//")) continue;
