@@ -379,6 +379,7 @@ sealed class Editor : Screen
         float u = U;
         if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
         if (xform != null) { UpdateXform(mouse); return; }
+        if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(mouse)) return;
 
         // the clock
@@ -637,9 +638,10 @@ sealed class Editor : Screen
             if (mode != 3 && Input.ShiftHeld && (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.S))) { OpenXform(scale: Input.IsKeyPressed(KeyboardKey.S)); return; }
             if (Input.IsKeyPressed(KeyboardKey.G)) Change(ReverseSelection);
             if (mode != 3 && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.F)) SliderToStream();
-            if (Input.IsKeyPressed(KeyboardKey.D)) Change(CloneSelection);
+            if (Input.IsKeyPressed(KeyboardKey.D) && !Input.ShiftHeld) Change(CloneSelection);
         }
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) SelectAll();
+        if (mode != 3 && Input.CtrlHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.D)) { OpenPoly(); return; }
         if (Input.CtrlHeld && (Input.IsKeyPressed(KeyboardKey.C) || Input.IsKeyPressed(KeyboardKey.X)) && selected.Count > 0) CopySel(cut: Input.IsKeyPressed(KeyboardKey.X));
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.V) && clipboard.Count > 0) PasteClip();
 
@@ -1007,6 +1009,92 @@ sealed class Editor : Screen
     }
     bool dimBg = true;
 
+    // ---- stable's Polygonal Circle Creation (Ctrl+Shift+D): Points circles round the playfield's centre, Repeat
+    // times, a beat snap tick apart from now; the sides Distance snap times a tick's slider travel long, the first at
+    // the Offset angle (the distance kept to what fits); new combo and hitsounds as toggled
+    sealed class Poly { public double Spacing = 1, Angle, Points = 4, Repeat = 1; public int Dragging = -1; }
+    Poly? poly;
+    double lastPolySpacing = 1;
+    static readonly (string Label, double Min, double Max, double Step)[] PolyRows = [("Distance snap", 0.1, 10, 0.1), ("Offset angle", -180, 180, 1), ("Points", 3, 32, 1), ("Repeat", 1, 10, 1)];
+
+    void OpenPoly() => poly = new Poly { Spacing = lastPolySpacing };
+
+    double PolyTick() => RedAt(time).Beat / divisor;
+    double PolyRadius(Poly p, double spacing) => spacing * 100 * SliderMultiplier * SvAt(time) / RedAt(time).Beat * PolyTick() / (2 * Math.Sin(Math.PI / (int)p.Points));
+    double PolyMaxSpacing(Poly p) => Math.Max(0.1, Math.Floor(190 / PolyRadius(p, 1) * 10) / 10);
+
+    double[] PolyValues(Poly p) => [p.Spacing, p.Angle, p.Points, p.Repeat];
+    void SetPolyValue(Poly p, int i, double v)
+    {
+        var (_, min, max, step) = PolyRows[i];
+        v = Math.Clamp(Math.Round(v / step) * step, min, max);
+        if (i == 0) p.Spacing = v; else if (i == 1) p.Angle = v; else if (i == 2) p.Points = v; else p.Repeat = v;
+        p.Spacing = Math.Min(p.Spacing, PolyMaxSpacing(p));
+    }
+
+    Rectangle PolyBar(int i) { var p = XformPanel(); float u = U; return new Rectangle(p.X + 110 * u, p.Y + (34 + i * 24) * u, p.Width - 170 * u, 12 * u); }
+
+    void UpdatePoly(Vector2 mouse)
+    {
+        var p = poly!;
+        bool ok = Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.KpEnter), cancel = Input.IsKeyPressed(KeyboardKey.Escape);
+        if (Input.IsMouseButtonPressed(MouseButton.Left))
+        {
+            for (int i = 0; i < PolyRows.Length; i++) { var b = PolyBar(i); if (CheckCollisionPointRec(mouse, new Rectangle(b.X - 8, b.Y - 6, b.Width + 16, b.Height + 12))) p.Dragging = i; }
+            if (CheckCollisionPointRec(mouse, XformButton(0))) ok = true;
+            if (CheckCollisionPointRec(mouse, XformButton(1))) cancel = true;
+        }
+        if (p.Dragging >= 0)
+        {
+            if (!Input.IsMouseButtonDown(MouseButton.Left)) p.Dragging = -1;
+            else { var b = PolyBar(p.Dragging); var r = PolyRows[p.Dragging]; SetPolyValue(p, p.Dragging, r.Min + Math.Clamp((mouse.X - b.X) / b.Width, 0, 1) * (r.Max - r.Min)); }
+        }
+        if (cancel) { poly = null; return; }
+        if (!ok) return;
+        poly = null;
+        lastPolySpacing = p.Spacing;
+        int n = (int)p.Points;
+        double radius = PolyRadius(p, p.Spacing), tick = PolyTick(), t = Snap(time), a = p.Angle * Math.PI / 180;
+        Change(() =>
+        {
+            selected.Clear();
+            for (int i = 1; i <= n * (int)p.Repeat; i++)
+            {
+                float ang = (float)Math.PI * 2f / n * i;
+                var o = new EObj { X = Math.Round(radius * Math.Cos(ang + a) + 256), Y = Math.Round(radius * Math.Sin(ang + a) + 192), Time = Math.Round(t),
+                    Type = 1 | (i == 1 && newComboNext ? 4 : 0), HitSound = soundNext };
+                o.End = o.Time;
+                if (setsNext != (0, 0)) SetSets(o, setsNext.Normal, setsNext.Addition);
+                objs.Add(o);
+                selected.Add(o);
+                t = Snap(t + tick);
+            }
+            newComboNext = false;
+        });
+    }
+
+    void DrawPoly(float u)
+    {
+        var p = poly!;
+        var panel = XformPanel();
+        DrawRectangleRounded(panel, 0.06f, 8, new Color(20, 20, 30, 235));
+        DrawRectangleRoundedLinesEx(panel, 0.06f, 8, 1, ColorAlpha(Color.White, 0.4f));
+        Game.TextBold("Polygonal Circle Creation", panel.X + 12 * u, panel.Y + 6 * u, 14 * u, Color.White);
+        var values = PolyValues(p);
+        for (int i = 0; i < PolyRows.Length; i++)
+        {
+            var (label, min, max, _) = PolyRows[i];
+            var b = PolyBar(i);
+            Game.Text(label, panel.X + 16 * u, b.Y - 1 * u, 11 * u, Color.LightGray);
+            DrawRectangle((int)b.X, (int)(b.Y + b.Height / 2 - u), (int)b.Width, (int)(2 * u), Color.Gray);
+            DrawCircleV(new(b.X + b.Width * (float)((values[i] - min) / (max - min)), b.Y + b.Height / 2), 6 * u, new Color(255, 160, 40, 255));
+            string v = i == 0 ? $"{values[i].ToString("0.0#", Inv)}×" : i == 1 ? $"{values[i]:0}°" : $"{values[i]:0}";
+            Game.TextBold(v, b.X + b.Width + 10 * u, b.Y - 1 * u, 11 * u, Color.White);
+        }
+        Game.Text("Try smaller distance snap if you need more points", panel.X + 16 * u, panel.Y + 125 * u, 10 * u, Color.Gray);
+        for (int i = 0; i < 2; i++) DrawButton(XformButton(i), i == 0 ? "OK" : "Cancel", false);
+    }
+
     void RecalcSliders() => Change(() => { foreach (var o in objs) if (o.Slider) FitLength(o); });
     void RevertToSaved()
     {
@@ -1061,7 +1149,7 @@ sealed class Editor : Screen
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
             new("Grid Snapping", "T", () => gridSnap = !gridSnap, gridSnap), Sep,
-            new("Create Polygon Circles", "Ctrl+Shift+D"), new("Convert Slider to Stream", "Ctrl+Shift+F", NotMania(AnySliderSelected ? SliderToStream : null)),
+            new("Create Polygon Circles...", "Ctrl+Shift+D", NotMania(OpenPoly)), new("Convert slider to stream...", "Ctrl+Shift+F", NotMania(AnySliderSelected ? SliderToStream : null)),
             new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance")],
         4 => [new("Move all elements in time...")],
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
@@ -1571,6 +1659,7 @@ sealed class Editor : Screen
         DrawBottomBar(u);
         DrawMenu(u);
         if (xform != null) DrawXform(u);
+        if (poly != null) DrawPoly(u);
         if (exitPrompt != null)
         {
             Dialog.Backdrop(1);
