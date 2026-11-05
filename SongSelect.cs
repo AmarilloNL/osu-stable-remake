@@ -225,7 +225,7 @@ sealed partial class SongSelect : Screen
         unrated = toRate;
         TotalBeatmaps = all.Count;
         for (int i = 0; i < all.Count; i++) all[i].BuildSearchKey(i > 0 ? all[i - 1] : null); // here, not on the first keystroke
-        return [.. all.Where(b => b.Mode == 0)
+        return [.. all.Where(b => b.Mode <= 3)
             .GroupBy(b => b.Folder, StringComparer.OrdinalIgnoreCase)
             .Select(g => new BeatmapSet(g.OrderBy(b => b.StarsFor(Mods.None)).ToList()))];
     }
@@ -528,7 +528,7 @@ sealed partial class SongSelect : Screen
         bool InRange(DbBeatmap b) => !starRange || b.StarsFor(mods) is var st && st >= lo && (hi >= 10 || st <= hi);
         foreach (var set in sets)
         {
-            var diffs = filter.Length == 0 && !starRange ? set.Diffs : set.Diffs.Where(b => InRange(b) && terms.All(t => t(b))).ToList();
+            var diffs = filter.Length == 0 && !starRange && set.Diffs.All(Shown) ? set.Diffs : set.Diffs.Where(b => Shown(b) && InRange(b) && terms.All(t => t(b))).ToList();
             if (diffs.Count > 0) all.Add((set, diffs));
         }
         BuildGroups(all);
@@ -895,6 +895,7 @@ sealed partial class SongSelect : Screen
         {
             var map = Beatmap.Load(b.FilePath, mods: mods);
             if (map.Objects.Count == 0) { message = "Map has no hit objects"; return; }
+            map.PlayMode = map.Mode != 0 ? map.Mode : PlayMode;
             Game.Skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
             var player = new Player(map, this, mods) { LeftSongSelectAt = Game.NowMs };
             // the preview fades out in the player before its clock starts, like stable
@@ -1179,10 +1180,10 @@ sealed partial class SongSelect : Screen
             if (Math.Abs(dragVelocity) < 0.01) dragVelocity = 0;
         }
         else dragVelocity = 0;
-        // stable: Ctrl+1..4 switch the game mode (osu!, taiko, catch, mania); only osu! is here
+        // stable: Ctrl+1..4 switch the game mode (osu!, taiko, catch, mania)
         if (Input.CtrlHeld)
-            for (int n = 1; n < ModeRows.Length; n++)
-                if (Input.IsKeyPressed(KeyboardKey.One + n)) Notification.Show($"{ModeRows[n].Name} isn't part of this osu! remake.", 1000);
+            for (int n = 0; n < ModeRows.Length; n++)
+                if (Input.IsKeyPressed(KeyboardKey.One + n)) SetMode(n);
         // Ctrl+Enter: this one play with Auto, like stable (the selected mods stay as they are).
         if (Input.IsKeyPressed(KeyboardKey.Enter))
         {
@@ -1675,7 +1676,7 @@ sealed partial class SongSelect : Screen
         scoreFade = 1 - (float)Math.Min(1, ms / 500);
         // stable's big mode icon as the map starts: its colour flashes sky blue back to its own grey and it fades out
         // over 1s, swelling to twice its size (4s, Out) and turning a radian (4s, In)
-        if (Game.Skin.Tex("mode-osu") is { } mode && ms < 1000)
+        if (Game.Skin.Tex(ModeIcon()) is { } mode && ms < 1000)
         {
             float t1 = (float)(ms / 1000), t4 = (float)(ms / 4000);
             var tint = ColorLerp(Xna.SkyBlue, new Color(80, 80, 80, 255), t1);
@@ -1862,7 +1863,7 @@ sealed partial class SongSelect : Screen
     void DrawBackdrop(int w, int h, float s)
     {
         float u = U;
-        if (Game.Skin.Tex("mode-osu") is { } mode)
+        if (Game.Skin.Tex(ModeIcon()) is { } mode)
         {
             double phase = BeatPhase() is var p && !double.IsNaN(p) ? p : 0;
             BeginBlendMode(BlendMode.Additive);
@@ -2237,7 +2238,7 @@ sealed partial class SongSelect : Screen
         // Active mod icons next to the buttons.
         // The current mode's icon sits in the Mode button (additive, centred 28.8 units into it, 35 up).
         float u = h / 480f;
-        if (Game.Skin.Tex("mode-osu-small") is { } modeIcon)
+        if (Game.Skin.Tex(ModeIcon("-small")) is { } modeIcon)
         {
             BeginBlendMode(BlendMode.Additive);
             modeIcon.Draw(new Vector2((140 + 28.8f) * u, h - 35 * u), s, Color.White);
@@ -2278,6 +2279,22 @@ sealed partial class SongSelect : Screen
     // 40 in and the mode's name (bold 24, shadowed) 90 in; rows fade in over 200ms, 20ms apart, and out over 100ms.
     // Hovering grows the icon to 1.1 and nudges the name 10 units right. Any click closes it; only osu! is playable here.
     static readonly (string Icon, string Name)[] ModeRows = [("mode-osu-med", "osu!"), ("mode-taiko-med", "osu!taiko"), ("mode-fruits-med", "osu!catch"), ("mode-mania-med", "osu!mania")];
+    // stable's play mode (LastPlayMode): song select lists that mode's maps, and in taiko / catch / mania the osu! maps too
+    // (converted when played)
+    internal static int PlayMode = DbBeatmap.ViewMode = Config.Get("LastPlayMode", "Osu") switch { "Taiko" => 1, "CatchTheBeat" => 2, "OsuMania" => 3, _ => 0 };
+    static readonly string[] ModeKeys = ["Osu", "Taiko", "CatchTheBeat", "OsuMania"];
+    internal static string ModeIcon(string size = "") => new[] { "mode-osu", "mode-taiko", "mode-fruits", "mode-mania" }[PlayMode] + size;
+    static bool Shown(DbBeatmap b) => b.Mode == PlayMode || PlayMode != 0 && b.Mode == 0 && Converts(PlayMode);
+    internal static bool Converts(int mode) => mode is 1 or 2 or 3;
+    void SetMode(int mode)
+    {
+        if (mode == PlayMode) return;
+        PlayMode = DbBeatmap.ViewMode = mode;
+        Config.SetOwn("LastPlayMode", ModeKeys[mode]);
+        rankedFor = null;
+        ApplyFilter(Selected);
+    }
+
     double modeMenuAt = -1, modeMenuClosedAt = double.NegativeInfinity;
     int modeHover = -1;
     readonly double[] modeHoverAt = [double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity];
@@ -2302,8 +2319,7 @@ sealed partial class SongSelect : Screen
         }
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { CloseModeMenu(); return true; }
         if (!Input.IsMouseButtonPressed(MouseButton.Left) && !Input.IsMouseButtonPressed(MouseButton.Right)) return false;
-        if (over > 0) Notification.Show($"{ModeRows[over].Name} isn't part of this osu! remake.", 1000);
-        if (over >= 0) Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
+        if (over >= 0) { Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume); SetMode(over); }
         CloseModeMenu();
         return over >= 0;
     }

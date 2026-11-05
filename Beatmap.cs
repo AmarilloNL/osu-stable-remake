@@ -3,7 +3,7 @@ using System.Numerics;
 
 namespace OsuStableRemake;
 
-enum ObjType { Circle, Slider, Spinner }
+enum ObjType { Circle, Slider, Spinner, Hold } // Hold: osu!mania's hold note
 
 sealed class TimingPoint
 {
@@ -124,6 +124,8 @@ sealed class Beatmap
     public bool EpilepsyWarning;
     public double HP = 5, CS = 5, OD = 5, AR = -1, SliderMultiplier = 1.4, SliderTickRate = 1;
     public bool SamplesMatchPlaybackRate; // [General]: hitsounds follow DT / HT's speed (and pitch)
+    public double RawCS, RawOD, RawHP, RawAR; // the values before EZ / HR
+    public int PlayMode; // the mode it's played in: its own, or (an osu! map) the one song select is in
     public int DefaultSampleSet = 1;
     public List<System.Drawing.Color> ComboColours = [];
     public List<TimingPoint> TimingPoints = [];
@@ -189,6 +191,7 @@ sealed class Beatmap
             float density = drain == 0 ? 16 : Math.Clamp((float)map.Objects.Count / drain * 8f, 0f, 16f);
             map.DifficultyMultiplier = (int)Math.Round(((float)map.HP + (float)map.CS + (float)map.OD + density) / 38f * 5f);
         }
+        (map.RawCS, map.RawOD, map.RawHP, map.RawAR) = (map.CS, map.OD, map.HP, map.AR); // (before mods: osu!mania's keys and windows)
         if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3, 1.4);
         if (mods.HasFlag(Mods.Easy)) map.ScaleDifficulty(0.5, 0.5);
         if (!metadataOnly) map.Finish();
@@ -331,7 +334,14 @@ sealed class Beatmap
             o.NewCombo = true;
             if (f.Length > 6) sample = f[6];
         }
-        else return; // mania hold notes etc.
+        else if ((type & 128) != 0) // osu!mania hold note: x,y,time,128,hitsound,end:hitsample
+        {
+            o.Type = ObjType.Hold;
+            var p = f[5].Split(':');
+            o.EndTime = Math.Max(o.Time, D(p[0]));
+            if (p.Length > 1) sample = string.Join(':', p.Skip(1));
+        }
+        else return;
 
         if (sample != null)
         {

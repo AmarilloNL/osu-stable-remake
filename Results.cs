@@ -55,12 +55,23 @@ sealed partial class Player
             int lift = newLayout ? 20 : 8, textDy = newLayout ? -16 : -25;
             var list = new List<(string, Vector2, string?, float, float, Vector2, bool)>();
             void Row(string sprite, float x, float y, int count) => list.Add((sprite, new(x, y), $"{count}x", 1, 0.5f, new(x + 40, y + textDy), false));
-            Row("hit300", 40, 160, p.n300);
-            Row("hit100", 40, 220, p.n100);
-            Row("hit50", 40, 280, p.n50);
-            Row("hit300g", 240, 160, p.nGeki);
-            Row("hit100k", 240, 220, p.nKatu);
-            Row("hit0", 240, 280, p.nMiss);
+            if (p.mode == 1) // taiko: greats, goods and misses, and the big notes' bonuses
+            {
+                Row("taiko-hit300", 40, 160, p.n300);
+                Row("taiko-hit100", 40, 220, p.n100);
+                Row("taiko-hit300g", 240, 160, p.nGeki);
+                Row("taiko-hit100k", 240, 220, p.nKatu);
+                Row("taiko-hit0", 240, 280, p.nMiss);
+            }
+            else
+            {
+                Row("hit300", 40, 160, p.n300);
+                Row("hit100", 40, 220, p.n100);
+                Row("hit50", 40, 280, p.n50);
+                Row("hit300g", 240, 160, p.nGeki);
+                Row("hit100k", 240, 220, p.nKatu);
+                Row("hit0", 240, 280, p.nMiss);
+            }
             list.Add(("ranking-maxcombo", new(5, 320 - lift), $"{p.maxCombo}x", 1, 1, new(15, 330), true));
             list.Add(("ranking-accuracy", new(182, 320 - lift), $"{p.Accuracy:0.00}%", 1, 1, new(194, 330), true));
             if (perfect) list.Add(("ranking-perfect", new(newLayout ? 260 : 200, 430), null, 1.1f, 1, default, false));

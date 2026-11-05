@@ -104,7 +104,7 @@ sealed partial class Player
         float fade = hudFade;
         hudFade = fade * ifaceAlpha;
         DrawScore(w, u, sd, frames);
-        DrawCombo(u, sd, now);
+        if (mode == 0) DrawCombo(u, sd, now); // (the modes show it on their playfield)
         hudFade = fade;
         DrawMeter(w, u, sd, now);
         DrawColourMeter(w, u, frames);
@@ -123,7 +123,7 @@ sealed partial class Player
         hudFade = fade * ifaceAlpha;
         DrawHealthBar(w, sd);
         hudFade = fade;
-        if (Config.GetBool("KeyOverlay", false) || playback != null || auto) DrawKeyOverlay(w, u, sd, now); // stable always shows it when watching
+        if ((Config.GetBool("KeyOverlay", false) || playback != null || auto) && mode == 0) DrawKeyOverlay(w, u, sd, now); // stable always shows it when watching
 
         DrawSkip();
         DrawRetries(u, now);

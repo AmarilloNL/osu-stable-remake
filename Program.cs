@@ -776,9 +776,16 @@ static class Game
             Screen = args.Contains("--summary") ? Player.Summary(Beatmap.Load(watchMap, mods: info.Mods), songSelect, info) // test hook: the replay's ranking screen
                 : new Player(Beatmap.Load(watchMap, mods: info.Mods), songSelect, info.Mods, Replays.Frames(info), info);
         }
-        else Screen = Arg("--play") is { } play ? new Player(Beatmap.Load(play, mods: testMods), songSelect, testMods)
+        else Screen = Arg("--play") is { } play ? new Player(LoadForPlay(play, testMods), songSelect, testMods)
             : Arg("--search") != null ? songSelect : new MainMenu(songSelect, open: args.Contains("--menu-open"), play: args.Contains("--menu-play"));
         if (args.Contains("--options") || Arg("--options-at") != null) Screen = new Options(Screen, songSelect, Arg("--options-at")); // test hooks
+        // --play's map in a mode (--mode 0-3; an osu! map converts)
+        Beatmap LoadForPlay(string file, Mods m)
+        {
+            var map = Beatmap.Load(file, mods: m);
+            map.PlayMode = map.Mode != 0 ? map.Mode : int.TryParse(Arg("--mode"), out int pm) ? pm : 0;
+            return map;
+        }
 
         double refresh = Math.Max(60, GetMonitorRefreshRate(monitor));
         double nextFrame = NowMs, last = NowMs;
@@ -1163,8 +1170,9 @@ static class Game
         InitWindow(640, 480, "auto-check");
         Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
         Player.VirtualClock = true;
+        int checkMode = int.TryParse(Environment.GetEnvironmentVariable("AUTOCHECK_MODE"), out int cm) ? cm : 0; // taiko / catch / mania (osu! maps converted)
         var maps = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db"))
-            .Where(b => b.Mode == 0 && $"{b.Artist} {b.Title} [{b.Version}]".Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+            .Where(b => (b.Mode == 0 || b.Mode == checkMode) && $"{b.Artist} {b.Title} [{b.Version}]".Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
         var back = new SongSelect();
         double[] frames = [1, 1000 / 144.0, 1000 / 60.0, 0.37, 1000 / 30.0, 50]; // long frames = stutters
         bool loadOnly = Environment.GetEnvironmentVariable("AUTOCHECK_LOAD") == "1"; // just build every Player
@@ -1177,6 +1185,7 @@ static class Game
                 {
                     var map = Beatmap.Load(b.FilePath, mods: Mods.Autoplay | extra);
                     if (map.Objects.Count == 0) break; // song select won't start these either
+                    map.PlayMode = map.Mode != 0 ? map.Mode : checkMode;
                     p = new Player(map, back, Mods.Autoplay | extra);
                 }
                 catch (Exception e) when (e is IOException or InvalidDataException or FormatException) { break; }
@@ -1187,6 +1196,7 @@ static class Game
                     break;
                 }
                 if (loadOnly) { p.Dispose(); break; }
+                if (checkMode != 0) Console.Error.WriteLine($"checking {b.Artist} - {b.Title} [{b.Version}] at {dt:0.##}ms");
                 for (int step = 0; step < 50_000_000 && !p.Result.Done; step++) p.Update(dt);
                 var x = p.Result;
                 p.Dispose();

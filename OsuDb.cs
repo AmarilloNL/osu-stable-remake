@@ -48,29 +48,32 @@ sealed class DbBeatmap
     public byte ManiaSpeed;
     public double MinBpm, MaxBpm, MainBpm; // MainBpm: the one held longest (stable's "(147)")
     public byte Mode, Status;
-    // stable stores star ratings per difficulty-changing mod combination (EZ/HR/DT/HT: 16 slots, NaN = none).
+    // stable stores star ratings per game mode (an osu! map has its converts' too) and per difficulty-changing mod
+    // combination (EZ/HR/DT/HT: 16 slots a mode, NaN = none).
     float[]? stars;
+    public static int ViewMode; // the mode whose ratings StarsFor gives (song select's)
 
     static int StarSlot(int mods) => ((mods & (int)Mods.Easy) != 0 ? 1 : 0) | ((mods & (int)Mods.HardRock) != 0 ? 2 : 0)
         | ((mods & (int)Mods.DoubleTime) != 0 ? 4 : 0) | ((mods & (int)Mods.HalfTime) != 0 ? 8 : 0);
 
     // Newer databases also list HD/FL combinations; those would land in (and overwrite) these slots, so they're skipped.
     // (So HD/FL ratings aren't shown; the header would need wider slots for them.)
-    public void SetStars(int mods, float value)
+    public void SetStars(int mods, float value, int mode = 0)
     {
         if ((mods & ~(int)(Mods.Easy | Mods.HardRock | Mods.DoubleTime | Mods.HalfTime)) != 0) return;
-        if (stars == null) { var a = new float[16]; Array.Fill(a, float.NaN); stars = a; } // filled before it's seen (ratings can come from another thread)
-        stars[StarSlot(mods)] = value;
+        if (stars == null) { var a = new float[64]; Array.Fill(a, float.NaN); stars = a; } // filled before it's seen (ratings can come from another thread)
+        stars[mode * 16 + StarSlot(mods)] = value;
     }
 
     // the rating stable stored for exactly this combination (EZ/HR/DT/HT), if any
-    public float? StoredStars(Mods m) => stars != null && !float.IsNaN(stars[StarSlot((int)m)]) ? stars[StarSlot((int)m)] : null;
+    public float? StoredStars(Mods m, int mode = 0) => stars != null && !float.IsNaN(stars[mode * 16 + StarSlot((int)m)]) ? stars[mode * 16 + StarSlot((int)m)] : null;
 
     public float StarsFor(Mods m)
     {
         if (stars == null) return 0;
-        float s = stars[StarSlot((int)m)];
-        return float.IsNaN(s) ? float.IsNaN(stars[0]) ? 0 : stars[0] : s;
+        int b = ViewMode * 16;
+        float s = stars[b + StarSlot((int)m)];
+        return float.IsNaN(s) ? float.IsNaN(stars[b]) ? 0 : stars[b] : s;
     }
 
     string? filePath; // checked every frame by song select (background, timing): built once
@@ -174,7 +177,7 @@ static class OsuDb
                 r.ReadByte(); int mods = r.ReadInt32();
                 byte type = r.ReadByte();
                 float stars = type == 0x0d ? (float)r.ReadDouble() : r.ReadSingle();
-                if (mode == 0) b.SetStars(mods, stars);
+                b.SetStars(mods, stars, mode);
             }
         }
         b.DrainSeconds = r.ReadInt32(); b.TotalMs = r.ReadInt32(); b.PreviewMs = r.ReadInt32();

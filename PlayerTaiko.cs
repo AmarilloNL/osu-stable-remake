@@ -1,0 +1,377 @@
+using System.Numerics;
+using Raylib_cs;
+using static Raylib_cs.Raylib;
+
+namespace OsuStableRemake;
+
+// osu!taiko, as stable plays it. Notes scroll right to left along the bar at their own timing point's speed
+// (100 x slider multiplier x 1.4 osu!px a beat) towards the hit target at (160, 125) in a left-aligned playfield
+// (screen units: x 160, y 197). Centre (don) and rim (kat) keys, big notes for both hands, drumrolls and swells.
+sealed partial class Player
+{
+    enum TKind { Don, Kat, Roll, Swell }
+
+    sealed class TNote
+    {
+        public TKind Kind;
+        public bool Big;
+        public double Time, End, Speed; // Speed: units a millisecond
+        public bool Done;
+        public int Result = -1;
+        public double JudgedAt;
+        public bool Pending; public double FirstHitAt; public int FirstKey; // a big note waiting for the other hand (30ms)
+        public double TickSpacing; public int TicksHit; public readonly List<double> Ticks = []; // drumroll
+        public int HitsNeeded, Hits, LastSwellRim = -1; // swell
+        public int AutoNext; // Auto's next tick / swell hit
+        public double RollEnd => End + TickSpacing / 2; // (the last tick can sit up to half a tick past the end)
+    }
+
+    readonly List<TNote> tNotes = [];
+    readonly List<(double Time, double Speed)> tBars = [];
+    int tNext; // the first note not yet judged
+    double tGreat, tGood, tMiss, tHpMul, tTravel;
+    readonly double[] tDrumAt = [double.MinValue, double.MinValue, double.MinValue, double.MinValue]; // outer L, inner L, inner R, outer R
+    readonly KeyboardKey[] tKeys = new KeyboardKey[4];
+    readonly bool[] tHeld = new bool[4];
+    (int Result, bool Big, double At) tLastJudge = (-1, false, double.MinValue);
+    int tAutoHand;
+
+    const float TaikoHitX = 160, TaikoLaneY = 197; // screen units
+
+    void TaikoSetup()
+    {
+        health.Value = 0; // stable: the bar starts empty and only hits fill it; a pass needs it over half at the end
+        double od = map.OD;
+        tGreat = (int)Beatmap.Range(od, 50, 35, 20);
+        tGood = (int)Beatmap.Range(od, 120, 80, 50);
+        tMiss = (int)Beatmap.Range(od, 135, 95, 70);
+        tKeys[0] = Config.Key("keyTaikoOuterLeft", KeyboardKey.Z);
+        tKeys[1] = Config.Key("keyTaikoInnerLeft", KeyboardKey.X);
+        tKeys[2] = Config.Key("keyTaikoInnerRight", KeyboardKey.C);
+        tKeys[3] = Config.Key("keyTaikoOuterRight", KeyboardKey.V);
+
+        float widthUnits = Game.W / (Game.H / 480f);
+        bool hidden = mods.HasFlag(Mods.Hidden) && !mods.HasFlag(Mods.HardRock);
+        tTravel = hidden ? 600 : (int)Math.Ceiling(widthUnits) - 40;
+        // stable: HardRock scrolls 1.4x faster (times the screen's width over 640), Easy 0.8x
+        double speedMul = mods.HasFlag(Mods.HardRock) ? 1.4 * (int)Math.Ceiling(widthUnits) / 640.0 : mods.HasFlag(Mods.Easy) ? 0.8 : 1;
+        double sm = map.SliderMultiplier * 1.4;
+        double BeatSv(double t) => map.UninheritedAt(t).BeatLength / map.SliderVelocityAt(t);
+        double Speed(double t) => 100 * sm / BeatSv(t) * speedMul; // units a ms
+
+        bool native = map.Mode == 1;
+        double tickRate = Math.Clamp(map.SliderTickRate, 0.5, 8);
+        foreach (var o in objs)
+        {
+            bool big = (o.HitSound & 4) != 0;
+            if (o.Type == ObjType.Circle)
+                tNotes.Add(new TNote { Kind = (o.HitSound & 10) != 0 ? TKind.Kat : TKind.Don, Big = big, Time = o.Time, End = o.Time, Speed = Speed(o.Time) });
+            else if (o.Type == ObjType.Slider)
+            {
+                // stable's conversion: the slider's length x 1.4 over its spans gives a drumroll's length; an osu! slider
+                // short enough (under two beats at the slider's speed) becomes hits every min(beat / tick rate,
+                // span) instead, their sounds taken from the slider's edges in turn
+                double dist = o.Length * 1.4 * o.Slides;
+                double beat = BeatSv(o.Time);
+                double end = o.Time + (int)(dist / (100 * sm) * beat);
+                double osuSpeed = 100 * sm * 1000 / beat;
+                double splitBeat = map.FormatVersion < 8 ? beat : map.UninheritedAt(o.Time).BeatLength;
+                double spacing = Math.Min(splitBeat / tickRate, (end - o.Time) / o.Slides);
+                if (spacing > 0 && !native && dist / osuSpeed * 1000 < 2 * splitBeat)
+                {
+                    int edge = 0;
+                    for (double t = o.Time; t <= end + spacing / 8; t += spacing)
+                    {
+                        int sound = o.EdgeSounds.Length == 0 ? o.HitSound : o.EdgeSounds[edge];
+                        if (o.EdgeSounds.Length > 0) edge = (edge + 1) % o.EdgeSounds.Length;
+                        tNotes.Add(new TNote { Kind = (sound & 10) != 0 ? TKind.Kat : TKind.Don, Big = (sound & 4) != 0, Time = (int)t, End = (int)t, Speed = Speed((int)t) });
+                    }
+                }
+                else
+                {
+                    var roll = new TNote { Kind = TKind.Roll, Big = big, Time = o.Time, End = end, Speed = Speed(o.Time) };
+                    roll.TickSpacing = map.UninheritedAt(o.Time).BeatLength / (map.SliderTickRate == 3 ? 3 : 4);
+                    if (roll.TickSpacing > 0)
+                        for (double t = o.Time; t < end + roll.TickSpacing / 2; t += roll.TickSpacing) roll.Ticks.Add(t);
+                    tNotes.Add(roll);
+                }
+            }
+            else if (o.Type == ObjType.Spinner)
+            {
+                // stable: the spinner's spins x 1.65 hits (x 0.75 under DoubleTime, x 1.5 under HalfTime)
+                int hits = (int)Math.Max(1f, SpinsRequired(o) * 1.65f);
+                if (mods.HasFlag(Mods.DoubleTime)) hits = Math.Max(1, (int)(hits * 0.75f));
+                if (mods.HasFlag(Mods.HalfTime)) hits = Math.Max(1, (int)(hits * 1.5f));
+                tNotes.Add(new TNote { Kind = TKind.Swell, Time = o.Time, End = o.EndTime, HitsNeeded = hits, Speed = Speed(o.Time) });
+            }
+        }
+        tNotes.Sort((a, b) => a.Time.CompareTo(b.Time));
+        int circles = Math.Max(1, tNotes.Count(n => n.Kind is TKind.Don or TKind.Kat));
+        tHpMul = 200.0 / (0.36 * circles * Beatmap.Range(map.HP, 0.5, 0.75, 0.98));
+
+        // bar lines: every meter's worth of beats from the first red point (wound back before the start), each red
+        // point starting over, and none at a point that omits its first bar line
+        var reds = map.TimingPoints.Where(p => p.Uninherited && p.BeatLength > 0).ToList();
+        if (reds.Count > 0)
+        {
+            double last = tNotes.Count > 0 ? tNotes.Max(n => n.End) + 1 : 0;
+            int k = 0;
+            double bar = reds[0].BeatLength * reds[0].Meter, t = reds[0].Time;
+            t -= bar * (int)(t / bar);
+            if (t < 0) t += bar;
+            while (t <= last)
+            {
+                var p = reds[k];
+                if (t > p.Time || !p.OmitFirstBarLine) tBars.Add((t, Speed(t)));
+                double step = p.BeatLength * p.Meter;
+                if (step < 0.001) { if (k + 1 >= reds.Count) break; t = reds[++k].Time; continue; }
+                t += step;
+                if (k + 1 < reds.Count && t >= reds[k + 1].Time) t = reds[++k].Time;
+            }
+        }
+    }
+
+    bool TaikoDone => tNext >= tNotes.Count;
+
+    void TaikoStep()
+    {
+        // input: a key going down hits; Auto presses at each note's time
+        if (auto) TaikoAuto();
+        else if (playback == null)
+            for (int k = 0; k < 4; k++)
+            {
+                bool down = Down(tKeys[k]);
+                if (down && !tHeld[k]) TaikoPress(k, time);
+                tHeld[k] = down;
+            }
+
+        // misses and ends
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= time; i++)
+        {
+            var n = tNotes[i];
+            if (n.Done) continue;
+            if (n.Kind is TKind.Don or TKind.Kat && time > n.Time + tMiss) TaikoJudge(n, 0, n.Time + tMiss);
+            else if (n.Kind == TKind.Roll && time > n.RollEnd) { n.Done = true; n.JudgedAt = n.End; }
+            else if (n.Kind == TKind.Swell && time > n.End)
+            {
+                // stable: all the hits a 300, over half a 100, else a miss
+                TaikoJudge(n, n.Hits >= n.HitsNeeded ? 300 : n.Hits > n.HitsNeeded / 2 ? 100 : 0, n.End);
+            }
+        }
+        while (tNext < tNotes.Count && tNotes[tNext].Done) tNext++;
+    }
+
+    void TaikoAuto()
+    {
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time <= time; i++)
+        {
+            var n = tNotes[i];
+            if (n.Done) continue;
+            switch (n.Kind)
+            {
+                case TKind.Don or TKind.Kat when !n.Pending:
+                    int a = n.Kind == TKind.Don ? 1 : 0, b = 3 - a;
+                    if (n.Big) { TaikoPress(a, n.Time); TaikoPress(b, n.Time); }
+                    else TaikoPress((tAutoHand++ & 1) == 0 ? a : b, n.Time);
+                    break;
+                case TKind.Roll:
+                    for (; n.AutoNext < n.Ticks.Count && n.Ticks[n.AutoNext] <= time; n.AutoNext++)
+                        TaikoPress((tAutoHand++ & 1) == 0 ? 1 : 2, n.Ticks[n.AutoNext]);
+                    break;
+                case TKind.Swell:
+                    // stable's Auto: centre and rim in turn, spread over the swell (duration / (hits + 1) apart)
+                    double gap = (n.End - n.Time) / (n.HitsNeeded + 1);
+                    for (; n.AutoNext < n.HitsNeeded && n.Time + gap * (n.AutoNext + 1) <= time; n.AutoNext++)
+                        TaikoPress((n.AutoNext % 4) switch { 0 => 1, 1 => 0, 2 => 2, _ => 3 }, n.Time + gap * (n.AutoNext + 1));
+                    break;
+            }
+        }
+    }
+
+    void TaikoPress(int key, double at)
+    {
+        tDrumAt[key] = Game.NowMs;
+        bool rim = key is 0 or 3;
+        var tp = map.PointAt(at + 5);
+        samples.Play(tp.SampleSet, rim ? "hitclap" : "hitnormal", tp.SampleIndex, Math.Max(8, tp.Volume), SamplePitch);
+        if (!Resting(at) && !paused) keyCounts[key is 1 or 2 ? key - 1 : key == 0 ? 2 : 3]++;
+
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= at; i++)
+        {
+            var n = tNotes[i];
+            switch (n.Kind)
+            {
+                case TKind.Swell when !n.Done && at >= n.Time && at <= n.End:
+                    // stable: centre and rim in turn (the first either)
+                    if (n.LastSwellRim == (rim ? 1 : 0)) return;
+                    n.LastSwellRim = rim ? 1 : 0;
+                    n.Hits++;
+                    score += 300;
+                    if (n.Hits >= n.HitsNeeded) TaikoJudge(n, 300, at);
+                    return;
+                case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
+                    if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
+                    {
+                        n.TicksHit++;
+                        score += n.Big ? 360 : 300; // stable: a big roll's ticks are worth 1.2x
+                        health.Add(0.0001);
+                    }
+                    return;
+                case TKind.Don or TKind.Kat when n.Pending && n.Done:
+                    // the other hand on a big note within 30ms: the bonus
+                    if (rim == (n.Kind == TKind.Kat) && key != n.FirstKey && at - n.FirstHitAt < 30)
+                    {
+                        n.Pending = false;
+                        TaikoBigBonus(n);
+                        return;
+                    }
+                    continue;
+                case TKind.Don or TKind.Kat when !n.Done:
+                    double err = at - n.Time;
+                    if (Math.Abs(err) > tMiss) return;
+                    bool right = rim == (n.Kind == TKind.Kat);
+                    int result = !right ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
+                    TaikoJudge(n, result, at);
+                    if (result > 0) hitErrors.Add(err);
+                    if (result > 0 && n.Big) { n.Pending = true; n.FirstHitAt = at; n.FirstKey = key; } // (both keys in one frame: the second at once)
+                    return;
+            }
+        }
+    }
+
+    void TaikoJudge(TNote n, int result, double at)
+    {
+        n.Done = true;
+        n.Result = result;
+        n.JudgedAt = at;
+        tLastJudge = (result, false, Game.NowMs);
+        Count(result);
+        if (result > 0)
+        {
+            combo++;
+            maxCombo = Math.Max(maxCombo, combo);
+            TaikoScore(result == 300 ? 300 : 150);
+            health.Add(result == 300 ? tHpMul * 6 : tHpMul * Beatmap.Range(map.HP, 17.6, 2.2, 2.2));
+        }
+        else
+        {
+            health.Add(Beatmap.Range(map.HP, -6, -25, -40));
+            BreakCombo();
+        }
+    }
+
+    void TaikoBigBonus(TNote n)
+    {
+        if (n.Result == 300) nGeki++; else nKatu++;
+        TaikoScore(n.Result == 300 ? 300 : 150);
+        tLastJudge = (n.Result, true, Game.NowMs);
+    }
+
+    // stable: the hit's value plus (value / 35 x 2 x (difficulty + 1) x mod multiplier) for every 10 combo (up to 100)
+    void TaikoScore(int value) => score += value + (int)((double)(value / 35 * 2 * (diffMul + 1)) * modMul) * (Math.Min(100, combo) / 10);
+
+    void TaikoDraw(int w, int h)
+    {
+        float u = h / 480f, sd = h / 768f;
+        var tint = ColorAlpha(Color.White, playfieldAlpha);
+        float laneY = TaikoLaneY * u, hitX = TaikoHitX * u;
+
+        // the bar: a black backing, the stretched right part (its glow in kiai), then the drum on the left
+        DrawRectangle(0, (int)(143 * u), w, (int)(109 * u), ColorAlpha(Color.Black, playfieldAlpha));
+        bool kiai = map.PointAt(time).Kiai;
+        foreach (var name in kiai ? new[] { "taiko-bar-right", "taiko-bar-right-glow" } : ["taiko-bar-right"])
+            if (skin.Tex(name) is { } bar)
+                DrawTexturePro(bar.Tex, new Rectangle(0, 0, bar.Tex.Width, bar.Tex.Height), new Rectangle(0, 135 * u, w, bar.Height * sd), Vector2.Zero, 0, tint);
+
+        // the hit target: approach ring and a faint big circle (and the kiai glow)
+        if (kiai) skin.Tex("taiko-glow")?.Draw(new(hitX, laneY), 0.7f * sd, ColorAlpha(new Color(255, 228, 0, 255), playfieldAlpha));
+        skin.Tex("approachcircle")?.Draw(new(hitX, laneY), 0.73f * sd, ColorAlpha(Color.White, 180 / 255f * playfieldAlpha));
+        skin.Tex("taikobigcircle")?.Draw(new(hitX, laneY), 0.7f * sd, ColorAlpha(Color.White, 120 / 255f * playfieldAlpha));
+
+        // bar lines
+        var barline = skin.Tex("taiko-barline");
+        foreach (var (bt, bs) in tBars)
+        {
+            float x = (float)(TaikoHitX + (bt - time) * bs);
+            if (x > TaikoHitX + tTravel || x < -20) continue;
+            barline?.Draw(new(x * u, laneY), 0.88f * sd, tint);
+        }
+
+        // notes, later ones underneath
+        float noteScale = 90.88f / 80 * sd; // stable: a CS 2 circle's size; small notes 0.65 of it
+        for (int i = tNotes.Count - 1; i >= tNext - 64 && i >= 0; i--)
+        {
+            var n = tNotes[i];
+            if ((n.Time - time) * n.Speed > tTravel) continue;
+            if (n.Done && n.Kind != TKind.Roll && (n.Result > 0 || n.Kind == TKind.Swell)) continue; // (misses scroll on)
+            float x = (float)(TaikoHitX + (n.Time - time) * n.Speed);
+            float sc = noteScale * (n.Big ? 1 : 0.65f);
+            switch (n.Kind)
+            {
+                case TKind.Don or TKind.Kat:
+                    if (x < -60) continue;
+                    var colour = n.Kind == TKind.Don ? new Color(235, 69, 44, 255) : new Color(67, 142, 172, 255);
+                    DrawTaikoCircle(new(x * u, laneY), sc, colour, n.Big);
+                    break;
+                case TKind.Roll:
+                    float x2 = (float)(TaikoHitX + (n.End - time) * n.Speed);
+                    if (x2 < -60) continue;
+                    var rollColour = new Color(252, 184, 6, 255);
+                    float bodyH = 128 * sc; // the roll's body is as tall as the note
+                    if (skin.Tex("taiko-roll-middle") is { } mid)
+                        DrawTexturePro(mid.Tex, new Rectangle(0, 0, mid.Tex.Width, mid.Tex.Height), new Rectangle(x * u, laneY - bodyH / 2, Math.Max(0, (x2 - x) * u), bodyH), Vector2.Zero, 0, ColorAlpha(rollColour, playfieldAlpha));
+                    skin.Tex("taiko-roll-end")?.Draw(new(x2 * u + 32 * sc, laneY), sc, ColorAlpha(rollColour, playfieldAlpha));
+                    DrawTaikoCircle(new(Math.Max(x, n.Done ? x : TaikoHitX) * u, laneY), sc, rollColour, n.Big);
+                    break;
+                case TKind.Swell:
+                    if (time < n.Time) skin.Tex("spinner-warning")?.Draw(new(x * u, laneY), noteScale * 0.65f, tint);
+                    break;
+            }
+        }
+
+        // the active swell: stable's spinner circle (and its hits left) right of the target
+        foreach (var n in tNotes.Skip(tNext).TakeWhile(n => n.Time <= time))
+        {
+            if (n.Kind != TKind.Swell || n.Done) continue;
+            var c = new Vector2(256 * u, laneY);
+            float p = (float)Math.Clamp((time - n.Time) / Math.Max(1, n.End - n.Time), 0, 1);
+            skin.Tex("spinner-circle")?.Draw(c, 0.35f * sd, tint, (float)(n.Hits * 12 % 360));
+            skin.Tex("spinner-approachcircle")?.Draw(c, 0.35f * sd * 2.2f * (1 - p), tint);
+            string left = (n.HitsNeeded - n.Hits).ToString();
+            Game.TextBold(left, c.X - Game.TextWidth(left, 30 * u) / 2, c.Y - 15 * u, 30 * u, tint);
+        }
+
+        // the judgement at the target, fading out
+        double age = Game.NowMs - tLastJudge.At;
+        if (age < 400 && tLastJudge.Result >= 0)
+        {
+            string name = tLastJudge.Result switch { 300 => tLastJudge.Big ? "taiko-hit300g" : "taiko-hit300", 100 => tLastJudge.Big ? "taiko-hit100k" : "taiko-hit100", _ => "taiko-hit0" };
+            float a = 1 - (float)(age / 400);
+            (skin.Tex(name) ?? skin.Tex(name.Replace("g", "").Replace("k", "")))?.Draw(new(hitX, tLastJudge.Result == 0 ? laneY - 40 * u : laneY), 0.7f * sd, ColorAlpha(Color.White, a * playfieldAlpha));
+        }
+
+        // the drum, each half lighting up when hit
+        if (skin.Tex("taiko-bar-left") is { } left2) left2.Draw(new(left2.Width * sd / 2, 135 * u + left2.Height * sd / 2), sd, tint);
+        for (int k = 0; k < 4; k++)
+        {
+            float a = 1 - (float)Math.Clamp((Game.NowMs - tDrumAt[k]) / 120, 0, 1);
+            if (a <= 0) continue;
+            bool rim = k is 0 or 3, rightHalf = k >= 2;
+            if (skin.Tex(rim ? "taiko-drum-outer" : "taiko-drum-inner") is { } half)
+                half.Draw(new((rightHalf ? 56 * u : 0) + half.Width * sd / 2, 135 * u + half.Height * sd / 2), sd, ColorAlpha(Color.White, a * playfieldAlpha), flipX: rim != rightHalf);
+        }
+        if (combo > 0)
+        {
+            string c = combo.ToString();
+            float size = 24 * u;
+            Game.TextBold(c, 56 * u - Game.TextWidth(c, size) / 2, laneY - size / 2, size, tint);
+        }
+    }
+
+    void DrawTaikoCircle(Vector2 at, float scale, Color colour, bool big)
+    {
+        string body = big ? "taikobigcircle" : "taikohitcircle";
+        skin.Tex(body)?.Draw(at, scale, ColorAlpha(colour, playfieldAlpha));
+        (skin.AnimFrame(body + "overlay", Game.NowMs) ?? skin.Tex(body + "overlay"))?.Draw(at, scale, ColorAlpha(Color.White, playfieldAlpha));
+    }
+}

@@ -105,6 +105,8 @@ sealed partial class Player : Screen
     // Replays: recording during live play, or playback when watching.
     readonly ReplayFrame[]? playback;
     readonly ReplayInfo? watching;
+    readonly int mode; // 0 osu!, 1 taiko, 2 catch, 3 mania (map.PlayMode)
+    bool ModeDone => mode switch { 1 => TaikoDone, _ => firstActive >= objs.Count };
     readonly List<ReplayFrame> recording = [];
     internal IReadOnlyList<ReplayFrame> Recording => recording;
     ReplayInfo? savedReplay;
@@ -163,6 +165,7 @@ sealed partial class Player : Screen
         modMul = mods.ScoreMultiplier();
         health = new Health(map, mods.HasFlag(Mods.HalfTime));
         objs = map.Objects;
+        mode = map.PlayMode;
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
         skin.PreloadGameplay();
@@ -250,6 +253,7 @@ sealed partial class Player : Screen
             if (localOffset != 0) Notification.Show($"Using local beatmap offset ({localOffset}ms)", 1000);
         }
         SetupCountdown();
+        if (mode == 1) TaikoSetup();
 
         // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
         clockOrigin = Math.Min(Math.Min(-map.AudioLeadIn, storyboard?.EarliestEvent ?? 0), objs[0].Time - Math.Max(1800, map.Preempt));
@@ -298,6 +302,7 @@ sealed partial class Player : Screen
 
     (HitObject O, ObjState S)? ActiveSpinner()
     {
+        if (mode != 0) return null;
         for (int i = firstActive; i < objs.Count && objs[i].Time <= time; i++)
             if (objs[i].Type == ObjType.Spinner && time <= objs[i].EndTime && !st[i].Done) return (objs[i], st[i]);
         return null;
@@ -674,6 +679,7 @@ sealed partial class Player : Screen
 
     void Drain()
     {
+        if (mode == 1) return; // taiko: no drain (hits fill the bar from empty)
         double delta = double.IsNaN(lastTime) ? 0 : time - lastTime;
         lastTime = time;
         if (delta <= 0 || time < objs[0].Time - map.Preempt || time > objs[^1].EndTime || InBreak(time)) return;
@@ -950,6 +956,7 @@ sealed partial class Player : Screen
         Drain();
         UpdateBreakSection();
         UpdateCountdown();
+        if (mode != 0) { StepMode(); return; }
         if (playback == null) AdvanceSpinners(time); // live/auto: up to now on the previous frame's input
         cursor = auto || autopilot ? AutoCursor() : playback != null ? pbCursor : (Input.GetMousePosition() - origin) / scale;
 
@@ -999,13 +1006,27 @@ sealed partial class Player : Screen
         if (lr != btnCur) { btnPrev2 = btnPrev; btnPrev = btnCur; btnCur = lr; }
         UpdateObjects(held, dtMs);
         if (mods.HasFlag(Mods.Flashlight)) UpdateFlashlight(dtMs);
+        StepEnd();
+    }
+
+    // the modes' step: their own input and judging, then the shared end
+    void StepMode()
+    {
+        if (mode == 1) TaikoStep();
+        StepEnd();
+    }
+
+    void StepEnd()
+    {
         if (time >= objs[0].Time && time <= objs[^1].EndTime && (hpGraph.Count == 0 || time - hpGraph[^1].X >= (VirtualClock ? 10 : 250))) // verify-osr compares it with stable's life bar
             hpGraph.Add(new((float)time, (float)(health.Value / Health.Max)));
 
         while (firstActive < objs.Count && st[firstActive].Done && time > Math.Max(st[firstActive].JudgeTime, objs[firstActive].EndTime) + 1000)
             firstActive++;
-        if (endNow || firstActive >= objs.Count && (musicEnded || music == null || time > objs[^1].EndTime + 3000 && time >= SbEnd - 500))
+        if (endNow || ModeDone && (musicEnded || music == null || time > objs[^1].EndTime + 3000 && time >= SbEnd - 500))
         {
+            // stable's taiko: a play ending with the bar under half is failed
+            if (mode == 1 && health.Value <= Health.Max / 2 && !mods.HasFlag(Mods.NoFail) && !auto && !endNow) { Fail(); return; }
             finished = true;
             passStates.Add(health.Value >= Health.Max / 2);
             SaveReplay();
@@ -1133,7 +1154,7 @@ sealed partial class Player : Screen
 
     void SaveReplay()
     {
-        if (auto || playback != null || recording.Count == 0) return;
+        if (auto || playback != null || recording.Count == 0 || mode != 0) return;
         try
         {
             savedReplay = Replays.Save(CurrentInfo(), recording);
@@ -1728,18 +1749,18 @@ sealed partial class Player : Screen
         }
 
         visible.Clear();
-        for (int i = firstActive; i < objs.Count && objs[i].Time - map.Preempt <= time; i++) visible.Add(i);
+        for (int i = firstActive; mode == 0 && i < objs.Count && objs[i].Time - map.Preempt <= time; i++) visible.Add(i);
         if (bodyMeshes.Count > 0 || bodyCache.Count > 0) SweepBodyMeshes();
 
         float sbDim = 1 - bgDim / 100f;
         bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
-        if (!cinema) DrawPlayfield(w, h);
+        if (!cinema) { if (mode == 1) TaikoDraw(w, h); else DrawPlayfield(w, h); }
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: true);
         if (!cinema)
         {
             DrawBreakOverlays(w, h);
-            if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
+            if (mods.HasFlag(Mods.Flashlight) && !finished && mode == 0) DrawFlashlight(w, h);
             DrawHud(w, h);
         }
         DrawOverlays(w, h);
@@ -1816,6 +1837,7 @@ sealed partial class Player : Screen
         if (cinema) return;
         UpdateBreakStars(auto && playback == null ? autoKeys : inputKeys);
         DrawBreakStars();
+        if (mode != 0 && !paused && !failed) return; // (the other modes play without the cursor)
         var cursorAt = auto || autopilot || playback != null ? ToScreen(cursor) : Input.GetMousePosition();
         UpdateSmoke(smokeHeld && !paused && !failed, cursorAt);
         DrawSmoke();
@@ -2936,6 +2958,7 @@ sealed partial class Player : Screen
         get
         {
             int total = n300 + n100 + n50 + nMiss;
+            if (mode == 1) return total == 0 ? 100 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half
             return total == 0 ? 100 : (300.0 * n300 + 100.0 * n100 + 50.0 * n50) / (300.0 * total) * 100;
         }
     }
