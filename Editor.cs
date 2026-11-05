@@ -122,6 +122,7 @@ sealed partial class Editor : Screen
         time = objs.Count > 0 ? objs[0].Time : 0;
         music?.Seek(time);
         Rebuild();
+        if (KeepBreaks()) info = ReloadInfo(); // (stable's breaks for the map, not a change)
     }
 
     void Read(string[] lines)
@@ -281,6 +282,7 @@ sealed partial class Editor : Screen
     void Rebuild()
     {
         objs = [.. objs.OrderBy(o => o.Time)];
+        var sorted = timing.OrderBy(p => p.Time).ToList();
         int combo = 0, colour = 0;
         bool force = false;
         foreach (var o in objs)
@@ -291,9 +293,7 @@ sealed partial class Editor : Screen
                 pts.AddRange(o.Anchors);
                 double len = o.Length;
                 o.Path = SliderPath.Build(o.Curve, pts, ref len, version);
-                var red = RedAt(o.Time);
-                double perBeat = 100 * SliderMultiplier * SvAt(o.Time);
-                o.End = o.Time + o.Length / perBeat * red.Beat * o.Slides;
+                o.End = SliderEnd(o, sorted);
             }
             if (o.Spinner) { force = true; continue; }
             if (o.NewCombo || force || combo == 0) { combo = 1; colour += 1 + ((o.Type >> 4) & 7); force = false; }
@@ -301,6 +301,24 @@ sealed partial class Editor : Screen
             o.Combo = combo;
             o.Colour = colour;
         }
+    }
+
+    // a slider's end as the game has it (stable's): its segments' times added up over every span, in whole ms
+    double SliderEnd(EObj o, List<ETiming> sorted)
+    {
+        var red = RedAt(o.Time);
+        var p = sorted.LastOrDefault(q => q.Time <= o.Time) ?? sorted.FirstOrDefault();
+        double sv = p is { Red: false } && p.Time >= red.Time && p.Beat < 0 ? Math.Clamp((float)-p.Beat, 10f, 1000f) / 100.0 : 1;
+        double tick = double.TryParse(Kv("Difficulty", "SliderTickRate"), NumberStyles.Float, Inv, out double tr) ? tr : 1;
+        double beat = red.Beat * sv, dist = 100.0 * SliderMultiplier / tick, velocity = beat > 0 ? dist * tick * (1000.0 / beat) : dist * tick;
+        double clock = o.Time;
+        for (int span = 0; span < o.Slides; span++)
+            for (int j = 1; j < o.Path.Length; j++)
+            {
+                int k = span % 2 == 1 ? o.Path.Length - j : j;
+                clock += 1000.0 * SliderPath.Len(o.Path[k - 1], o.Path[k]) / velocity;
+            }
+        return (int)clock;
     }
 
     // A change: the state before it goes on the undo stack.
@@ -311,6 +329,8 @@ sealed partial class Editor : Screen
         if (undo.Count > 100) undo.RemoveAt(0);
         redo.Clear();
         edit();
+        Rebuild();
+        KeepBreaks();
         modified = true;
         tapUndoAt = double.NegativeInfinity;
         // info (timing, breaks, colours, files: the editor takes no objects from it) reloaded only when something
@@ -319,7 +339,6 @@ sealed partial class Editor : Screen
         int head = before.IndexOf("\n[HitObjects]", StringComparison.Ordinal);
         if (head < 0 || !before.AsSpan(0, head).SequenceEqual(string.Join("\n", lines.TakeWhile(l => l != "[HitObjects]"))))
             info = ReloadInfo(lines);
-        Rebuild();
     }
 
     void Restore(List<string> from, List<string> to)
@@ -340,6 +359,7 @@ sealed partial class Editor : Screen
         selected.Clear();
         modified = true;
         Rebuild();
+        NoteBreaks();
     }
 
     double Snap(double t)
@@ -359,7 +379,8 @@ sealed partial class Editor : Screen
 
     Vector2 GridSnap(Vector2 p) => gridSnap ? new(MathF.Round(p.X / gridSize) * gridSize, MathF.Round(p.Y / gridSize) * gridSize) : new(MathF.Round(p.X), MathF.Round(p.Y));
 
-    double Preempt => Beatmap.Range(double.TryParse(Kv("Difficulty", "ApproachRate"), NumberStyles.Float, Inv, out double ar) ? ar : 5, 1800, 1200, 450);
+    double Preempt => (int)Beatmap.Range(Diff("ApproachRate") ?? Diff("OverallDifficulty") ?? 5, 1800, 1200, 450); // (whole ms, like stable's)
+    double? Diff(string key) => float.TryParse(Kv("Difficulty", key), NumberStyles.Float, Inv, out float v) ? Math.Clamp(v, 0f, 10f) : null; // (read as the game reads it)
     float Radius => (float)(64 * (1 - 0.7 * ((double.TryParse(Kv("Difficulty", "CircleSize"), NumberStyles.Float, Inv, out double cs) ? cs : 4) - 5) / 5) / 2);
 
     // ---- update
@@ -406,6 +427,7 @@ sealed partial class Editor : Screen
     {
         var mouse = Input.GetMousePosition();
         float u = U;
+        KeepBreaksAfterDrag();
         if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
         if (xform != null) { UpdateXform(mouse); return; }
         if (prompt != null) { UpdatePrompt(mouse); return; }
@@ -728,6 +750,7 @@ sealed partial class Editor : Screen
             {
                 undo.Add(Snapshot()); redo.Clear();
                 endDrag = sp;
+                breakDragFit = true;
                 return;
             }
             var hit = objs.LastOrDefault(o => Math.Abs(TimelineX(o.Time) - mouse.X) < 10 * u);
@@ -736,6 +759,7 @@ sealed partial class Editor : Screen
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 undo.Add(Snapshot()); redo.Clear();
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
+                breakDragFit = true;
             }
             else { scrubFrom = mouse.X; scrubTime = time; }
             return;

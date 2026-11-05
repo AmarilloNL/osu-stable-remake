@@ -6,9 +6,7 @@ using static Raylib_cs.Raylib;
 namespace OsuStableRemake;
 
 // Compose's top right, like stable's: "Beat Snap Divisor:" with its slider (1 to 16, the snaps stable allows) and the
-// value - with Alt held, the distance spacing instead - and Insert Break Time, which puts a break between the two
-// objects around the current time (from 200ms after the first to a preempt before the second, if that's 650ms or more
-// and there's 1.2s of room).
+// value - with Alt held, the distance spacing instead - and Insert Break Time (EditorBreaks.cs).
 sealed partial class Editor
 {
     bool snapDragging;
@@ -22,9 +20,9 @@ sealed partial class Editor
         if (tab != 0) { snapDragging = false; return false; }
         // a right-click on a break in the timeline takes it out - not one stable would put back (in 5s of room)
         if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && CheckCollisionPointRec(mouse, TimelineRect())
-            && info.Breaks.FirstOrDefault(b => TimeAtX(mouse.X) > b.Start && TimeAtX(mouse.X) < b.End) is { End: > 0 } hovered)
+            && ReadBreaks().FirstOrDefault(b => TimeAtX(mouse.X) > b.Start && TimeAtX(mouse.X) < b.End) is { } hovered)
         {
-            if (!AutoBreak(hovered)) Change(() => EventsSection.Lines.RemoveAll(l => IsBreakLine(l, hovered)));
+            if (!BreakFits(hovered, ObjTimes(), 5000)) Change(() => EventsSection.Lines.RemoveAll(l => BreakTimes(l) == (hovered.Start, hovered.End)));
             return true;
         }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
@@ -40,77 +38,6 @@ sealed partial class Editor
         }
         if (click && CheckCollisionPointRec(mouse, BreakButton())) { InsertBreak(); return true; }
         return false;
-    }
-
-    void InsertBreak()
-    {
-        int t = (int)Math.Round(time), next = objs.FindIndex(o => o.Time >= t);
-        if (next > 0 && objs[next].Time != t)
-        {
-            int from = (int)objs.Take(next).Max(o => o.End), to = (int)objs[next].Time;
-            bool taken = info.Breaks.Any(b => b.Start < to && b.End > from); // (stable's check, and a break an object was put into)
-            if (from < t && t < to && to - from >= 1200 && !taken)
-            {
-                int start = from + 200, end = to - (int)Preempt;
-                if (end - start >= 650)
-                {
-                    Change(() =>
-                    {
-                        var ev = EventsSection;
-                        // with the other breaks, in time order (the game reads them in file order): after the last one
-                        // before it, else before the first, else under stable's "//Break Periods"
-                        int after = ev.Lines.FindLastIndex(l => BreakStart(l) < start), first = ev.Lines.FindIndex(l => BreakStart(l) >= start);
-                        int comment = ev.Lines.FindIndex(l => l.Trim() == "//Break Periods");
-                        int at = after >= 0 ? after + 1 : first >= 0 ? first : comment >= 0 ? comment + 1 : ev.Lines.Count;
-                        ev.Lines.Insert(at, $"2,{start},{end}");
-                    });
-                    return;
-                }
-            }
-            if (taken) return;
-        }
-        Notification.Show("There isn't enough room to place a break here!  Make sure you are between two well-spaced beats.", 3000);
-    }
-
-    // a break line's start (either form; null for any other line)
-    static double? BreakStart(string l)
-    {
-        var f = l.Split(',');
-        return f.Length >= 3 && f[0].Trim() is "2" or "Break" && double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double s) ? s : null;
-    }
-    static bool IsBreakLine(string l, (double Start, double End) b)
-    {
-        var f = l.Split(',');
-        return f.Length >= 3 && f[0].Trim() is "2" or "Break" && double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double s)
-            && double.TryParse(f[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double e) && s == b.Start && e == b.End;
-    }
-    // a break stable keeps in place: 650ms or longer, 200ms after the object before and a preempt before the next, in a
-    // gap of 5s or more (stable fills those with breaks itself)
-    bool AutoBreak((double Start, double End) b)
-    {
-        int next = objs.FindIndex(o => o.Time >= b.Start);
-        if (next <= 0 || b.End - b.Start < 650) return false;
-        double prevEnd = objs.Take(next).Max(o => o.End), nextStart = objs[next].Time;
-        return b.Start - prevEnd >= 200 && nextStart - b.End >= (int)Preempt && nextStart - prevEnd >= 5000;
-    }
-
-    // stable's breaks on the timeline: a grey band through its middle from the object before to the one after (the
-    // break itself red when under 50ms), "Break" at its start
-    void DrawBreakLabels(Rectangle r, float u)
-    {
-        float cy = r.Y + r.Height / 2 + 3 * u, thick = Math.Max(1, r.Height / 8 - 1);
-        var grey = new Color(100, 100, 100, 150);
-        foreach (var b in info.Breaks)
-        {
-            int next = objs.FindIndex(o => o.Time >= b.Start);
-            double before = next > 0 ? objs[next - 1].End : b.Start, after = next >= 0 ? objs[next].Time : b.End + Preempt;
-            float x0 = TimelineX(before), x1 = TimelineX(b.Start), x2 = TimelineX(b.End), x3 = TimelineX(after);
-            if (x3 < r.X || x0 > r.X + r.Width) continue;
-            DrawLineEx(new(x0, cy), new(x1, cy), thick, grey);
-            DrawLineEx(new(x1, cy), new(x2, cy), thick, b.End - b.Start < 50 ? new Color(255, 0, 0, 150) : new Color(100, 100, 100, 100));
-            DrawLineEx(new(x2, cy), new(x3, cy), thick, grey);
-            if (x1 >= r.X - 60 * u && x1 <= r.X + r.Width) Game.Text("Break", x1 + 5 * u, r.Y + 12 * u, 14 * u, Color.White);
-        }
     }
 
     void DrawSnapPanel(float u)
