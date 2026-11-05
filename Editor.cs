@@ -1010,6 +1010,37 @@ sealed class Editor : Screen
     }
     bool dimBg = true;
 
+    // stable's follow points (View > Follow points), as in a play: every 32 units from 48 in between a combo's
+    // objects, each fading in from 800ms (x preempt / 450 under 450) before its time, sliding in, and out after it
+    bool followPoints = true;
+
+    void DrawFollowPoints(float fs)
+    {
+        double pre = Preempt, lead = 800 * Math.Min(1, pre / 450), fade = 400 * Math.Min(1, pre / 450);
+        int frames = skin.FrameCount("followpoint");
+        float sd = Game.H / 768f * fs / (0.8f * U); // (the editor's playfield is a little bigger than a play's)
+        for (int i = 1; i < objs.Count; i++)
+        {
+            EObj a = objs[i - 1], b = objs[i];
+            if (b.Combo == 1 || a.Spinner || b.Spinner || a.End - lead > time || b.Time + fade < time) continue;
+            Vector2 from = a.Slider && a.Path.Length > 0 ? (a.Slides % 2 == 1 ? a.Path[^1] : a.Path[0]) : new((float)a.X, (float)a.Y), to = new((float)b.X, (float)b.Y);
+            int dist = (int)Vector2.Distance(from, to);
+            float rot = MathF.Atan2(to.Y - from.Y, to.X - from.X) * 180 / MathF.PI;
+            for (int d = 48; d < dist - 32; d += 32)
+            {
+                float f = (float)d / dist;
+                double at = a.End + (b.Time - a.End) * f, age = time - (at - lead);
+                if (age < 0 || time > at + fade) continue;
+                float t = (float)Math.Clamp(age / fade, 0, 1), e = 1 - (1 - t) * (1 - t);
+                float alpha = t * (float)Math.Clamp(1 - (time - at) / fade, 0, 1);
+                var p = Vector2.Lerp(from + (to - from) * (f - 0.1f), from + (to - from) * f, e);
+                var s = skin.Frame("followpoint", Math.Max(0, Math.Min(frames - 1, (int)(age / (1000.0 / Math.Max(1, frames))))));
+                if (s is { } sp) sp.Draw(ToScreen(p.X, p.Y), sd * (1.5f - 0.5f * e), ColorAlpha(Color.White, alpha), rot);
+                else DrawCircleV(ToScreen(p.X, p.Y), 2.5f * fs, ColorAlpha(Color.White, alpha * 0.8f));
+            }
+        }
+    }
+
     // File > Open Difficulty: the set's other difficulties (once the changes here are saved or reverted)
     MenuItem[] OtherDifficulties()
     {
@@ -1246,7 +1277,7 @@ sealed class Editor : Screen
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2"), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
             new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6", () => tab = 1), Sep,
-            new("Show Video/Storyboard"), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name"), Sep, new("Hit animations"), new("Follow points")],
+            new("Show Video/Storyboard"), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name"), Sep, new("Hit animations"), new("Follow points", "", () => followPoints = !followPoints, followPoints)],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
@@ -1906,6 +1937,7 @@ sealed class Editor : Screen
 
         var colours = Colours;
         float radius = Radius, cs = radius / 64 * fs;
+        if (followPoints) DrawFollowPoints(fs);
         double pre = Preempt;
         var vis = Visible().ToList();
         for (int k = vis.Count - 1; k >= 0; k--)
