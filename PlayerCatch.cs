@@ -308,7 +308,10 @@ sealed partial class Player
             if (f.Done && time > f.Time + preempt * 0.2) continue; // (a miss falls on a little, then is gone)
             float y = -100 + 440 * (float)((time - (f.Time - preempt)) / preempt);
             var at = Screen(f.X, y);
-            var colour = ColorAlpha(colours[f.Colour % colours.Length], alpha);
+            // stable's Hidden: fading out from 60% to 44% of the approach time before the catch
+            float fa = !mods.HasFlag(Mods.Hidden) ? alpha : alpha * (float)Math.Clamp(((f.Time - (int)(preempt * 0.44)) - time) / ((int)(preempt * 0.6) - (int)(preempt * 0.44)), 0, 1);
+            if (fa <= 0) continue;
+            var colour = ColorAlpha(colours[f.Colour % colours.Length], fa);
             switch (f.Kind)
             {
                 case CKind.Fruit:

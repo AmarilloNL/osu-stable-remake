@@ -118,6 +118,7 @@ sealed partial class Player
     }
 
     int mJudged, mRecorded;
+    float mHiddenH = 160, mHiddenA;
     static int mSpeed = Math.Clamp(Config.GetInt("ManiaSpeed", 12), 1, 40);
 
     // stable's scroll speed keys (F3 / F4 by default) during a play
@@ -374,6 +375,23 @@ sealed partial class Player
             }
             if (mDown[c] && skin.Tex(look.StageLight) is { } light)
                 DrawTexturePro(light.Tex, new Rectangle(0, 0, light.Tex.Width, light.Tex.Height), new Rectangle(x, hitY * u - light.Height * sd * 1.6f, cw, light.Height * sd * 1.6f), Vector2.Zero, 0, ColorAlpha(Color.White, 0.6f * alpha));
+        }
+
+        // stable's Hidden: black up from the hit position, taller with combo (160 + combo / 2 sprite px, at most 400, giving
+        // back 2 a frame after a break), under the skin's stage-hidden fade; it fades in over 37 frames
+        if (mods.HasFlag(Mods.Hidden))
+        {
+            double frames = GetFrameTime() * 60;
+            float target = Math.Min(400, 160 + combo / 2);
+            mHiddenH = mHiddenH > target ? Math.Max(target, mHiddenH - 2 * (float)frames) : target;
+            mHiddenA = Math.Min(1, mHiddenA + 0.026667f * (float)frames);
+            float coverTop = (hitY - mHiddenH / 1.6f) * u, a = mHiddenA * alpha;
+            DrawRectangle((int)left, (int)coverTop, (int)Math.Ceiling(stageW * u), (int)Math.Ceiling(hitY * u - coverTop), ColorAlpha(Color.Black, a));
+            if (skin.Tex("mania-stage-hidden") is { } fade)
+            {
+                float fh = fade.Height * 0.72f * sd;
+                DrawTexturePro(fade.Tex, new Rectangle(0, 0, fade.Tex.Width, fade.Tex.Height), new Rectangle(left, coverTop - fh, stageW * u, fh), Vector2.Zero, 0, ColorAlpha(Color.White, a));
+            }
         }
 
         // the judgement (ScorePosition 325) popping in and the combo (ComboPosition 111), centred on the stage

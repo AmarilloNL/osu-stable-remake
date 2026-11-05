@@ -338,6 +338,7 @@ sealed partial class Player
         {
             var n = tNotes[i];
             if ((n.Time - time) * n.Speed > tTravel) continue;
+            if (tTravel == 600 && TaikoHitX + (n.Time - time) * n.Speed > 640) continue; // (Hidden: stable clips the field 640 wide)
             if (n.Done && n.Kind != TKind.Roll && (n.Result > 0 || n.Kind == TKind.Swell)) continue; // (misses scroll on)
             float x = (float)(TaikoHitX + (n.Time - time) * n.Speed);
             float sc = noteScale * (n.Big ? 1 : 0.65f);
