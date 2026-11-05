@@ -9,7 +9,7 @@ sealed class Health
 {
     public const double Max = 200;
     public double Value = Max;
-    public readonly double DropRate;
+    public double DropRate { get; private set; }
     readonly double hp;
     internal double mul = 1, mulGeki = 1; // internal: --dump-objects prints them
     internal double[] SimHp = [];
@@ -42,6 +42,51 @@ sealed class Health
 
     public void Apply(HpEvent e) => Add(Gain(e));
     public void Add(double delta) => Value = Math.Clamp(Value + delta, 0, Max);
+
+    // osu!catch: stable calibrates over the catch objects instead (Kind 0 fruit, 1 droplet, 2 tiny droplet, 3 banana;
+    // a fruit ending a combo gets the geki bonus): droplets give mul x 3, tiny droplets a tenth of that, bananas half
+    // of mul, fruits mul x 6 (and the combo end's bonus)
+    public void CalibrateCatch(Beatmap map, IReadOnlyList<(double Time, int Kind, bool ComboEnd)> objs, bool halfTime)
+    {
+        mul = mulGeki = 1;
+        if (objs.Count == 0) { DropRate = 0; return; }
+        double rate = 0.05;
+        double lowestEver = Range(hp, 195, 160, 60), lowestComboEnd = Range(hp, 198, 170, 80), lowestEnd = Range(hp, 198, 180, 80), recoveryNeeded = Range(hp, 8, 4, 0);
+        for (int iteration = 0; iteration < 1000; iteration++)
+        {
+            bool retry = false;
+            double value = Max, uncapped = Max;
+            void Change(double d) { value = Math.Clamp(value + d, 0, Max); uncapped += d; }
+            double last = objs[0].Time - map.Preempt;
+            int breakIndex = 0, lowComboEnds = 0;
+            for (int i = 0; i < objs.Count; i++)
+            {
+                var (t, kind, comboEnd) = objs[i];
+                double breakTime = 0;
+                if (breakIndex < map.Breaks.Count && map.Breaks[breakIndex] is var b && b.Start >= last && b.End <= t)
+                {
+                    breakTime = b.End - b.Start;
+                    breakIndex++;
+                }
+                Change(-rate * ((int)t - (int)last - breakTime));
+                last = t;
+                if (value <= lowestEver) { retry = true; rate *= 0.96; break; }
+                if (kind == 1) Change(mul * 3);
+                else if (kind == 2) Change(mul * 3 * 0.10000000149011612);
+                else if (kind == 3) Change(mul / 2);
+                else if (comboEnd)
+                {
+                    Change(mulGeki * 14 + mul * 6);
+                    if (value < lowestComboEnd && ++lowComboEnds > 2) { mulGeki *= 1.07; mul *= 1.03; retry = true; break; }
+                }
+                else Change(mul * 6);
+            }
+            if (!retry && value < lowestEnd) { retry = true; rate *= 0.94; mulGeki *= 1.01; mul *= 1.01; }
+            if (!retry && (uncapped - Max) / objs.Count < recoveryNeeded) { retry = true; rate *= 0.96; mulGeki *= 1.02; mul *= 1.01; }
+            if (!retry) break;
+        }
+        DropRate = rate * (halfTime ? 0.75 : 1);
+    }
 
     double Calibrate(Beatmap map)
     {

@@ -17,7 +17,7 @@ sealed partial class Player
         public double Time;
         public float X;
         public int Colour, Visual;
-        public bool Hyper, Done, Caught, LastInCombo;
+        public bool Hyper, Done, Caught, LastInCombo, NewCombo;
         public CFruit? HyperTarget;
     }
 
@@ -58,6 +58,8 @@ sealed partial class Player
         float cs = (float)map.CS;
         cWidth = 106.75f * (1 - 0.7f * (cs - 5) / 5);
         cFruits.AddRange(CatchConvert(map, cWidth, mods.HasFlag(Mods.HardRock)));
+        // stable's catch HP calibration runs over these objects (in time order)
+        health.CalibrateCatch(map, cFruits.Select((f, i) => (f.Time, (int)f.Kind, f.Kind == CKind.Fruit && (i + 1 == cFruits.Count || cFruits[i + 1].NewCombo))).ToList(), mods.HasFlag(Mods.HalfTime));
     }
 
     // stable's catch conversion: the fruits, droplets, tiny droplets and bananas, with the hyperdashes for a catcher this wide
@@ -93,7 +95,8 @@ sealed partial class Player
         int index = 0;
         foreach (var o in map.Objects)
         {
-            void Add(CKind k, double t, float x) => fruits.Add(new CFruit { Kind = k, Time = t, X = Math.Clamp(x, 0, 512), Colour = o.ColourIndex, Visual = index++ % 4 });
+            bool first = true; // (the object's first fruit carries its new combo)
+            void Add(CKind k, double t, float x) { fruits.Add(new CFruit { Kind = k, Time = t, X = Math.Clamp(x, 0, 512), Colour = o.ColourIndex, Visual = index++ % 4, NewCombo = first && o.StartsCombo }); first = false; }
             if (o.Type == ObjType.Circle) Add(CKind.Fruit, o.Time, hardRock ? HardRockX(o.Pos.X, o.Time) : o.Pos.X);
             else if (o.Type == ObjType.Slider)
             {
