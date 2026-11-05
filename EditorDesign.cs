@@ -9,8 +9,10 @@ namespace OsuStableRemake;
 // left. The difficulty's own sprites (its [Events]) can be picked, added from the Sprite Library (I) and keyframed:
 // with a transformation picked (Move, Scale, Fade, Rotate), dragging the sprite sets its value at the current time,
 // making a keyframe there (W A S D nudge it); Tweening joins the keyframes around the current time into one
-// transformation, eased In or Out; the timeline shows the picked sprite's transformations. The .osb's sprites show but
-// aren't edited here, nor are sprites using loops, triggers or variables.
+// transformation, eased In or Out; the timeline shows the picked sprite's transformations. A sprite's loops and
+// triggers are kept as written (its other transformations are edited); $variables are read like the game reads them,
+// and lines that aren't changed keep them. Sprites with a chain of values in one command, or commands past a blank
+// line, aren't edited.
 sealed partial class Editor
 {
     sealed class SbCmd
@@ -19,6 +21,7 @@ sealed partial class Editor
         public int Easing, Start, End;
         public double[] From = [], To = [];
         public string? Raw; // the line as written, while it's unchanged
+        public bool Span; // a loop's line: Start..End is when it runs (its iterations, like the game plays them)
     }
     sealed class SbSprite
     {
@@ -130,21 +133,45 @@ sealed partial class Editor
         bool selOsb = sbSel?.Osb ?? false;
         sbSprites = [];
         sbCycleTo = null;
-        if (osbLines != null) { var (from, to) = OsbEvents(); SbParseLines(osbLines, from, to, osb: true); }
-        SbParseLines(ev.Lines, 0, ev.Lines.Count, osb: false);
+        // the $variables, the .osb's and the difficulty's (all apply to both, longest name first, like the game's)
+        var vars = new List<(string Name, string Value)>();
+        void Vars(IEnumerable<string> lines)
+        {
+            string section = "";
+            foreach (var l in lines.Select(l => l.Trim()))
+            {
+                if (l.StartsWith('[')) section = l;
+                else if (section == "[Variables]" && l.StartsWith('$') && l.IndexOf('=') is > 0 and var eq) vars.Add((l[..eq], l[(eq + 1)..]));
+            }
+        }
+        if (osbLines != null) Vars(osbLines);
+        Vars(sections.FirstOrDefault(s => s.Name == "Variables")?.Lines.Prepend("[Variables]") ?? []);
+        vars.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));
+        if (osbLines != null) { var (from, to) = OsbEvents(); SbParseLines(osbLines, from, to, osb: true, vars); }
+        SbParseLines(ev.Lines, 0, ev.Lines.Count, osb: false, vars);
         sbSprites = [.. sbSprites.OrderBy(s => Math.Max(0, Array.IndexOf(SbLayerNames, s.Layer)))]; // (drawn, and so picked, layer by layer)
         sbSel = sbSprites.FirstOrDefault(s => s.Osb == selOsb && s.Line == selLine && string.Join(',', s.Head) == selKey)
             ?? sbSprites.FirstOrDefault(s => s.Osb == selOsb && string.Join(',', s.Head) == selKey);
         sbDirty = true;
     }
 
-    void SbParseLines(List<string> lines, int from, int to, bool osb)
+    void SbParseLines(List<string> lines, int from, int to, bool osb, List<(string Name, string Value)> vars)
     {
         SbSprite? cur = null;
         bool gap = false; // (a blank or comment line after a sprite: the game reads on past it, so one with commands after it isn't edited here)
+        SbCmd? loop = null;
+        double loopAt = 0, first = 0, last = 0;
+        int loopCount = 1;
+        void EndLoop()
+        {
+            if (loop != null && first <= last) { loop.Start = (int)(loopAt + first); loop.End = (int)(loopAt + (loopCount - 1) * (last - first) + last); loop.Span = true; }
+            loop = null;
+        }
+        static double Num(string s, double or) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : or;
         for (int i = from; i < to; i++)
         {
-            string line = lines[i];
+            string raw = lines[i], line = raw;
+            if (line.Contains('$')) foreach (var (name, value) in vars) line = line.Replace(name, value);
             if (line.Trim().Length == 0 || line.TrimStart().StartsWith("//")) { gap |= cur != null; continue; }
             if (line.Length > 0 && line[0] is ' ' or '_')
             {
@@ -153,9 +180,20 @@ sealed partial class Editor
                 cur.Count = i - cur.Line + 1;
                 int depth = line.TakeWhile(c => c is ' ' or '_').Count();
                 var f = line[depth..].Split(',');
-                var cmd = new SbCmd { Type = f[0], Raw = line };
+                var cmd = new SbCmd { Type = f[0], Raw = raw };
                 cur.Cmds.Add(cmd);
-                if (depth > 1 || f[0] is "L" or "T") { cmd.Type = ""; cur.Editable = false; continue; } // (loops and triggers: left alone)
+                if (depth == 1) EndLoop();
+                if (depth > 1 || f[0] is "L" or "T") // (loops and triggers: kept as written)
+                {
+                    cmd.Type = "";
+                    if (depth == 1 && f[0] == "L" && f.Length > 2) { loop = cmd; loopAt = Num(f[1], 0); loopCount = Math.Max(1, (int)Num(f[2], 1)); first = double.MaxValue; last = double.MinValue; }
+                    else if (depth > 1 && loop != null && f.Length > 3 && Num(f[2], double.NaN) is var s && !double.IsNaN(s))
+                    {
+                        first = Math.Min(first, s);
+                        last = Math.Max(last, Math.Max(s, Num(f[3], s)));
+                    }
+                    continue;
+                }
                 try
                 {
                     cmd.Easing = int.Parse(f[1], CultureInfo.InvariantCulture);
@@ -171,14 +209,16 @@ sealed partial class Editor
                 catch (Exception e) when (e is FormatException or IndexOutOfRangeException or OverflowException) { cur.Editable = false; }
                 continue;
             }
+            EndLoop();
             cur = null;
             gap = false;
             if (!line.StartsWith("Sprite,") && !line.StartsWith("Animation,")) continue;
-            cur = new SbSprite { Line = i, Count = 1, Head = line.Split(','), RawHead = line, Osb = osb };
+            cur = new SbSprite { Line = i, Count = 1, Head = line.Split(','), RawHead = raw, Osb = osb };
             if (cur.Head.Length < 6 || !double.TryParse(cur.Head[4], NumberStyles.Float, CultureInfo.InvariantCulture, out cur.X)
                 || !double.TryParse(cur.Head[5], NumberStyles.Float, CultureInfo.InvariantCulture, out cur.Y)) cur.Editable = false;
             sbSprites.Add(cur);
         }
+        EndLoop();
     }
 
     List<string> LinesOf(SbSprite sp) => sp.Osb ? osbLines! : EventsSection.Lines;
@@ -388,7 +428,7 @@ sealed partial class Editor
     // a sprite's corners on screen now (null while it isn't showing)
     Vector2[]? SbCorners(SbSprite sp)
     {
-        var cmds = sp.Cmds.Where(c => c.Type.Length > 0).ToList();
+        var cmds = sp.Cmds.Where(c => c.Type.Length > 0 || c.Span).ToList();
         if (cmds.Count == 0 || time < cmds.Min(c => c.Start) || time > cmds.Max(c => c.End)) return null;
         if (sbView?.TextureOf(sp.Head[0] == "Animation" ? Path.ChangeExtension(sp.File, null) + "0" + Path.GetExtension(sp.File) : sp.File) is not { } tex) return null;
         var pos = SbValue(sp, "M", time);
