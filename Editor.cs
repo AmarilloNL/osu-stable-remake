@@ -325,7 +325,8 @@ sealed partial class Editor : Screen
     void Restore(List<string> from, List<string> to)
     {
         if (from.Count == 0) return;
-        to.Add(Snapshot());
+        string now = Snapshot();
+        to.Add(now);
         string state = from[^1];
         from.RemoveAt(from.Count - 1);
         int osb = state.IndexOf(OsbMark, StringComparison.Ordinal); // (which .osb, after the .osu's lines)
@@ -334,7 +335,8 @@ sealed partial class Editor : Screen
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0; // (an undone mode or difficulty change)
         tool = Math.Min(tool, ToolNames.Length - 1);
         tapUndoAt = double.NegativeInfinity;
-        info = ReloadInfo();
+        int h0 = now.IndexOf("\n[HitObjects]", StringComparison.Ordinal), h1 = state.IndexOf("\n[HitObjects]", StringComparison.Ordinal);
+        if (h0 < 0 || h0 != h1 || string.CompareOrdinal(now, 0, state, 0, h0) != 0) info = ReloadInfo(); // (as in Change)
         selected.Clear();
         modified = true;
         Rebuild();
