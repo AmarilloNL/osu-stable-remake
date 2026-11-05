@@ -474,6 +474,9 @@ sealed class BeatmapSamples
         return cache["file:" + name] = pool;
     }
 
+    // files that weren't there are looked for again (some were just added)
+    public void ForgetMisses() { foreach (var k in cache.Where(kv => kv.Value == null).Select(kv => kv.Key).ToList()) cache.Remove(k); }
+
     // taiko: stable looks for "taiko-" samples first (the map's, then the skin's), then the usual ones
     public string Prefix = "";
 

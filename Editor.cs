@@ -848,7 +848,7 @@ sealed partial class Editor : Screen
                 if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft != null)
                 {
                     // (stable's: the slider ends where it's drawn to, at the cursor)
-                    if (GridSnap(fieldPos) is var end && end != sliderDraft[^1]) sliderDraft.Add(end);
+                    if (inField && GridSnap(fieldPos) is var end && end != sliderDraft[^1]) sliderDraft.Add(end);
                     FinishSlider();
                 }
                 break;
@@ -1207,7 +1207,7 @@ sealed partial class Editor : Screen
         SetKv("Metadata", "Version", name);
         if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
         undo.Clear(); redo.Clear();
-        prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); KeepBreaks(); Save(); }, "Yes", "No", Save);
+        prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); if (KeepBreaks()) info = ReloadInfo(); Save(); }, "Yes", "No", Save);
     });
 
     void UpdatePrompt(Vector2 mouse)
@@ -1631,9 +1631,11 @@ sealed partial class Editor : Screen
             pointDrag = pt;
             return;
         }
-        // Ctrl+click on a selected slider's body: a new point there, in the part of its outline nearest, dragged on
-        if (click && inField && Input.CtrlHeld
-            && selected.FirstOrDefault(o => o.Slider && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) > Radius && Enumerable.Range(1, o.Path.Length - 1).Any(i => SegmentDistance(fieldPos, o.Path[i - 1], o.Path[i]) <= Radius)) is { } body)
+        // Ctrl+click with only a slider selected, not on another object (stable's): a new point there, in the part of
+        // its outline nearest, dragged on
+        if (click && inField && Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } body
+            && Vector2.Distance(new((float)body.X, (float)body.Y), fieldPos) > Radius
+            && !Visible().Any(o => o != body && !o.Spinner && Vector2.Distance(new((float)o.X, (float)o.Y), fieldPos) <= Radius))
         {
             undo.Add(Snapshot()); redo.Clear();
             var pts = new List<Vector2> { new((float)body.X, (float)body.Y) };

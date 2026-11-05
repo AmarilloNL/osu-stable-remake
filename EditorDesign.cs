@@ -207,7 +207,7 @@ sealed partial class Editor
                     var v = f[4..].Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
                     if (v.Length == n) { cmd.From = v; cmd.To = [.. v]; }
                     else if (v.Length == 2 * n) { cmd.From = v[..n]; cmd.To = v[n..]; }
-                    else if (v.Length % n == 0)
+                    else if (v.Length > 2 * n && v.Length % n == 0)
                     {
                         // a chain of values: a transformation for each pair, as long as the first and one after
                         // another (like the game reads it); the line is written back as it was while none changes

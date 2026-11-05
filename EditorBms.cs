@@ -63,7 +63,13 @@ sealed partial class Editor
         w.Typing = CheckCollisionPointRec(mouse, BmsRect(92, 12, 244, 21));
         if (CheckCollisionPointRec(mouse, new Rectangle(cap.X + cap.Width - 28 * s, cap.Y, 28 * s, cap.Height))) { bmsWindow = null; return; }
         if (CheckCollisionPointRec(mouse, cap)) { w.Drag = mouse - w.Pos; return; }
-        if (CheckCollisionPointRec(mouse, BmsRect(11, 11, 75, 23))) { if (PickBmsFile() is { } f) w.File = f; return; }
+        if (CheckCollisionPointRec(mouse, BmsRect(11, 11, 75, 23)))
+        {
+            // (Windows' dialog would take the focus from a fullscreen game, which then minimises)
+            if (IsWindowFullscreen()) Notification.Show("Type or paste the file's path here (Ctrl+V): the file browser isn't available in fullscreen.", 3000);
+            else if (PickBmsFile() is { } f) w.File = f;
+            return;
+        }
         for (int i = 0; i < BmsChecks.Length; i++)
             if (CheckCollisionPointRec(mouse, BmsRect(12, BmsChecks[i].Y, BmsChecks[i].W, 21)))
                 switch (i) { case 0: w.Meta = !w.Meta; break; case 1: w.Image = !w.Image; break; case 2: w.NoNoteSamples = !w.NoNoteSamples; break; case 3: w.NoEffects = !w.NoEffects; break; default: w.Clear = !w.Clear; break; }
@@ -98,7 +104,8 @@ sealed partial class Editor
         var usedEffects = new HashSet<string>();
         var points = new List<BmsPoint>();
         var channels = new List<string>();
-        var open = new EObj?[10];
+        var open = new EObj?[10]; // (long notes waiting for their end)
+        var last = new EObj?[10]; // (each column's latest note, for an LNOBJ end)
         int lnType = 1;
         string lnObj = "";
         double keys = 1;
@@ -133,7 +140,7 @@ sealed partial class Editor
                     case "TITLE" when w.Meta: meta.Add(("Metadata", "Title", val)); meta.Add(("Metadata", "TitleUnicode", val)); break;
                     case "ARTIST" when w.Meta: meta.Add(("Metadata", "Artist", val)); meta.Add(("Metadata", "ArtistUnicode", val)); break;
                     case "BPM": points.Add(new BmsPoint { Bpm = double.Parse(val, CultureInfo.InvariantCulture) }); break;
-                    case "STAGEFILE" when w.Image: stage = val; break;
+                    case "STAGEFILE" when w.Image && File.Exists(Path.Combine(dir, val)): stage = val; break;
                     case "PLAYLEVEL" when w.Meta: meta.Add(("Metadata", "Version", "Lv." + val)); break;
                     case "RANK" when w.Meta:
                         string judge = Math.Max(4, Math.Min(9, 9 - int.Parse(val, CultureInfo.InvariantCulture) * 2)).ToString(CultureInfo.InvariantCulture);
@@ -199,18 +206,25 @@ sealed partial class Editor
         {
             try
             {
-                string from = Path.Combine(dir, f), to = Path.Combine(info.Folder, f);
-                if (!File.Exists(to) && File.Exists(from)) File.Copy(from, to, overwrite: true);
+                string from = Path.Combine(dir, f), to = Path.GetFullPath(Path.Combine(info.Folder, f));
+                // (only into the map's folder: a name climbing out of it, or a full path, is left where it is)
+                if (to.StartsWith(Path.GetFullPath(info.Folder).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                    && !File.Exists(to) && File.Exists(from))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                    File.Copy(from, to, overwrite: true);
+                }
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { }
         }
-        samples = new BeatmapSamples(info.Folder); // (the new sounds)
+        samples.ForgetMisses(); // (the new sounds)
         return true;
 
         // a channel line read with the headers: measure lengths, BPM changes, and the key count from the note channels
         bool BmsHeaderChannel(string head, string data)
         {
-            int measure = int.Parse(head[..3], CultureInfo.InvariantCulture), channel = int.Parse(head.Substring(3, 2), CultureInfo.InvariantCulture);
+            if (!int.TryParse(head.Substring(3, 2), NumberStyles.None, CultureInfo.InvariantCulture, out int channel)) return true; // (a channel this doesn't know, e.g. mines: left out)
+            int measure = int.Parse(head[..3], CultureInfo.InvariantCulture);
             var ids = Pairs(data);
             switch (channel)
             {
@@ -242,14 +256,14 @@ sealed partial class Editor
         void BmsNotes(string head, string data)
         {
             int measure = int.Parse(head[..3], CultureInfo.InvariantCulture), channel = int.Parse(head.Substring(3, 2), CultureInfo.InvariantCulture);
-            var ids = Pairs(data);
+            var ids = Pairs(data.ToUpperInvariant()); // (ids as the headers have them)
             for (int i = 0; i < ids.Count; i++)
             {
                 if (ids[i] == "00") continue;
                 int t = (int)TimeAt(measure, (double)i / ids.Count);
                 if (channel == 1)
                 {
-                    if (w.NoEffects || !wavs.TryGetValue(ids[i], out var sound) || sound.Contains(',')) continue; // (a comma would break the line)
+                    if (w.NoEffects || !wavs.TryGetValue(ids[i], out var sound) || sound.Length == 0 || sound.IndexOfAny([',', ':']) >= 0) continue; // (not found; a comma or colon would break the line)
                     sounds.Add($"Sample,{t},0,\"{sound}\",70");
                     usedEffects.Add(sound);
                     continue;
@@ -257,17 +271,23 @@ sealed partial class Editor
                 bool longNote = channel > 50;
                 if (channel is not (11 or 12 or 13 or 14 or 15 or 16 or 18 or 19 or 51 or 52 or 53 or 54 or 55 or 56 or 58 or 59) || longNote && lnType != 1) continue;
                 int column = Column(channel) - (shift ? 1 : 0);
-                if (!longNote && lnType == 2 && ids[i] == lnObj && open[column] != null || longNote && open[column] != null)
+                if (!longNote && lnObj.Length > 0 && ids[i] == lnObj.ToUpperInvariant() && last[column] != null)
                 {
-                    open[column]!.Type = 128;
+                    last[column]!.Type = 128; // (the note before it in this column becomes a hold ending here)
+                    last[column]!.End = t;
+                    last[column] = null;
+                    continue;
+                }
+                if (longNote && open[column] != null)
+                {
                     open[column]!.End = t;
                     open[column] = null;
                     continue;
                 }
                 var note = new EObj { X = ColumnX(column), Y = 192, Time = t, End = t, Type = longNote ? 128 : 1, Sample = "0:0:0:1:" };
-                if (wavs.TryGetValue(ids[i], out var file) && !w.NoNoteSamples && !file.Contains(',')) { note.Sample = $"0:0:0:0:{file}"; usedNotes.Add(file); }
+                if (wavs.TryGetValue(ids[i], out var file) && !w.NoNoteSamples && file.Length > 0 && file.IndexOfAny([',', ':']) < 0) { note.Sample = $"0:0:0:0:{file}"; usedNotes.Add(file); }
                 notes.Add(note);
-                if (longNote || lnType == 2) open[column] = note;
+                if (longNote) open[column] = note; else last[column] = note;
             }
         }
 
@@ -291,7 +311,7 @@ sealed partial class Editor
     // a #WAV file: as written if it has a sound extension, else the .ogg, .wav or .mp3 found by that name
     static string BmsSound(string dir, string name)
     {
-        if (Regex.IsMatch(name, @"\.(mp3|wav|ogg)$")) return name;
+        if (Regex.IsMatch(name, @"\.(mp3|wav|ogg)$", RegexOptions.IgnoreCase)) return name;
         foreach (var ext in new[] { ".ogg", ".wav", ".mp3" })
             if (File.Exists(dir + name + ext)) return name + ext; // (stable's: the folder and name joined without a separator)
         return "";
@@ -323,13 +343,24 @@ sealed partial class Editor
 
     static unsafe string? PickBmsFile()
     {
+        IntPtr owner = (IntPtr)GetWindowHandle();
+        string? picked = null;
+        var thread = new Thread(() => picked = PickBmsFile(owner));
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        return picked;
+    }
+
+    static unsafe string? PickBmsFile(IntPtr owner)
+    {
         IntPtr buffer = Marshal.AllocHGlobal(4096 * 2);
         try
         {
             *(char*)buffer = '\0';
             var ofn = new OpenFileName
             {
-                StructSize = Marshal.SizeOf<OpenFileName>(), Owner = (IntPtr)GetWindowHandle(), Filter = "BMS file\0*.bms;*.bme\0\0",
+                StructSize = Marshal.SizeOf<OpenFileName>(), Owner = owner, Filter = "BMS file\0*.bms;*.bme\0\0",
                 File = buffer, MaxFile = 4096, Flags = 0x1000 | 0x800 | 0x8 | 0x80000, // file and path must exist, keep the folder, explorer style
             };
             return GetOpenFileName(ref ofn) ? Marshal.PtrToStringUni(buffer) : null;
