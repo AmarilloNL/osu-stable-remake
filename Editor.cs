@@ -379,6 +379,7 @@ sealed class Editor : Screen
         float u = U;
         if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
         if (xform != null) { UpdateXform(mouse); return; }
+        if (prompt != null) { UpdatePrompt(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(mouse)) return;
 
@@ -1009,6 +1010,76 @@ sealed class Editor : Screen
     }
     bool dimBg = true;
 
+    // File > Open Difficulty: the set's other difficulties (once the changes here are saved or reverted)
+    MenuItem[] OtherDifficulties()
+    {
+        try
+        {
+            return [.. Directory.EnumerateFiles(info.Folder, "*.osu").Where(f => !string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)).Order()
+                .Select(f => new MenuItem(Path.GetFileNameWithoutExtension(f) is var n && n.LastIndexOf('[') is var a and >= 0 && n.LastIndexOf(']') > a ? n[(a + 1)..n.LastIndexOf(']')] : n, "", () => OpenOther(f)))];
+        }
+        catch (IOException) { return []; }
+    }
+
+    void OpenOther(string file)
+    {
+        if (modified) { Notification.Show("Save (Ctrl+S) or revert the changes first.", 3000); return; }
+        music?.Dispose();
+        music = null;
+        samples.Unload();
+        Game.FadeTo(() => new Editor(file, back));
+    }
+
+    // File > Export Package: the map's folder as an .osz in osu!'s Exports folder, which opens (like stable)
+    void ExportPackage()
+    {
+        string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(info.Folder)) + ".osz", exports = Path.Combine(Config.OsuDir, "Exports");
+        foreach (char c in Path.GetInvalidFileNameChars()) name = name.Replace(c.ToString(), "");
+        try
+        {
+            Directory.CreateDirectory(exports);
+            string file = Path.Combine(exports, name);
+            File.Delete(file);
+            System.IO.Compression.ZipFile.CreateFromDirectory(info.Folder, file);
+            Notification.Show($"{name} has been exported.", 3000);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"\"{exports}\"") { UseShellExecute = true });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notification.Show($"Couldn't export {name}: {e.Message}", 3000); }
+    }
+
+    // a one-line prompt (Timing > Move all notes in time...): Enter or OK takes it, Escape or Cancel doesn't
+    (string Title, string Text, Action<string> Ok)? prompt;
+
+    void MoveAllPrompt() => prompt = ("Enter the amount of milliseconds to move all notes by:", "", text =>
+    {
+        if (!int.TryParse(text.Trim(), NumberStyles.Integer, Inv, out int ms) || ms == 0) return;
+        Change(() => { foreach (var o in objs) { o.Time += ms; o.End += ms; o.Raw = null; } });
+    });
+
+    void UpdatePrompt(Vector2 mouse)
+    {
+        var p = prompt!.Value;
+        for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32) p.Text += char.ConvertFromUtf32(c);
+        if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && p.Text.Length > 0) p.Text = p.Text[..^1];
+        prompt = p;
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (Input.IsKeyPressed(KeyboardKey.Escape) || click && CheckCollisionPointRec(mouse, XformButton(1))) { prompt = null; return; }
+        if (Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.KpEnter) || click && CheckCollisionPointRec(mouse, XformButton(0))) { prompt = null; p.Ok(p.Text); }
+    }
+
+    void DrawPrompt(float u)
+    {
+        var p = prompt!.Value;
+        var panel = XformPanel();
+        DrawRectangleRounded(panel, 0.06f, 8, new Color(20, 20, 30, 235));
+        DrawRectangleRoundedLinesEx(panel, 0.06f, 8, 1, ColorAlpha(Color.White, 0.4f));
+        Game.Text(p.Title, panel.X + 16 * u, panel.Y + 20 * u, 11 * u, Color.LightGray);
+        var box = new Rectangle(panel.X + 16 * u, panel.Y + 50 * u, panel.Width - 32 * u, 22 * u);
+        DrawRectangleRec(box, new Color(70, 70, 90, 255));
+        Game.Text(p.Text + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : ""), box.X + 4 * u, box.Y + 4 * u, 12 * u, Color.White);
+        for (int i = 0; i < 2; i++) DrawButton(XformButton(i), i == 0 ? "OK" : "Cancel", false);
+    }
+
     // ---- stable's Polygonal Circle Creation (Ctrl+Shift+D): Points circles round the playfield's centre, Repeat
     // times, a beat snap tick apart from now; the sides Distance snap times a tick's slider travel long, the first at
     // the Offset angle (the distance kept to what fits); new combo and hitsounds as toggled
@@ -1126,9 +1197,10 @@ sealed class Editor : Screen
 
     MenuItem[] MenuItems(int i) => i switch
     {
-        0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null), new("Open Difficulty..."), Sep,
+        0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
+            new("Open Difficulty...", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), Sep,
             new("Save", "Ctrl+S", Save), new("Create a new Difficulty..."), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod"), Sep,
-            new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package"), new("Import from..."), Sep,
+            new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package", "", ExportPackage), new("Import from..."), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
             new("Open .osb in Notepad", "", Directory.EnumerateFiles(info.Folder, "*.osb").FirstOrDefault() is { } osb ? () => System.Diagnostics.Process.Start("notepad.exe", osb) : null), Sep,
@@ -1156,7 +1228,7 @@ sealed class Editor : Screen
             new("Metronome Clicks"), Sep,
             new("Add Timing Section", "Ctrl+P", () => TimingAction(0)), new("Add Inheriting Section", "Ctrl+Shift+P", () => TimingAction(1)),
             new("Reset Current Section"), new("Delete Timing Section", "Ctrl+I", DeleteTimingHere), new("Resnap Current Section", "", ResnapSection), Sep,
-            new("Resnap All Notes", "", ResnapAll), new("Move all notes in time..."), new("Recalculate Slider Lengths", "", RecalcSliders),
+            new("Resnap All Notes", "", ResnapAll), new("Move all notes in time...", "", objs.Count > 0 ? MoveAllPrompt : null), new("Recalculate Slider Lengths", "", RecalcSliders),
             new("Delete All Timing Sections", "", timing.Count > 0 ? () => Change(() => { timing.Clear(); timingSel = -1; }) : null), Sep,
             new("Set Current Position as Preview Point", "", () => SetKv("General", "PreviewTime", ((int)Math.Round(time)).ToString()))],
         6 => [new("This Beatmap's Information Page"), new("This Beatmap's Thread")],
@@ -1659,6 +1731,7 @@ sealed class Editor : Screen
         DrawBottomBar(u);
         DrawMenu(u);
         if (xform != null) DrawXform(u);
+        if (prompt != null) DrawPrompt(u);
         if (poly != null) DrawPoly(u);
         if (exitPrompt != null)
         {
