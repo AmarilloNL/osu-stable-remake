@@ -125,7 +125,7 @@ sealed partial class Player
     }
 
     int mJudged, mRecorded;
-    float mHiddenH = 160, mHiddenA;
+    float mHiddenH = 160, mHiddenA, mJudgeTilt;
     static int mSpeed = Math.Clamp(Config.GetInt("ManiaSpeed", 12), 1, 40);
 
     // stable's scroll speed keys (F3 / F4 by default) during a play
@@ -253,6 +253,7 @@ sealed partial class Player
         n.Result = result;
         mJudged++;
         mLastJudge = (result, Game.NowMs);
+        if (result == 0) mJudgeTilt = (float)(Random.Shared.NextDouble() * 0.2 - 0.1);
         double hp = map.RawHP;
         switch (result)
         {
@@ -418,11 +419,22 @@ sealed partial class Player
 
         // the judgement (ScorePosition 325) popping in and the combo (ComboPosition 111), centred on the stage
         double age = Game.NowMs - mLastJudge.At;
-        if (mLastJudge.Result >= 0 && age < 400)
+        // stable: the judgement fades in over 20ms; a hit shrinks 1 -> 0.7 over 80ms, a miss settles 1.2 -> 1 over 100ms
+        // with a slight random tilt; then 0.7 -> 0.4 (a miss stays) and gone between 180 and 220ms
+        if (mLastJudge.Result >= 0 && age < 220)
         {
             string name = look.Hit.TryGetValue(mLastJudge.Result, out var hitImage) ? hitImage : look.Hit[0];
-            float pop = age < 40 ? 0.8f + 0.2f * (float)(age / 40) : 1;
-            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + stageW * u / 2, look.ScoreY * u), sd * 0.8f * pop, ColorAlpha(Color.White, alpha * (age > 300 ? 1 - (float)((age - 300) / 100) : 1)));
+            bool miss = mLastJudge.Result == 0;
+            float scale, rot = 0;
+            if (miss)
+            {
+                float e = (float)Easing.Apply(1, Math.Min(1, age / 100));
+                scale = 1.2f - 0.2f * e;
+                rot = mJudgeTilt * e;
+            }
+            else scale = age < 80 ? 1 - 0.3f * (float)(age / 80) : age < 180 ? 0.7f : 0.7f - 0.3f * (float)Easing.Apply(2, (age - 180) / 40);
+            float a = Math.Min(1, (float)(age / 20)) * (age > 180 ? 1 - (float)((age - 180) / 40) : 1);
+            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + stageW * u / 2, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
         }
         if (combo > 0)
         {
