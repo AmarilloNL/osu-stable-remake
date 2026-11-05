@@ -402,6 +402,7 @@ sealed class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F1)) tab = 0;
         if (Input.IsKeyPressed(KeyboardKey.F3)) tab = 1;
         if (Input.IsKeyPressed(KeyboardKey.F4)) tab = 2;
+        if (Input.IsKeyPressed(KeyboardKey.F6)) tab = 1; // (stable's Timing Setup: this editor's Timing tab)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
@@ -635,6 +636,7 @@ sealed class Editor : Screen
             if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Comma)) Rotate90(clockwise: false);
             if (mode != 3 && Input.ShiftHeld && (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.S))) { OpenXform(scale: Input.IsKeyPressed(KeyboardKey.S)); return; }
             if (Input.IsKeyPressed(KeyboardKey.G)) Change(ReverseSelection);
+            if (mode != 3 && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.F)) SliderToStream();
             if (Input.IsKeyPressed(KeyboardKey.D)) Change(CloneSelection);
         }
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) SelectAll();
@@ -969,6 +971,42 @@ sealed class Editor : Screen
             o.Time = t; o.End = end; o.Raw = null;
         }
     });
+    // stable's Convert Slider to Stream (its dialog's defaults): a circle on every beat snap tick of the slider's time,
+    // where its ball is then (back and forth through the repeats); the circles on its ends and repeats keep their
+    // hitsounds, the first its new combo
+    bool AnySliderSelected => selected.Any(o => o.Slider && o.Path.Length > 1);
+    void SliderToStream()
+    {
+        var sliders = selected.Where(o => o.Slider && o.Path.Length > 1).ToList();
+        if (sliders.Count == 0) return;
+        Change(() =>
+        {
+            selected.Clear();
+            foreach (var s in sliders)
+            {
+                objs.Remove(s);
+                double step = RedAt(s.Time).Beat / divisor, span = (s.End - s.Time) / s.Slides;
+                var edges = s.Edges.Split('|', StringSplitOptions.RemoveEmptyEntries).Select(e => int.TryParse(e, out int v) ? v : 0).ToArray();
+                for (int k = 0; s.Time + k * step <= s.End + 1; k++)
+                {
+                    double t = s.Time + k * step, into = Math.Min(s.Slides, (t - s.Time) / span);
+                    int sp = Math.Min(s.Slides - 1, (int)into);
+                    double f = into - sp;
+                    if (sp % 2 == 1) f = 1 - f;
+                    var p = PathAt(s.Path, Math.Clamp(f, 0, 1));
+                    double edgeAt = Math.Round(into);
+                    int edge = Math.Abs(into - edgeAt) * span < 1 ? (int)edgeAt : -1;
+                    var c = new EObj { X = Math.Round(p.X), Y = Math.Round(p.Y), Time = Math.Round(t), Type = 1 | (k == 0 ? s.Type & 0x74 : 0), Sample = s.Sample,
+                        HitSound = edge < 0 ? 0 : edge < edges.Length ? edges[edge] : s.HitSound };
+                    c.End = c.Time;
+                    objs.Add(c);
+                    selected.Add(c);
+                }
+            }
+        });
+    }
+    bool dimBg = true;
+
     void RecalcSliders() => Change(() => { foreach (var o in objs) if (o.Slider) FitLength(o); });
     void RevertToSaved()
     {
@@ -1004,7 +1042,8 @@ sealed class Editor : Screen
             new("Save", "Ctrl+S", Save), new("Create a new Difficulty..."), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod"), Sep,
             new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package"), new("Import from..."), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
-            new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)), new("Open .osb in Notepad"), Sep,
+            new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
+            new("Open .osb in Notepad", "", Directory.EnumerateFiles(info.Folder, "*.osb").FirstOrDefault() is { } osb ? () => System.Diagnostics.Process.Start("notepad.exe", osb) : null), Sep,
             new("Revert to Saved", "", modified ? RevertToSaved : null), Sep, new("Exit...", "Esc", AskExit)],
         1 => [new("Undo", "Ctrl+Z", undo.Count > 0 ? () => Restore(undo, redo) : null), new("Redo", "Ctrl+Y", redo.Count > 0 ? () => Restore(redo, undo) : null), Sep,
             new("Cut", "Ctrl+X", Sel(() => CopySel(cut: true))), new("Copy", "Ctrl+C", Sel(() => CopySel(cut: false))), new("Paste", "Ctrl+V", clipboard.Count > 0 ? PasteClip : null),
@@ -1016,13 +1055,13 @@ sealed class Editor : Screen
             new("Reset combo colours", "", ResetComboColours), new("Reset breaks", "", ResetBreaks), Sep,
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2"), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
-            new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6"), Sep,
-            new("Show Video/Storyboard"), new("Dim Background"), new("Show Sample Name"), Sep, new("Hit animations"), new("Follow points")],
+            new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6", () => tab = 1), Sep,
+            new("Show Video/Storyboard"), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name"), Sep, new("Hit animations"), new("Follow points")],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
                 .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
             new("Grid Snapping", "T", () => gridSnap = !gridSnap, gridSnap), Sep,
-            new("Create Polygon Circles", "Ctrl+Shift+D"), new("Convert Slider to Stream", "Ctrl+Shift+F"),
+            new("Create Polygon Circles", "Ctrl+Shift+D"), new("Convert Slider to Stream", "Ctrl+Shift+F", NotMania(AnySliderSelected ? SliderToStream : null)),
             new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance")],
         4 => [new("Move all elements in time...")],
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
@@ -1519,7 +1558,7 @@ sealed class Editor : Screen
         if (bg is { } tex && tex.Id != 0)
         {
             float s = Math.Max(w / (float)tex.Width, h / (float)tex.Height);
-            DrawTexturePro(tex, new Rectangle(0, 0, tex.Width, tex.Height), new Rectangle((w - tex.Width * s) / 2, (h - tex.Height * s) / 2, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, 0.3f));
+            DrawTexturePro(tex, new Rectangle(0, 0, tex.Width, tex.Height), new Rectangle((w - tex.Width * s) / 2, (h - tex.Height * s) / 2, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, dimBg ? 0.3f : 1));
         }
         switch (tab)
         {
