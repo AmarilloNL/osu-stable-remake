@@ -30,7 +30,7 @@ sealed partial class Editor
         try
         {
             sampleImport.Files = [.. Directory.EnumerateFiles(info.Folder).Select(Path.GetFileName).OfType<string>()
-                .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".wav" or ".ogg" or ".mp3").Order(StringComparer.OrdinalIgnoreCase)];
+                .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".wav" or ".ogg" or ".mp3" && !f.Contains(',')).Order(StringComparer.OrdinalIgnoreCase)]; // (a comma would break the lines it's written into)
         }
         catch (IOException) { sampleImport.Files = []; }
         sampleImport.Files.Insert(0, "None");
@@ -43,11 +43,12 @@ sealed partial class Editor
     const float SiRowH = 15;
     int SiRows => (int)((328 - 4) / SiRowH);
 
-    // the selected notes' hit sample: "set:addition:index:volume:file"
+    // a note's hit sample, "set:addition:index:volume:file": its custom index, volume and file (null: as it was)
     void SetHitSample(EObj o, int? index, int volume, string? file)
     {
-        var f = o.Sample.Split(':').ToList();
+        var f = (o.Sample.Length > 0 ? o.Sample : "0:0:0:0:").Split(':').ToList();
         while (f.Count < 5) f.Add(f.Count < 4 ? "0" : "");
+        for (int k = 0; k < 4; k++) if (f[k].Length == 0) f[k] = "0";
         if (index is { } i) f[2] = i.ToString(Inv);
         f[3] = volume.ToString(Inv);
         if (file != null) f[4] = file;

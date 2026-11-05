@@ -26,6 +26,7 @@ sealed partial class Editor
         public IEnumerable<AiItem> Shown => Tab == AiTab.All ? Items : Items.Where(i => i.Tab == Tab);
     }
     AiModWindow? aimod;
+    bool windowPress; // the left button went down on the AiMod or Sample import window
 
     void OpenAiMod()
     {
@@ -124,6 +125,7 @@ sealed partial class Editor
     void AiDesign(List<AiItem> items)
     {
         const AiTab D = AiTab.Design;
+        EnsureStoryboard(); // (the video too)
         if (info.Background.Length == 0) items.Add(new(D, 2, "Your beatmap has no background image."));
         else
         {
@@ -478,8 +480,7 @@ sealed partial class Editor
             w.Selected = r + w.Scroll;
             var item = shown[w.Selected];
             selected.Clear();
-            if (item.A != null) selected.Add(item.A);
-            if (item.B != null) selected.Add(item.B);
+            foreach (var o in new[] { item.A, item.B }) if (o != null && objs.Contains(o)) selected.Add(o); // (not ones an undo or a delete replaced)
             if (item.Time >= 0) Seek(item.Time);
         }
         return true;

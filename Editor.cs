@@ -389,7 +389,16 @@ sealed partial class Editor : Screen
         if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(mouse)) return;
         // (the AiMod and Sample import windows: the editor below keeps its keys while they have the mouse)
-        if (sampleImport != null && UpdateSampleImport(mouse) || aimod != null && UpdateAiMod(mouse)) { Input.MouseTaken = true; mouse = Input.GetMousePosition(); }
+        // (not during a drag begun in the editor: that keeps the mouse until it's let go)
+        bool press = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (press) windowPress = false;
+        bool editorDrag = Input.IsMouseButtonDown(MouseButton.Left) && !press && !windowPress;
+        if (!editorDrag && (sampleImport != null && UpdateSampleImport(mouse) || aimod != null && UpdateAiMod(mouse)))
+        {
+            windowPress |= press;
+            Input.MouseTaken = true;
+            mouse = Input.GetMousePosition();
+        }
 
         // the clock
         if (music != null && playing)
@@ -1071,6 +1080,9 @@ sealed partial class Editor : Screen
         if (modified) { Notification.Show("Save (Ctrl+S) or revert the changes first.", 3000); return; }
         music?.Dispose();
         music = null;
+        video?.Dispose();
+        video = null;
+        storyboard?.Unload();
         samples.Unload();
         Game.FadeTo(() => new Editor(file, back));
     }
@@ -1281,11 +1293,7 @@ sealed partial class Editor : Screen
             int volume = (points.LastOrDefault(p => p.Time <= objs[first].Time) ?? points.FirstOrDefault())?.Volume ?? 100;
             for (int j = first; j < i; j++)
             {
-                var f = objs[j].Sample.Split(':').ToList();
-                while (f.Count < 5) f.Add(f.Count < 4 ? "0" : "");
-                f[3] = (volume * 4 / 3 / Math.Max(1, i - first)).ToString(Inv);
-                objs[j].Sample = string.Join(':', f);
-                objs[j].Raw = null;
+                SetHitSample(objs[j], null, volume * 4 / 3 / Math.Max(1, i - first), null);
             }
             first = i;
         }
@@ -1861,6 +1869,7 @@ sealed partial class Editor : Screen
             Dialog.Button(1, "No", new Color(240, 80, 80, 255), PromptY + 50, age, mouse);
             Dialog.Button(2, "Cancel", new Color(120, 120, 120, 255), PromptY + 100, age, mouse);
         }
+        Input.MouseTaken = false; // (the cursor shows over the AiMod / Sample import windows too)
         SongSelect.DrawCursor();
     }
 

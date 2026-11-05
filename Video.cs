@@ -96,7 +96,7 @@ sealed unsafe class Video : IDisposable
             while (!stop)
             {
                 // a jump back (the editor) or far ahead (a skip): read on from there instead of decoding the way there
-                double want = Volatile.Read(ref wanted);
+                double want = Math.Max(0, Volatile.Read(ref wanted)); // (no seeking before the start)
                 if (seekable && !double.IsInfinity(want) && (want < reached - 100 || !ended && want > Math.Max(reached, next != 0 ? nextTime : 0) + 3000))
                 {
                     if (next != 0) { Release(next); next = 0; }
