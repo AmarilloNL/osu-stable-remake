@@ -901,6 +901,7 @@ sealed partial class Player : Screen
             Config.SetOwn("MouseDisableButtons", mouseButtons ? "0" : "1");
             Notification.Show(mouseButtons ? "Mouse buttons are enabled." : "Mouse buttons are disabled.", 1000);
         }
+        if (mode == 3) ManiaSpeedKeys();
         int offsetStep = Input.AltHeld ? 1 : 5; // stable: Alt for 1ms steps
         if (Input.IsKeyPressed(Config.Key("keyIncreaseAudioOffset", KeyboardKey.Equal)) || Input.IsKeyPressed(KeyboardKey.KpAdd)) ChangeOffset(offsetStep);
         if (Input.IsKeyPressed(Config.Key("keyDecreaseAudioOffset", KeyboardKey.Minus)) || Input.IsKeyPressed(KeyboardKey.KpSubtract)) ChangeOffset(-offsetStep);

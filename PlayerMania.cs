@@ -91,8 +91,13 @@ sealed partial class Player
             mNotes.Add(n);
         }
 
-        // the scroll speed follows each point's beat length (and, in mania maps, its slider velocity)
-        double perBeat = 21.0 * 12;
+        // the scroll: stable's 21 units a beat at speed 1, its "BPM scale" off by default: normalised to the map's main BPM
+        // (the red point covering the most of it) and the mod's rate, so only BPM changes (and, in mania maps, slider
+        // velocity) change the speed; the speed (1-40, 12 by default) multiplies it
+        var reds = map.TimingPoints.Where(p => p.Uninherited && p.BeatLength > 0).ToList();
+        double mainBeat = reds.Count == 0 ? 500 : reds.Select((p, i) => (p.BeatLength, Len: Math.Min(i + 1 < reds.Count ? reds[i + 1].Time : objs[^1].EndTime, objs[^1].EndTime) - Math.Max(p.Time, objs[0].Time)))
+            .MaxBy(x => x.Len).BeatLength;
+        double perBeat = 21.0 * 100 / (60000 / mainBeat * rate);
         double dist = 0, last = double.NegativeInfinity, perMs = 0;
         var points = map.TimingPoints.Count > 0 ? map.TimingPoints : [new TimingPoint { BeatLength = 500, Uninherited = true }];
         foreach (var p in points)
@@ -111,10 +116,21 @@ sealed partial class Player
         int lo = 0, hi = mScroll.Count - 1;
         while (lo < hi) { int mid = (lo + hi + 1) / 2; if (mScroll[mid].Time <= t) lo = mid; else hi = mid - 1; }
         var s = mScroll[lo];
-        return s.Dist + (t - s.Time) * s.PerMs;
+        return (s.Dist + (t - s.Time) * s.PerMs) * mSpeed;
     }
 
     int mJudged, mRecorded;
+    static int mSpeed = Math.Clamp(Config.GetInt("ManiaSpeed", 12), 1, 40);
+
+    // stable's scroll speed keys (F3 / F4 by default) during a play
+    void ManiaSpeedKeys()
+    {
+        int step = Input.IsKeyPressed(Config.Key("keyIncreaseSpeed", KeyboardKey.F4)) ? 1 : Input.IsKeyPressed(Config.Key("keyDecreaseSpeed", KeyboardKey.F3)) ? -1 : 0;
+        if (step == 0) return;
+        mSpeed = Math.Clamp(mSpeed + step, 1, 40);
+        Config.SetOwn("ManiaSpeed", mSpeed.ToString());
+        Notification.Show($"osu!mania speed set to {mSpeed} (fixed)", 1750);
+    }
     bool ManiaDone => mJudged >= mNotes.Count;
 
     void ManiaStep()

@@ -89,6 +89,7 @@ sealed class Editor : Screen
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static float U => Game.H / 480f;
+    static KeyboardKey Bound(string key, KeyboardKey def) => Config.Key(key, def); // stable's editor bindings (Options)
     float FieldScale => 0.9f * U;
     Vector2 FieldOrigin => new((Game.W - 512 * FieldScale) / 2, 78 * U);
     Vector2 ToScreen(double x, double y) => FieldOrigin + new Vector2((float)x, (float)y) * FieldScale;
@@ -394,14 +395,18 @@ sealed class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
-        else if (Input.IsKeyPressed(KeyboardKey.Z)) Seek(objs.Count > 0 ? objs[0].Time : 0);
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Y)) Restore(redo, undo);
 
-        // playback: Space / X play, C pause, V stop, B to the end
-        if (Input.IsKeyPressed(KeyboardKey.Space) || Input.IsKeyPressed(KeyboardKey.X) && !Input.CtrlHeld) SetPlaying(!playing || Input.IsKeyPressed(KeyboardKey.X));
-        if (Input.IsKeyPressed(KeyboardKey.C) && !Input.CtrlHeld) SetPlaying(!playing);
-        if (Input.IsKeyPressed(KeyboardKey.V) && !Input.CtrlHeld) { SetPlaying(false); Seek(0); }
-        if (Input.IsKeyPressed(KeyboardKey.B)) Seek(objs.Count > 0 ? objs[^1].End : length);
+        // playback (stable's bindings): Jump To First Note (Z), Play From Beginning (X), Audio Pause (C), Jump To End
+        // (V); Space plays / pauses
+        if (!Input.CtrlHeld)
+        {
+            if (Input.IsKeyPressed(Bound("keyJumpToBegin", KeyboardKey.Z))) Seek(objs.Count > 0 ? objs[0].Time : 0);
+            if (Input.IsKeyPressed(Bound("keyPlayFromBegin", KeyboardKey.X))) { Seek(0); SetPlaying(true); }
+            if (Input.IsKeyPressed(Bound("keyAudioPause", KeyboardKey.C))) SetPlaying(!playing);
+            if (Input.IsKeyPressed(Bound("keyJumpToEnd", KeyboardKey.V))) Seek(objs.Count > 0 ? objs[^1].End : length);
+        }
+        if (Input.IsKeyPressed(KeyboardKey.Space)) SetPlaying(!playing);
         if (Input.IsKeyPressedRepeat(KeyboardKey.Left) || Input.IsKeyPressed(KeyboardKey.Left)) Seek(StepTime(time, -1));
         if (Input.IsKeyPressedRepeat(KeyboardKey.Right) || Input.IsKeyPressed(KeyboardKey.Right)) Seek(StepTime(time, 1));
         float wheel = Input.GetMouseWheelMove();
@@ -459,13 +464,22 @@ sealed class Editor : Screen
 
     void UpdateCompose(Vector2 mouse, float u)
     {
-        for (int k = 0; k < 4; k++) if (Input.IsKeyPressed(KeyboardKey.One + k) && !Input.CtrlHeld) { tool = k; sliderDraft = null; }
-        if (Input.IsKeyPressed(KeyboardKey.Q)) ToggleCombo();
-        if (Input.IsKeyPressed(KeyboardKey.W)) ToggleSound(2);
-        if (Input.IsKeyPressed(KeyboardKey.E)) ToggleSound(4);
-        if (Input.IsKeyPressed(KeyboardKey.R) && !Input.CtrlHeld) ToggleSound(8);
-        if (Input.IsKeyPressed(KeyboardKey.T)) gridSnap = !gridSnap;
-        if (Input.IsKeyPressed(KeyboardKey.G)) gridSize = gridSize == 32 ? 4 : gridSize * 2;
+        string[] toolKeys = ["keySelectTool", "keyNormalTool", "keySliderTool", "keySpinnerTool"];
+        for (int k = 0; k < 4; k++) if (Input.IsKeyPressed(Bound(toolKeys[k], KeyboardKey.One + k)) && !Input.CtrlHeld) { tool = k; sliderDraft = null; }
+        if (Input.IsKeyPressed(Bound("keyNewComboToggle", KeyboardKey.Q))) ToggleCombo();
+        if (Input.IsKeyPressed(Bound("keyWhistleToggle", KeyboardKey.W))) ToggleSound(2);
+        if (Input.IsKeyPressed(Bound("keyFinishToggle", KeyboardKey.E))) ToggleSound(4);
+        if (Input.IsKeyPressed(Bound("keyClapToggle", KeyboardKey.R)) && !Input.CtrlHeld) ToggleSound(8);
+        if (Input.IsKeyPressed(Bound("keyGridSnapToggle", KeyboardKey.T))) gridSnap = !gridSnap;
+        if (Input.IsKeyPressed(Bound("keyGridChange", KeyboardKey.G))) gridSize = gridSize == 32 ? 4 : gridSize * 2;
+        // Nudge Left / Right (J / K): the selection a beat snap earlier / later
+        int nudge = Input.IsKeyPressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Input.IsKeyPressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
+        if (nudge != 0 && selected.Count > 0)
+            Change(() =>
+            {
+                double step = RedAt(selected.Min(o => o.Time)).Beat / divisor;
+                foreach (var o in selected) { o.Time = Math.Round(o.Time + nudge * step); o.End = Math.Round(o.End + nudge * step); o.Raw = null; }
+            });
         if (Input.IsKeyPressed(KeyboardKey.Delete) && selected.Count > 0) Change(() => { objs.RemoveAll(selected.Contains); selected.Clear(); });
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) { selected.Clear(); selected.UnionWith(objs); tool = 0; }
         if (Input.CtrlHeld && (Input.IsKeyPressed(KeyboardKey.C) || Input.IsKeyPressed(KeyboardKey.X)) && selected.Count > 0)
