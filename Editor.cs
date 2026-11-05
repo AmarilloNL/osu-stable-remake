@@ -422,7 +422,8 @@ sealed partial class Editor : Screen
 
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
-            if (tab == 3 && sbColourPick) sbColourPick = false;
+            if (tab == 2 && setupColourPick >= 0) setupColourPick = -1;
+            else if (tab == 3 && sbColourPick) sbColourPick = false;
             else if (tab == 3 && sbLibrary) sbLibrary = false;
             else if (tab == 3 && sbSel != null) sbSel = null;
             else if (sliderDraft != null) sliderDraft = null;
@@ -1752,6 +1753,7 @@ sealed partial class Editor : Screen
 
     void UpdateSetup(Vector2 mouse, float u)
     {
+        if (UpdateSetupExtras(mouse)) return;
         if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, ModeRect()))
         {
             undo.Add(Snapshot()); redo.Clear();
@@ -2487,6 +2489,7 @@ sealed partial class Editor : Screen
             DrawCircleV(new(r.X + r.Width * f, r.Y + r.Height / 2), 6 * u, new Color(255, 160, 40, 255));
             Game.Text(v.ToString("0.##", Inv), r.X + r.Width + 6 * u, r.Y + 2 * u, 11 * u, Color.White);
         }
+        DrawSetupExtras(u);
     }
 
     // ---- the bottom bar: the time, the song's progress (click to seek), play / pause / stop and the playback rate
