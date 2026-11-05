@@ -15,7 +15,7 @@ sealed partial class Player
     void InitScoreV2()
     {
         if (!ScoreV2) return;
-        v2Mul = mods.ScoreMultiplierV2();
+        v2Mul = mods.ScoreMultiplierV2(mode, maniaKeyChange);
         v2Total = objs.Count;
         int c = 0;
         void Add(int value, bool addsCombo) { if (addsCombo) c++; v2ComboMax += value * (1 + c / 10.0); }

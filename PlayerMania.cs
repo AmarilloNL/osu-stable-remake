@@ -282,6 +282,7 @@ sealed partial class Player
         n.Done = true;
         n.Result = result;
         mJudged++;
+        int comboBefore = combo;
         mLastJudge = (result, Game.NowMs);
         if (result > 0) mLitAt[n.Column] = Game.NowMs;
         if (result == 0) mJudgeTilt = (float)(Random.Shared.NextDouble() * 0.2 - 0.1);
@@ -302,21 +303,28 @@ sealed partial class Player
         }
         else BreakCombo();
 
-        // ScoreV1: half of a million split evenly as base score by judgement, half as bonus by the bonus meter
-        double perNote = 500000.0 * modMul / Math.Max(1, mNotes.Count);
+        // ScoreV1 in stable's arithmetic: a million split evenly by note, half by judgement and half by the bonus meter
+        // (refilled every 384 combo); each judgement adds its part, rounded down, to the score kept from the exact sum
+        double perNote = 500000.0 / Math.Max(1, mNotes.Count) * modMul;
         int bonusValue = result switch { 320 or 300 => 32, 200 => 16, 100 => 8, 50 => 4, _ => 0 };
         mBonus = result switch
         {
             320 => mBonus + 2,
             300 => mBonus + 1,
-            200 => mBonus - 8 / modMul,
-            100 => mBonus - 24 / modMul,
-            50 => mBonus - 44 / modMul,
-            _ => -56 / modMul,
+            // (stable divides these by only the score-increasing mods' multiplier, which mania counts as 1)
+            200 => mBonus - 8,
+            100 => mBonus - 24,
+            50 => mBonus - 44,
+            _ => -56,
         };
+        if (comboBefore != 0 && comboBefore % 384 == 0) mBonus = 100;
         mBonus = Math.Clamp(mBonus, 0, 100);
-        mScore += perNote * result / 320 + perNote * bonusValue * Math.Sqrt(mBonus) / 320;
-        score = (long)mScore;
+        double add = Math.Sqrt(mBonus) * bonusValue * perNote / 320;
+        add += (double)result * perNote / 320;
+        score = (long)mScore + (int)add;
+        mScore += add;
+        // the last note: stable rounds the exact sum, and makes 999,999 a million
+        if (mJudged == mNotes.Count) { score = (long)Math.Round(mScore); if (score == 999999) score = 1000000; }
         if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
     }
 

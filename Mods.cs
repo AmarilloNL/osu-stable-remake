@@ -48,33 +48,55 @@ static class ModInfo
 
     public static double Rate(this Mods m) => m.HasFlag(Mods.DoubleTime) ? 1.5 : m.HasFlag(Mods.HalfTime) ? 0.75 : 1;
 
-    public static double ScoreMultiplier(this Mods m)
+    // stable's, by mode (osu! and taiko share one). keyChange: an osu!mania convert's key mod keys less its own count.
+    public static double ScoreMultiplier(this Mods m, int mode = 0, int keyChange = 0)
     {
-        // stable's order (it matters for the last bit of the double); Relax and Autopilot score nothing
         double x = 1;
+        if (mode == 3)
+        {
+            // mania: Hidden, HardRock, DoubleTime, Flashlight and Fade In count for nothing, HalfTime 0.5x; a convert
+            // played with more keys than its own 0.9x, with fewer 0.9x less 0.04 a key
+            if (m.HasFlag(Mods.NoFail)) x *= 0.5;
+            if (m.HasFlag(Mods.Easy)) x *= 0.5;
+            if (m.HasFlag(Mods.HalfTime)) x *= 0.5;
+            if (m.HasFlag(Mods.SpunOut) || m.HasFlag(Mods.Relax) || m.HasFlag(Mods.Autopilot)) x *= 0.0;
+            if (keyChange > 0) x *= 0.9;
+            else if (keyChange < 0) x *= 0.9 - 0.04 * -keyChange;
+            return Math.Max(0, x);
+        }
+        // stable's order (it matters for the last bit of the double); Relax and Autopilot score nothing; catch has
+        // HardRock 1.12x and DoubleTime 1.06x
+        bool fruits = mode == 2;
         if (m.HasFlag(Mods.NoFail)) x *= 0.5;
         if (m.HasFlag(Mods.Easy)) x *= 0.5;
         if (m.HasFlag(Mods.HalfTime)) x *= 0.3;
         if (m.HasFlag(Mods.Hidden) || m.HasFlag(Mods.FadeIn)) x *= 1.06;
-        if (m.HasFlag(Mods.HardRock)) x *= 1.06;
-        if (m.HasFlag(Mods.DoubleTime)) x *= 1.12;
+        if (m.HasFlag(Mods.HardRock)) x *= fruits ? 1.12 : 1.06;
+        if (m.HasFlag(Mods.DoubleTime)) x *= fruits ? 1.06 : 1.12;
         if (m.HasFlag(Mods.Flashlight)) x *= 1.12;
         if (m.HasFlag(Mods.SpunOut)) x *= 0.9;
         if (m.HasFlag(Mods.Relax) || m.HasFlag(Mods.Autopilot)) x *= 0.0;
         return x;
     }
 
-    // Score V2's: HardRock 1.1x and DoubleTime 1.2x, NoFail 1x, the rest as above
-    public static double ScoreMultiplierV2(this Mods m)
+    // Score V2's: NoFail 1x; osu!'s HardRock 1.1x and DoubleTime 1.2x, catch's HardRock, Hidden and DoubleTime 1x;
+    // the rest as above
+    public static double ScoreMultiplierV2(this Mods m, int mode = 0, int keyChange = 0)
     {
         double x = 1;
-        if (m.HasFlag(Mods.HardRock)) x *= 1.1;
-        if (m.HasFlag(Mods.DoubleTime)) x *= 1.2;
-        return x * (m & ~(Mods.HardRock | Mods.DoubleTime | Mods.NoFail)).ScoreMultiplier();
+        var rest = m & ~Mods.NoFail;
+        if (mode == 0)
+        {
+            if (m.HasFlag(Mods.HardRock)) x *= 1.1;
+            if (m.HasFlag(Mods.DoubleTime)) x *= 1.2;
+            rest &= ~(Mods.HardRock | Mods.DoubleTime);
+        }
+        else if (mode == 2) rest &= ~(Mods.HardRock | Mods.Hidden | Mods.DoubleTime | Mods.Nightcore);
+        return x * rest.ScoreMultiplier(mode, keyChange);
     }
 
     // the multiplier the selected mods play with
-    public static double Multiplier(this Mods m) => m.HasFlag(Mods.ScoreV2) ? m.ScoreMultiplierV2() : m.ScoreMultiplier();
+    public static double Multiplier(this Mods m, int mode = 0, int keyChange = 0) => m.HasFlag(Mods.ScoreV2) ? m.ScoreMultiplierV2(mode, keyChange) : m.ScoreMultiplier(mode, keyChange);
 
     public static string Short(this Mods m)
     {

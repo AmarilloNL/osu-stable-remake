@@ -73,6 +73,7 @@ sealed partial class Player : Screen
     internal readonly List<Vector2> hpGraph = []; // (time, hp 0..1) for the results screen
     internal readonly List<Vector2> perfGraph = []; // stable's ranking graph (see Final)
     readonly double diffMul;
+    readonly int maniaKeyChange;
     readonly List<double> hitErrors = [];
     readonly List<int> spinRpms = []; // the RPM readout while spinners turn (the ranking screen's "Spin" tooltip)
     readonly List<(Vector2 Pos, double Time, int Result, string Sprite, bool Spinner)> popups = [];
@@ -163,11 +164,13 @@ sealed partial class Player : Screen
         relax = mods.HasFlag(Mods.Relax);
         autopilot = mods.HasFlag(Mods.Autopilot);
         rate = mods.Rate();
-        modMul = mods.ScoreMultiplier();
         health = new Health(map, mods.HasFlag(Mods.HalfTime));
         objs = map.Objects;
         mode = watching?.Mode ?? map.PlayMode; // (a replay: the mode it was played in)
         if (watching != null) seed = watching.Seed;
+        // (a mania convert under a key mod: its keys against its own count)
+        maniaKeyChange = mode == 3 && map.Mode != 3 && mods.Keys() > 0 ? mods.Keys() - ManiaConvertKeys(map) : 0;
+        modMul = mods.ScoreMultiplier(mode, maniaKeyChange);
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
         skin.PreloadGameplay();

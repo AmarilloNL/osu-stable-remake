@@ -2812,10 +2812,11 @@ sealed partial class SongSelect : Screen
         float fade = (float)Math.Clamp(age / 200, 0, 1);
         Dialog.Backdrop(fade);
         modContentY = Dialog.Title(ModBlurb, fade);
-        string mult = $"Score Multiplier: {mods.Multiplier():0.00}x";
+        int keyChange = PlayMode == 3 && Selected is { Mode: 0 } sb && mods.Keys() > 0 ? mods.Keys() - ManiaKeys(sb) : 0;
+        string mult = $"Score Multiplier: {mods.Multiplier(PlayMode, keyChange):0.00}x";
         float ms = 30.8f * u; // stable's 30, measured at 1080p
         // stable: the text fades over 400ms to green-yellow above 1x, orange-red below, white at 1x
-        double mul = mods.Multiplier();
+        double mul = mods.Multiplier(PlayMode, keyChange);
         var multTarget = mul > 1 ? new Color(173, 255, 47, 255) : mul < 1 ? new Color(255, 69, 0, 255) : Color.White;
         if (multTarget.R != multTo.R || multTarget.G != multTo.G || multTarget.B != multTo.B) { multFrom = multNow; multTo = multTarget; multAt = now; }
         multNow = ColorLerp(multFrom, multTo, (float)Math.Clamp((now - multAt) / 400, 0, 1));
