@@ -2062,6 +2062,9 @@ sealed partial class Editor : Screen
         BeginScissorMode((int)r.X, (int)r.Y, (int)r.Width, (int)r.Height);
         // beat ticks: the bar's first beat white and tallest, then 1/2 red, 1/4 blue, 1/3 and 1/6 purple, 1/8 yellow, the rest grey
         double from = TimeAtX(r.X), to = TimeAtX(r.X + r.Width);
+        // (the scale once a frame: it looks up the timing in effect, and the map can have thousands of objects)
+        float px = PxPerMs(), mid = r.X + r.Width / 2;
+        float X(double t) => mid + (float)((t - time) * px);
         var reds = timing.Where(p => p.Red && p.Beat > 0).OrderBy(p => p.Time).ToList();
         if (reds.Count == 0) reds.Add(new ETiming());
         for (int k = 0; k < reds.Count; k++)
@@ -2070,7 +2073,7 @@ sealed partial class Editor : Screen
             double segEnd = k + 1 < reds.Count ? reds[k + 1].Time : to + p.Beat;
             double segStart = k == 0 ? Math.Min(p.Time, from) : p.Time;
             double step = p.Beat / divisor;
-            if (step * PxPerMs() < 2) step *= Math.Ceiling(2 / (step * PxPerMs()));
+            if (step * px < 2) step *= Math.Ceiling(2 / (step * px));
             long n0 = (long)Math.Floor((Math.Max(segStart, from) - p.Time) / step), n1 = (long)Math.Ceiling((Math.Min(segEnd, to) - p.Time) / step);
             for (long n = n0; n <= n1; n++)
             {
@@ -2080,7 +2083,7 @@ sealed partial class Editor : Screen
                 long beatIndex = (long)Math.Floor(n / (double)divisor);
                 var c = TickColour(inBeat, divisor);
                 float hgt = inBeat == 0 ? (beatIndex % p.Meter == 0 ? 1 : 0.6f) : (divisor / Gcd((int)inBeat, divisor)) switch { 2 => 0.5f, 4 or 3 or 6 => 0.4f, 8 => 0.3f, _ => 0.25f };
-                float x = TimelineX(t);
+                float x = X(t);
                 DrawRectangle((int)x, (int)(r.Y + r.Height * (1 - hgt)), Math.Max(1, (int)u), (int)(r.Height * hgt), ColorAlpha(c, 0.8f));
             }
         }
@@ -2089,7 +2092,7 @@ sealed partial class Editor : Screen
         var colours = Colours;
         foreach (var o in tab == 3 ? [] : objs) // (Design: the picked sprite's transformations instead)
         {
-            float x0 = TimelineX(o.Time), x1 = TimelineX(o.End);
+            float x0 = X(o.Time), x1 = X(o.End);
             if (x1 < r.X - 20 * u || x0 > r.X + r.Width + 20 * u) continue;
             float cy = r.Y + r.Height / 2, rad = 9 * u;
             var col = o.Spinner ? Color.Gray : ObjColour(o, colours);
