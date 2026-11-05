@@ -97,6 +97,7 @@ sealed class Options : Screen
     internal static float lastScroll; // stable reopens the panel where it was left
     int dragging = -1, binding = -1, dropdown = -1, dropFirst;
     BindingsDialog? bindings;
+    ManiaLayoutDialog? maniaLayout;
     double openedAt = Game.NowMs, closingAt = double.NaN;
 
     // Layout of the visible items (content y, height), rebuilt each frame; slider tracks and dropdown boxes from the last draw.
@@ -234,7 +235,7 @@ sealed class Options : Screen
             T("Cursor ripples", "CursorRipple"),
             H("KEYBOARD"),
             B("Change keyboard bindings", Blue, () => bindings = new BindingsDialog()),
-            B("osu!mania layout", Blue),
+            B("osu!mania layout", Blue, () => maniaLayout = new ManiaLayoutDialog()),
             H("OTHER"),
             T("OS TabletPC support", "Tablet"),
             T("Wiimote/TaTaCon Drum support", "Wiimote"),
@@ -481,6 +482,12 @@ sealed class Options : Screen
             if (bindings.Closed) bindings = null;
             return;
         }
+        if (maniaLayout != null)
+        {
+            maniaLayout.Update();
+            if (maniaLayout.Closed) maniaLayout = null;
+            return;
+        }
 
         if (binding >= 0)
         {
@@ -621,6 +628,7 @@ sealed class Options : Screen
         var mouse = Input.GetMousePosition();
         // stable: the bindings dialog's own black layer (220) sits under the options panel, its usual backdrop over it
         if (bindings != null) DrawRectangle(0, 0, w, h, new Color(0, 0, 0, (int)(220 * bindings.Alpha)));
+        if (maniaLayout != null) DrawRectangle(0, 0, w, h, new Color(0, 0, 0, (int)(220 * maniaLayout.Alpha)));
 
         DrawRectangleRec(new Rectangle(ox + StripW * u, 0, (PanelR - StripW) * u, h), Panel); // measured: (9,9,9) at 75%
 
@@ -801,8 +809,9 @@ sealed class Options : Screen
         EndScissorMode();
 
         bindings?.Draw();
+        maniaLayout?.Draw();
         backButton.Draw(h, mouse); // stable: above the bindings dialog too
-        if (tooltip != null && bindings == null && confirm == null) DrawTooltip(tooltip, mouse);
+        if (tooltip != null && bindings == null && maniaLayout == null && confirm == null) DrawTooltip(tooltip, mouse);
         DrawConfirm(mouse);
         SongSelect.DrawCursor();
     }

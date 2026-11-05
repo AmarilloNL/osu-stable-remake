@@ -585,7 +585,7 @@ sealed partial class Player
         }
     }
 
-    static string KeyName(KeyboardKey k) => k switch
+    internal static string KeyName(KeyboardKey k) => k switch
     {
         >= KeyboardKey.A and <= KeyboardKey.Z or >= KeyboardKey.Zero and <= KeyboardKey.Nine => ((char)k).ToString(),
         >= KeyboardKey.Kp0 and <= KeyboardKey.Kp9 => $"NumPad{k - KeyboardKey.Kp0}",

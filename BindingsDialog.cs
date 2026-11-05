@@ -118,7 +118,7 @@ sealed class BindingsDialog
         Game.Text(s, r.X + r.Width / 2 - Game.TextWidth(s, size) / 2, r.Y + r.Height / 2 - size / 2, size, c);
 
     // osu!.cfg's names for keys (the .NET Keys enum): letters, D0-D9, Oem keys, LeftShift...
-    static string CfgName(KeyboardKey k) => k switch
+    internal static string CfgName(KeyboardKey k) => k switch
     {
         >= KeyboardKey.A and <= KeyboardKey.Z => ((char)k).ToString(),
         >= KeyboardKey.Zero and <= KeyboardKey.Nine => $"D{(char)k}",
