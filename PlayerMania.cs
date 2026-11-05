@@ -134,7 +134,11 @@ sealed partial class Player
         var reds = map.TimingPoints.Where(p => p.Uninherited && p.BeatLength > 0).ToList();
         double mainBeat = reds.Count == 0 ? 500 : reds.Select((p, i) => (p.BeatLength, Len: Math.Min(i + 1 < reds.Count ? reds[i + 1].Time : objs[^1].EndTime, objs[^1].EndTime) - Math.Max(p.Time, objs[0].Time)))
             .MaxBy(x => x.Len).BeatLength;
-        double perBeat = 21.0 * 100 / (60000 / mainBeat * rate);
+        // (Scale osu!mania scroll speed with BPM: the speed alone, so faster maps scroll faster)
+        double perBeat = Config.GetBool("ManiaSpeedBPMScale", false) ? 21.0 : 21.0 * 100 / (60000 / mainBeat * rate);
+        // Remember osu!mania scroll speed per beatmap: this map's own speed, once it has one
+        if (Config.GetBool("UsePerBeatmapManiaSpeed", false) && Config.GetInt($"ManiaSpeed_{mapMd5 ??= Replays.Md5Of(map.File)}", 0) is int own and > 0) mSpeed = Math.Clamp(own, 1, 40);
+        else mSpeed = Math.Clamp(Config.GetInt("ManiaSpeed", 12), 1, 40);
         double dist = 0, last = double.NegativeInfinity, perMs = 0;
         var points = map.TimingPoints.Count > 0 ? map.TimingPoints : [new TimingPoint { BeatLength = 500, Uninherited = true }];
         foreach (var p in points)
@@ -158,16 +162,21 @@ sealed partial class Player
 
     int mJudged, mRecorded;
     float mHiddenH = 160, mHiddenA, mJudgeTilt;
-    static int mSpeed = Math.Clamp(Config.GetInt("ManiaSpeed", 12), 1, 40);
+    int mSpeed = 12;
 
-    // stable's scroll speed keys (F3 / F4 by default) during a play
+    // stable's scroll speed keys (F3 / F4 by default) during a play: saved as the speed (and, when remembering per
+    // beatmap, this map's; not while watching)
     void ManiaSpeedKeys()
     {
         int step = Input.IsKeyPressed(Config.Key("keyIncreaseSpeed", KeyboardKey.F4)) ? 1 : Input.IsKeyPressed(Config.Key("keyDecreaseSpeed", KeyboardKey.F3)) ? -1 : 0;
         if (step == 0) return;
         mSpeed = Math.Clamp(mSpeed + step, 1, 40);
-        Config.SetOwn("ManiaSpeed", mSpeed.ToString());
-        Notification.Show($"osu!mania speed set to {mSpeed} (fixed)", 1750);
+        if (playback == null && !auto)
+        {
+            Config.SetOwn("ManiaSpeed", mSpeed.ToString());
+            if (Config.GetBool("UsePerBeatmapManiaSpeed", false)) Config.SetOwn($"ManiaSpeed_{mapMd5 ??= Replays.Md5Of(map.File)}", mSpeed.ToString());
+        }
+        Notification.Show($"osu!mania speed set to {mSpeed} ({(Config.GetBool("ManiaSpeedBPMScale", false) ? "BPM scale" : "fixed")})", 1750);
     }
     bool ManiaDone => mJudged >= mNotes.Count;
 
