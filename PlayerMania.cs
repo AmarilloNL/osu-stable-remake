@@ -30,6 +30,16 @@ sealed partial class Player
     // stable's lighting: every judgement that isn't a miss bursts the column's lightingN once at the hit position
     // (in over 80ms, out from 80 to 200ms); a hold being held loops lightingL there (in over 80ms, out over 120ms)
     double[] mLitAt = [], mHoldOnAt = [], mHoldOffAt = [];
+
+    // stable's mania combo bursts: min(16, combo / 16) star2 sparks fly off each side of the stage from random heights
+    // (100-500 out, up to 120 up, falling; growing to 1-3x, turning and fading over 300-1000ms) and, with Combo bursts
+    // on, the skin's next comboburst-mania slides out from behind the stage to the side its ComboBurstStyle says
+    // (Right by default; Both: either) over 1.4s (OutCirc), in over 250ms, out from 400ms
+    int mBurstBase;
+    readonly List<(Sprite Tex, bool Right, double At)> mBursts = [];
+    readonly List<(float X, float Y, float Vx, float Vy, float Grow, float Rot0, float Rot1, double At, double Life)> mStars = [];
+    double mStarTicks;
+    int mBurstNext;
     bool[] mHoldLit = [];
     double[] mAutoRelease = [];
     double mW300g, mW300, mW200, mW100, mW50, mWMiss;
@@ -381,6 +391,8 @@ sealed partial class Player
         float left = look.Start * u;
         float alpha = playfieldAlpha;
         var tint = ColorAlpha(Color.White, alpha);
+        UpdateComboBursts();
+        DrawManiaBursts(look, left, u, sd, h, alpha);
 
         for (int c = 0; c < mKeys; c++)
             DrawRectangle((int)(left + look.X[c] * u), 0, (int)Math.Ceiling(look.W[c] * u), h, look.Colour[c] is { } cc ? ColorAlpha(cc, cc.A / 255f * alpha) : ColorAlpha(Color.Black, 0.8f * alpha));
@@ -470,6 +482,62 @@ sealed partial class Player
             string text = combo.ToString();
             float size = 32 * u * (Game.NowMs - mComboAt < 80 ? 1.15f : 1);
             Game.TextBold(text, left + stageW * u / 2 - Game.TextWidth(text, size) / 2, look.ComboY * u, size, tint);
+        }
+        DrawManiaStars(u, sd, alpha);
+    }
+
+    void ManiaBurst()
+    {
+        mBurstBase = combo - combo % 100;
+        var look = mLook ??= BuildLook();
+        var rng = Random.Shared;
+        for (int i = 0; i < Math.Min(16, combo / 16); i++)
+            foreach (int side in new[] { -1, 1 })
+                mStars.Add((side < 0 ? look.Start + 10 : look.Start + look.Width - 10, rng.Next(0, 480), side * rng.Next(100, 500), -rng.Next(0, 120),
+                    1 + 2 * rng.NextSingle(), -2 + 4 * rng.NextSingle(), -2 + 4 * rng.NextSingle(), Game.NowMs, rng.Next(300, 1000)));
+        if (!Config.GetBool("ComboBurst", false)) return;
+        var frames = skin.Animation("comboburst-mania", true);
+        if (frames.Length == 0) return;
+        if (skin.ComboBurstRandom) mBurstNext = rng.Next(frames.Length);
+        string style = skin.Mania.TryGetValue(mKeys, out var cfg) && cfg.TryGetValue("ComboBurstStyle", out var s) ? s.Trim() : "1";
+        bool right = style is "0" or "Left" ? false : style is "2" or "Both" ? rng.NextDouble() > 0.5 : true;
+        mBursts.Add((frames[mBurstNext % frames.Length], right, Game.NowMs));
+        mBurstNext = (mBurstNext + 1) % frames.Length;
+    }
+
+    // the burst images, under the stage
+    void DrawManiaBursts(ManiaLook look, float left, float u, float sd, int h, float alpha)
+    {
+        double now = Game.NowMs;
+        mBursts.RemoveAll(b => now - b.At > 1400);
+        float right = left + look.Width * u;
+        foreach (var (tex, toRight, at) in mBursts)
+        {
+            double age = now - at;
+            float t = (float)Easing.Apply(22, age / 1400), bw = tex.Width * sd, bh = tex.Height * sd;
+            float x = toRight ? left + (right - left) * t : right - (right - left) * t - bw;
+            float a = (float)Easing.Apply(2, age / 250) * (1 - (float)Easing.Apply(2, (age - 400) / 1000));
+            DrawTexturePro(tex.Tex, new Rectangle(0, 0, toRight ? -tex.Tex.Width : tex.Tex.Width, tex.Tex.Height), new Rectangle(x, h - bh, bw, bh), Vector2.Zero, 0, ColorAlpha(Color.White, a * alpha));
+        }
+    }
+
+    // the sparks (stable's physics: 8 more units/s down each 60Hz frame)
+    void DrawManiaStars(float u, float sd, float alpha)
+    {
+        double now = Game.NowMs;
+        for (mStarTicks += GetFrameTime() * 60; mStarTicks >= 1; mStarTicks--)
+            for (int i = 0; i < mStars.Count; i++)
+            {
+                var st = mStars[i];
+                st.Vy += 8; st.X += st.Vx / 60; st.Y += st.Vy / 60;
+                mStars[i] = st;
+            }
+        mStars.RemoveAll(st => now - st.At > st.Life);
+        if (skin.Tex("star2") is not { } star) return;
+        foreach (var st in mStars)
+        {
+            float e = (float)Easing.Apply(1, (now - st.At) / st.Life);
+            star.Draw(new(st.X * u, st.Y * u), (1 + (st.Grow - 1) * e) * sd, ColorAlpha(Color.White, (1 - e) * alpha), (st.Rot0 + (st.Rot1 - st.Rot0) * e) * 180 / MathF.PI);
         }
     }
 

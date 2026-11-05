@@ -2043,7 +2043,8 @@ sealed partial class Player : Screen
     }
 
     // stable's combo bursts (the Combo bursts option): at combo 30, 60 and every 50 from 100 (not during a spinner), the
-    // (taiko's at 50 and every 100: its mascot cheers and, with the option, a flower pops up by the drum instead)
+    // (taiko's at 50 and every 100: its mascot cheers and, with the option, a flower pops up by the drum instead;
+    // catch's images are comboburst-fruits (skins from 2.3); mania's come every 100 past the last one's hundred)
     // skin's next comboburst image (a random one with ComboBurstRandom) slides in at the bottom of a random side over
     // 700ms (Out; flipped on the right) and fades out from 200 to 1200ms (In). Its texels are 0.625 units.
     Sprite[]? burstFrames;
@@ -2065,9 +2066,14 @@ sealed partial class Player : Screen
     {
         if (combo == burstSeenCombo) return;
         burstSeenCombo = combo;
-        if (combo == 0) burstLastCombo = 0;
+        if (combo == 0) { burstLastCombo = 0; mBurstBase = 0; }
         if (combo > 0 && skin.ComboSoundBursts.BinarySearch(combo) is int custom and >= 0) skin.Sound($"comboburst-{custom}")?.Play(BeatmapSamples.EffectVolume);
-        bool milestone = mode == 1 ? combo == 50 || combo > 99 && combo % 100 == 0 : combo is 30 or 60 || combo > 99 && combo % 50 == 0;
+        bool milestone = mode switch
+        {
+            1 => combo == 50 || combo > 99 && combo % 100 == 0,
+            3 => combo - mBurstBase >= 100,
+            _ => combo is 30 or 60 || combo > 99 && combo % 50 == 0,
+        };
         if (!milestone || burstLastCombo >= combo || SpinnerActive()) return;
         burstLastCombo = combo;
         if (skin.ComboSoundBursts.Count == 0) PlayBurstSound();
@@ -2079,13 +2085,19 @@ sealed partial class Player : Screen
             bloomFlash = 1;
         }
         if (mode == 1) { TaikoBurst(); return; }
+        if (mode == 3) { ManiaBurst(); return; }
         if (!Config.GetBool("ComboBurst", false)) return;
         if (burstFrames == null)
         {
-            var list = new List<Sprite>();
-            while (skin.Tex($"comboburst-{list.Count}") is { } f) list.Add(f);
-            if (list.Count == 0 && skin.Tex("comboburst") is { } one) list.Add(one);
-            burstFrames = list.ToArray();
+            List<Sprite> Frames(string prefix)
+            {
+                var list = new List<Sprite>();
+                while (skin.Tex($"{prefix}-{list.Count}") is { } f) list.Add(f);
+                if (list.Count == 0 && skin.Tex(prefix) is { } one) list.Add(one);
+                return list;
+            }
+            var frames = mode == 2 && skin.Version >= 2.3 ? Frames("comboburst-fruits") : new List<Sprite>();
+            burstFrames = (frames.Count > 0 ? frames : Frames("comboburst")).ToArray();
         }
         if (burstFrames.Length == 0) return;
         if (skin.ComboBurstRandom) burstIndex = Random.Shared.Next(burstFrames.Length);
