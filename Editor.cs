@@ -1684,7 +1684,7 @@ sealed partial class Editor : Screen
         foreach (var o in Visible())
             if (o.Slider && selected.Contains(o))
                 for (int i = o.Anchors.Count - 1; i >= 0; i--)
-                    if (Vector2.Distance(o.Anchors[i], fieldPos) <= 6) return (o, i);
+                    if (Vector2.Distance(o.Anchors[i] + StackShift(o), fieldPos) <= 6) return (o, i); // (where it's drawn, stacked)
         return null;
     }
 
@@ -1695,7 +1695,7 @@ sealed partial class Editor : Screen
         // a slider's point being dragged (on the grid with grid snap); the slider refits as it goes
         if (pointDrag is { } pd)
         {
-            var p = GridSnap(fieldPos);
+            var p = GridSnap(fieldPos - StackShift(pd.Slider));
             if (held && pd.Slider.Anchors[pd.Index] != p) { pd.Slider.Anchors[pd.Index] = p; FitLength(pd.Slider); modified = true; Rebuild(); }
             if (!held) pointDrag = null;
             return;
@@ -1723,8 +1723,9 @@ sealed partial class Editor : Screen
             undo.Add(Snapshot()); redo.Clear();
             var pts = new List<Vector2> { new((float)body.X, (float)body.Y) };
             pts.AddRange(body.Anchors);
-            int seg = Enumerable.Range(0, pts.Count - 1).MinBy(i => SegmentDistance(fieldPos, pts[i], pts[i + 1]));
-            body.Anchors.Insert(seg, GridSnap(fieldPos));
+            var at = fieldPos - StackShift(body); // (the slider as it's drawn, stacked)
+            int seg = Enumerable.Range(0, pts.Count - 1).MinBy(i => SegmentDistance(at, pts[i], pts[i + 1]));
+            body.Anchors.Insert(seg, GridSnap(at));
             FitLength(body, retype: true);
             modified = true;
             Rebuild();
@@ -2299,6 +2300,7 @@ sealed partial class Editor : Screen
         foreach (var o in vis)
         {
             if (!o.Slider || !selected.Contains(o)) continue;
+            stackShift = StackShift(o); // (on the slider as it's drawn)
             var pts = new List<Vector2> { new((float)o.X, (float)o.Y) };
             pts.AddRange(o.Anchors);
             for (int i = 1; i < pts.Count; i++) DrawLineV(ToScreen(pts[i - 1].X, pts[i - 1].Y), ToScreen(pts[i].X, pts[i].Y), ColorAlpha(Color.White, 0.6f));
@@ -2310,6 +2312,7 @@ sealed partial class Editor : Screen
                 DrawRectangleLinesEx(new Rectangle(s.X - 3 * u, s.Y - 3 * u, 6 * u, 6 * u), 1, Color.Black);
             }
         }
+        stackShift = Vector2.Zero;
         // the slider being drawn
         if (sliderDraft != null)
         {
