@@ -268,28 +268,86 @@ sealed partial class Player
         if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
     }
 
+    // the stage as the skin's [Mania] section for this key count sets it (stable's defaults otherwise): column widths
+    // and spacing, where it starts, the hit / judgement / combo positions, the images and the columns' colours
+    sealed class ManiaLook
+    {
+        public float Start = 136, HitY = 402, ScoreY = 325, ComboY = 111;
+        public float[] X = [], W = [];
+        public string[] Note = [], NoteH = [], NoteL = [], NoteT = [], Key = [], KeyD = [];
+        public Color?[] Colour = [];
+        public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
+        public readonly Dictionary<int, string> Hit = new() { [320] = "mania-hit300g", [300] = "mania-hit300", [200] = "mania-hit200", [100] = "mania-hit100", [50] = "mania-hit50", [0] = "mania-hit0" };
+        public float Width => X.Length == 0 ? 0 : X[^1] + W[^1];
+    }
+    ManiaLook? mLook;
+
+    ManiaLook BuildLook()
+    {
+        var cfg = skin.Mania.TryGetValue(mKeys, out var d) ? d : null;
+        string? M(string k) => cfg != null && cfg.TryGetValue(k, out var v) && v.Length > 0 ? v.Replace('\\', '/') : null;
+        float F(string k, float def) => float.TryParse(M(k), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : def;
+        float[] List(string k, int n, float def)
+        {
+            var a = Enumerable.Repeat(def, Math.Max(0, n)).ToArray();
+            var parts = M(k)?.Split(',') ?? [];
+            for (int i = 0; i < Math.Min(n, parts.Length); i++)
+                if (float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f)) a[i] = f;
+            return a;
+        }
+        var look = new ManiaLook
+        {
+            Start = F("ColumnStart", 136), HitY = Math.Clamp(F("HitPosition", 402), 240, 480), ScoreY = F("ScorePosition", 325), ComboY = F("ComboPosition", 111),
+            W = List("ColumnWidth", mKeys, 30),
+        };
+        var spacing = List("ColumnSpacing", mKeys - 1, 0);
+        look.X = new float[mKeys];
+        for (int c = 1; c < mKeys; c++) look.X[c] = look.X[c - 1] + look.W[c - 1] + spacing[c - 1];
+        string[] Per(Func<int, string> name, Func<int, string> def) => Enumerable.Range(0, mKeys).Select(c => M(name(c)) ?? def(c)).ToArray();
+        look.Note = Per(c => $"NoteImage{c}", c => $"mania-note{ManiaColumnKind(c)}");
+        look.NoteH = Per(c => $"NoteImage{c}H", c => $"mania-note{ManiaColumnKind(c)}H");
+        look.NoteL = Per(c => $"NoteImage{c}L", c => $"mania-note{ManiaColumnKind(c)}L");
+        look.NoteT = Per(c => $"NoteImage{c}T", c => $"mania-note{ManiaColumnKind(c)}T");
+        look.Key = Per(c => $"KeyImage{c}", c => $"mania-key{ManiaColumnKind(c)}");
+        look.KeyD = Per(c => $"KeyImage{c}D", c => $"mania-key{ManiaColumnKind(c)}D");
+        look.Colour = Enumerable.Range(0, mKeys).Select(c => M($"Colour{c + 1}") is { } v ? ParseRgba(v) : null).ToArray();
+        look.StageLeft = M("StageLeft") ?? look.StageLeft;
+        look.StageRight = M("StageRight") ?? look.StageRight;
+        look.StageHint = M("StageHint") ?? look.StageHint;
+        look.StageLight = M("StageLight") ?? look.StageLight;
+        foreach (var (key, result) in new[] { ("Hit300g", 320), ("Hit300", 300), ("Hit200", 200), ("Hit100", 100), ("Hit50", 50), ("Hit0", 0) })
+            if (M(key) is { } img) look.Hit[result] = img;
+        return look;
+    }
+
+    static Color? ParseRgba(string v)
+    {
+        var p = v.Split(',').Select(s => int.TryParse(s.Trim(), out int x) ? Math.Clamp(x, 0, 255) : -1).ToArray();
+        return p.Length >= 3 && p.All(x => x >= 0) ? new Color(p[0], p[1], p[2], p.Length > 3 ? p[3] : 255) : null;
+    }
+
     void ManiaDraw(int w, int h)
     {
         float u = h / 480f, sd = h / 768f;
-        const float colW = 30, start = 136, hitY = 402;
-        float stageW = colW * mKeys;
-        float left = start * u;
+        var look = mLook ??= BuildLook();
+        float hitY = look.HitY, stageW = look.Width;
+        float left = look.Start * u;
         float alpha = playfieldAlpha;
         var tint = ColorAlpha(Color.White, alpha);
 
-        DrawRectangle((int)left, 0, (int)(stageW * u), h, ColorAlpha(Color.Black, 0.8f * alpha));
-        if (skin.Tex("mania-stage-left") is { } sl) DrawTexturePro(sl.Tex, new Rectangle(0, 0, sl.Tex.Width, sl.Tex.Height), new Rectangle(left - sl.Width * sd, 0, sl.Width * sd, h), Vector2.Zero, 0, tint);
-        if (skin.Tex("mania-stage-right") is { } sr) DrawTexturePro(sr.Tex, new Rectangle(0, 0, sr.Tex.Width, sr.Tex.Height), new Rectangle(left + stageW * u, 0, sr.Width * sd, h), Vector2.Zero, 0, tint);
-        for (int c = 1; c < mKeys; c++) DrawRectangle((int)(left + c * colW * u), 0, 1, (int)(hitY * u), ColorAlpha(Color.White, 0.15f * alpha));
-        if (skin.Tex("mania-stage-hint") is { } hint)
+        for (int c = 0; c < mKeys; c++)
+            DrawRectangle((int)(left + look.X[c] * u), 0, (int)Math.Ceiling(look.W[c] * u), h, look.Colour[c] is { } cc ? ColorAlpha(cc, cc.A / 255f * alpha) : ColorAlpha(Color.Black, 0.8f * alpha));
+        if (skin.Tex(look.StageLeft) is { } sl) DrawTexturePro(sl.Tex, new Rectangle(0, 0, sl.Tex.Width, sl.Tex.Height), new Rectangle(left - sl.Width * sd, 0, sl.Width * sd, h), Vector2.Zero, 0, tint);
+        if (skin.Tex(look.StageRight) is { } sr) DrawTexturePro(sr.Tex, new Rectangle(0, 0, sr.Tex.Width, sr.Tex.Height), new Rectangle(left + stageW * u, 0, sr.Width * sd, h), Vector2.Zero, 0, tint);
+        for (int c = 1; c < mKeys; c++) DrawRectangle((int)(left + look.X[c] * u), 0, 1, (int)(hitY * u), ColorAlpha(Color.White, 0.15f * alpha));
+        if (skin.Tex(look.StageHint) is { } hint)
             DrawTexturePro(hint.Tex, new Rectangle(0, 0, hint.Tex.Width, hint.Tex.Height), new Rectangle(left, hitY * u - hint.Height * sd / 2, stageW * u, hint.Height * sd), Vector2.Zero, 0, tint);
         else DrawRectangle((int)left, (int)(hitY * u), (int)(stageW * u), 2, tint);
 
         double now = ManiaDist(time);
         for (int c = 0; c < mKeys; c++)
         {
-            string kind = ManiaColumnKind(c);
-            float x = left + c * colW * u, cw = colW * u;
+            float x = left + look.X[c] * u, cw = look.W[c] * u;
             foreach (var n in mColumns[c].Skip(Math.Max(0, mNext[c] - 1)))
             {
                 float y = hitY - (float)(ManiaDist(n.Time) - now);
@@ -300,21 +358,21 @@ sealed partial class Player
                     float yEnd = hitY - (float)(ManiaDist(n.End) - now);
                     float yHead = n.HeadHit && !n.Done ? hitY : y;
                     var bodyTint = ColorAlpha(n.Broken || n.Done ? Color.Gray : Color.White, alpha);
-                    if ((skin.AnimFrame($"mania-note{kind}L", Game.NowMs) ?? skin.Tex($"mania-note{kind}L")) is { } body)
+                    if ((skin.AnimFrame(look.NoteL[c], Game.NowMs) ?? skin.Tex(look.NoteL[c])) is { } body)
                         DrawTexturePro(body.Tex, new Rectangle(0, 0, body.Tex.Width, body.Tex.Height), new Rectangle(x, yEnd * u, cw, Math.Max(0, (yHead - yEnd) * u)), Vector2.Zero, 0, bodyTint);
-                    ManiaNote(skin.Tex($"mania-note{kind}T") ?? skin.Tex($"mania-note{kind}H") ?? skin.Tex($"mania-note{kind}"), x, yEnd * u, cw, bodyTint, flipY: skin.Tex($"mania-note{kind}T") == null);
-                    ManiaNote(skin.Tex($"mania-note{kind}H") ?? skin.Tex($"mania-note{kind}"), x, yHead * u, cw, bodyTint);
+                    ManiaNote(skin.Tex(look.NoteT[c]) ?? skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yEnd * u, cw, bodyTint, flipY: skin.Tex(look.NoteT[c]) == null);
+                    ManiaNote(skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yHead * u, cw, bodyTint);
                 }
-                else ManiaNote(skin.AnimFrame($"mania-note{kind}", Game.NowMs) ?? skin.Tex($"mania-note{kind}"), x, y * u, cw, tint);
+                else ManiaNote(skin.AnimFrame(look.Note[c], Game.NowMs) ?? skin.Tex(look.Note[c]), x, y * u, cw, tint);
             }
             // the key at the bottom, lit while held
-            var key = (mDown[c] ? skin.Tex($"mania-key{kind}D") : null) ?? skin.Tex($"mania-key{kind}");
+            var key = (mDown[c] ? skin.Tex(look.KeyD[c]) : null) ?? skin.Tex(look.Key[c]);
             if (key is { } k)
             {
                 float kh = k.Height * (cw / k.Width);
                 DrawTexturePro(k.Tex, new Rectangle(0, 0, k.Tex.Width, k.Tex.Height), new Rectangle(x, h - kh, cw, kh), Vector2.Zero, 0, tint);
             }
-            if (mDown[c] && skin.Tex("mania-stage-light") is { } light)
+            if (mDown[c] && skin.Tex(look.StageLight) is { } light)
                 DrawTexturePro(light.Tex, new Rectangle(0, 0, light.Tex.Width, light.Tex.Height), new Rectangle(x, hitY * u - light.Height * sd * 1.6f, cw, light.Height * sd * 1.6f), Vector2.Zero, 0, ColorAlpha(Color.White, 0.6f * alpha));
         }
 
@@ -322,15 +380,15 @@ sealed partial class Player
         double age = Game.NowMs - mLastJudge.At;
         if (mLastJudge.Result >= 0 && age < 400)
         {
-            string name = mLastJudge.Result switch { 320 => "mania-hit300g", 300 => "mania-hit300", 200 => "mania-hit200", 100 => "mania-hit100", 50 => "mania-hit50", _ => "mania-hit0" };
+            string name = look.Hit.TryGetValue(mLastJudge.Result, out var hitImage) ? hitImage : look.Hit[0];
             float pop = age < 40 ? 0.8f + 0.2f * (float)(age / 40) : 1;
-            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + stageW * u / 2, 325 * u), sd * 0.8f * pop, ColorAlpha(Color.White, alpha * (age > 300 ? 1 - (float)((age - 300) / 100) : 1)));
+            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + stageW * u / 2, look.ScoreY * u), sd * 0.8f * pop, ColorAlpha(Color.White, alpha * (age > 300 ? 1 - (float)((age - 300) / 100) : 1)));
         }
         if (combo > 0)
         {
             string text = combo.ToString();
             float size = 32 * u * (Game.NowMs - mComboAt < 80 ? 1.15f : 1);
-            Game.TextBold(text, left + stageW * u / 2 - Game.TextWidth(text, size) / 2, 111 * u, size, tint);
+            Game.TextBold(text, left + stageW * u / 2 - Game.TextWidth(text, size) / 2, look.ComboY * u, size, tint);
         }
     }
 

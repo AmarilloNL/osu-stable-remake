@@ -39,6 +39,7 @@ sealed class Skin
     public List<int> ComboSoundBursts = []; // [General] CustomComboBurstSounds, sorted
     public double Version = 1; // skin.ini Version; "latest" counts as newest. >1 switches stable's newer layouts
     public string Name = "Unknown"; // skin.ini Name (stable names an exported .osk after it)
+    public readonly Dictionary<int, Dictionary<string, string>> Mania = []; // skin.ini [Mania] sections by key count
     public string ScorePrefix = "score", ComboPrefix = "score";
     public float ScoreOverlap, ComboOverlap, AnimationFramerate;
     public Color SongSelectActiveText = Color.Black, SongSelectInactiveText = Color.White;
@@ -146,13 +147,25 @@ sealed class Skin
         if (!Directory.Exists(dir) || Path.GetFileName(Path.TrimEndingDirectorySeparator(dir)) == "Skins") Version = 99;
         if (!File.Exists(ini)) return;
         var combos = new SortedDictionary<int, Color>();
+        Dictionary<string, string>? mania = null; // the [Mania] section being read
         foreach (var raw in File.ReadLines(ini))
         {
             var line = raw.Trim();
+            if (line.StartsWith('['))
+            {
+                mania = line.Equals("[Mania]", StringComparison.OrdinalIgnoreCase) ? new(StringComparer.OrdinalIgnoreCase) : null;
+                continue;
+            }
             int c = line.IndexOf(':');
             if (line.StartsWith("//") || c < 0) continue;
             string k = line[..c].Trim();
             string v = line[(c + 1)..].Split("//")[0].Trim();
+            if (mania != null)
+            {
+                mania[k] = v;
+                if (k.Equals("Keys", StringComparison.OrdinalIgnoreCase) && int.TryParse(v, out int keys)) Mania[keys] = mania;
+                continue;
+            }
             switch (k)
             {
                 case var _ when k.StartsWith("Combo") && int.TryParse(k[5..], out int n):
