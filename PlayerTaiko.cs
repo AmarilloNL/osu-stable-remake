@@ -360,21 +360,37 @@ sealed partial class Player
                     DrawTaikoCircle(new(Math.Max(x, n.Done ? x : TaikoHitX) * u, laneY), sc, rollColour, n.Big);
                     break;
                 case TKind.Swell:
-                    if (time < n.Time) skin.Tex("spinner-warning")?.Draw(new(x * u, laneY), noteScale * 0.65f, tint);
+                    // stable: the warning rides the lane, then at the swell's start flies to (256, 196) in the field,
+                    // growing 1 -> 3 and fading out over 200ms
+                    if (skin.Tex("spinner-warning") is { } warn)
+                    {
+                        if (time < n.Time) warn.Draw(new(x * u, laneY), noteScale * 0.65f, tint);
+                        else if (time < n.Time + 200)
+                        {
+                            float f = (float)((time - n.Time) / 200);
+                            var from = new Vector2(TaikoHitX, TaikoLaneY);
+                            var at = Vector2.Lerp(from, new Vector2(256, 72 + 196), f) * u;
+                            warn.Draw(at, noteScale * 0.65f * (1 + 2 * f), ColorAlpha(Color.White, (1 - f) * playfieldAlpha));
+                        }
+                    }
                     break;
             }
         }
 
-        // the active swell: stable's spinner circle (and its hits left) right of the target
+        // the active swell: stable's spinner below the bar, centred on the screen (y 264): the circle at 0.8 (turning
+        // with each hit), its approach circle shrinking over the swell (not with Hidden) and the hits left in the
+        // score font 80 under it; it fades in over 200ms
         foreach (var n in tNotes.Skip(tNext).TakeWhile(n => n.Time <= time))
         {
             if (n.Kind != TKind.Swell || n.Done) continue;
-            var c = new Vector2(256 * u, laneY);
+            var c = new Vector2(w / 2f, 264 * u);
             float p = (float)Math.Clamp((time - n.Time) / Math.Max(1, n.End - n.Time), 0, 1);
-            skin.Tex("spinner-circle")?.Draw(c, 0.35f * sd, tint, (float)(n.Hits * 12 % 360));
-            skin.Tex("spinner-approachcircle")?.Draw(c, 0.35f * sd * 2.2f * (1 - p), tint);
+            var st = ColorAlpha(mods.HasFlag(Mods.SpunOut) ? Color.Gray : Color.White, (float)Math.Clamp((time - n.Time + 1) / 201, 0, 1) * playfieldAlpha);
+            skin.Tex("spinner-circle")?.Draw(c, 0.8f * sd, st, n.Hits * 20 % 360);
+            if (!mods.HasFlag(Mods.Hidden)) skin.Tex("spinner-approachcircle")?.Draw(c, 0.8f * sd * (1.86f - 1.76f * p), st);
             string left = (n.HitsNeeded - n.Hits).ToString();
-            Game.TextBold(left, c.X - Game.TextWidth(left, 30 * u) / 2, c.Y - 15 * u, 30 * u, tint);
+            float gh = (skin.Glyph(skin.ScorePrefix, '0')?.Height ?? 30) * sd;
+            skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, left, c.X, c.Y + 80 * u - gh / 2, sd, 0.5f, st);
         }
 
         // the judgement at the target, fading out
