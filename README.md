@@ -75,6 +75,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Sliders: click the head and each point, right-click (or click the last point again) to finish; the length snaps to the beat. A selected slider's points drag, `Ctrl`+click on its body adds one, right-click removes one
 - Stable's Edit menu keys: flip (`Ctrl+H` / `J`), rotate 90° (`Ctrl+<` / `>`), Rotate by / Scale by (`Ctrl+Shift+R` / `S`, previewed as you drag), reverse (`Ctrl+G`), clone (`Ctrl+D`); bookmarks (`Ctrl+B`, `Ctrl+Shift+B`, `Ctrl+←` / `→`); live mapping (`Ctrl+Tab`: tap your taiko or mania keys while the song plays)
 - **AiMod** (`Ctrl+Shift+A`): stable's map checker in its own small window, its problems sorted into Compose, Design, Timing, Meta and Mapset (unsnapped and overlapping objects, offscreen objects, short spinners, long combos, distance snap with *Check distance snap*, and more); a click on one jumps there and selects its objects
+- osu!mania keysounds: **Sample import** (`Ctrl+Shift+I`) gives the selected notes one of the folder's sound files (or a custom sample set) and a volume, or adds it as a storyboard sound; **Auto Volume Balance** shares out the volume between notes struck together
 - View options like stable's: the map's video and storyboard behind the playfield (*Show Video/Storyboard*), *Dim Background*, *Hit animations*, *Follow points*, and the mania view's *Show Sample Name*
 - Each mode like stable's editor: taiko maps red and blue (whistle / clap for kat), catch's distance snap across only, and mania maps in their own compose view: a column stage with the beat snap's lines, the song's note density beside it, Note and Hold tools
 - **Timing** (`F3`): add, move and delete red and green points, BPM, offset, meter, slider velocity, volume, sample set and kiai
@@ -132,7 +133,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Other modes: osu!taiko, osu!catch, osu!mania (their own maps and osu! conversions)
 - [x] The beatmap editor (compose, timing, song setup, test play, saving)
 - [x] Replays for taiko, catch and mania; stable's osu!mania conversion patterns
-- [ ] The editor's Design (storyboard) tab and sample import
+- [ ] The editor's Design (storyboard) tab
 - [ ] osu!mania Key Coop (two stages) and maps with more than 10 keys
 - [ ] Linux / macOS (currently uses Windows fonts and Windows BASS builds)
 

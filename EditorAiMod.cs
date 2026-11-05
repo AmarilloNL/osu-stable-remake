@@ -22,6 +22,7 @@ sealed partial class Editor
         public Vector2 Pos = new(float.NaN);
         public Vector2? Drag;
         public string Difficulty = "";
+        public Vector2 Mouse; // (as the window saw it: the editor below gets none while it has it)
         public IEnumerable<AiItem> Shown => Tab == AiTab.All ? Items : Items.Where(i => i.Tab == Tab);
     }
     AiModWindow? aimod;
@@ -449,8 +450,9 @@ sealed partial class Editor
     {
         var w = aimod!;
         float s = AiS;
+        w.Mouse = mouse;
         if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - AiW * s) / 2, (Game.H - (AiH + AiCaption) * s) / 2);
-        if (Input.IsKeyPressed(KeyboardKey.Escape)) { aimod = null; return true; }
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { aimod = null; Input.Muted = true; return true; }
         var whole = new Rectangle(w.Pos.X, w.Pos.Y, AiW * s, (AiH + AiCaption) * s);
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (w.Drag is { } d)
@@ -510,7 +512,7 @@ sealed partial class Editor
         DrawRectangleLinesEx(whole, 1, line);
 
         // Refresh, the distance snap box and the summary
-        var mouse = Input.GetMousePosition();
+        var mouse = w.Mouse;
         var refresh = AiRect(9, 29, 91, 43);
         DrawRectangleRec(refresh, CheckCollisionPointRec(mouse, refresh) ? new Color(229, 241, 251, 255) : new Color(225, 225, 225, 255));
         DrawRectangleLinesEx(refresh, 1, CheckCollisionPointRec(mouse, refresh) ? new Color(0, 120, 215, 255) : new Color(173, 173, 173, 255));

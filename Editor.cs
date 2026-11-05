@@ -388,7 +388,8 @@ sealed partial class Editor : Screen
         if (prompt != null) { UpdatePrompt(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(mouse)) return;
-        if (aimod != null && UpdateAiMod(mouse)) return;
+        // (the AiMod and Sample import windows: the editor below keeps its keys while they have the mouse)
+        if (sampleImport != null && UpdateSampleImport(mouse) || aimod != null && UpdateAiMod(mouse)) { Input.MouseTaken = true; mouse = Input.GetMousePosition(); }
 
         // the clock
         if (music != null && playing)
@@ -422,7 +423,8 @@ sealed partial class Editor : Screen
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Tab)) ToggleLiveMapping();
         // the Timing menu's keys
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.P)) TimingAction(Input.ShiftHeld ? 1 : 0);
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.I)) DeleteTimingHere();
+        if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.I)) DeleteTimingHere();
+        if (Input.CtrlHeld && Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.I)) OpenSampleImport();
         live = Input.CtrlHeld ? [] : LiveMap(mouse);
 
         // playback (stable's bindings): Jump To First Note (Z), Play From Beginning (X), Audio Pause (C), Jump To End
@@ -1316,7 +1318,7 @@ sealed partial class Editor : Screen
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
             new("Grid Snapping", "T", () => gridSnap = !gridSnap, gridSnap), Sep,
             new("Create Polygon Circles...", "Ctrl+Shift+D", NotMania(OpenPoly)), new("Convert slider to stream...", "Ctrl+Shift+F", NotMania(AnySliderSelected ? SliderToStream : null)),
-            new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance", "", mode == 3 ? AutoVolumeBalance : null)],
+            new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I", mode == 3 ? OpenSampleImport : null), new("Auto Volume Balance", "", mode == 3 ? AutoVolumeBalance : null)],
         4 => [new("Move all elements in time...")],
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
             new("Metronome Clicks", "", () => metronome = !metronome, metronome), Sep,
@@ -1844,6 +1846,7 @@ sealed partial class Editor : Screen
         DrawTopBar(u);
         DrawBottomBar(u);
         if (aimod != null) DrawAiMod(u);
+        if (sampleImport != null) DrawSampleImport();
         DrawMenu(u);
         if (xform != null) DrawXform(u);
         if (prompt != null) DrawPrompt(u);
