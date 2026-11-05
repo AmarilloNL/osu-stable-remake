@@ -379,6 +379,7 @@ sealed class Editor : Screen
         float u = U;
         if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
         if (xform != null) { UpdateXform(mouse); return; }
+        if (field < 0 && UpdateMenu(mouse)) return;
 
         // the clock
         if (music != null && playing)
@@ -407,12 +408,10 @@ sealed class Editor : Screen
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Y)) Restore(redo, undo);
 
         // stable's live mapping (Compose: Ctrl+Tab)
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Tab))
-        {
-            liveMapping = !liveMapping;
-            if (liveMapping) tool = 1;
-            Notification.Show(liveMapping ? "Live mapping enabled! Use your taiko/mania keybinds to map while the music is playing!" : "Live mapping disabled.", 3000);
-        }
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Tab)) ToggleLiveMapping();
+        // the Timing menu's keys
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.P)) TimingAction(Input.ShiftHeld ? 1 : 0);
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.I)) DeleteTimingHere();
         var live = Input.CtrlHeld ? Array.Empty<KeyboardKey>() : LiveMap(mouse);
 
         // playback (stable's bindings): Jump To First Note (Z), Play From Beginning (X), Audio Pause (C), Jump To End
@@ -476,6 +475,13 @@ sealed class Editor : Screen
     // go over 300ms later. Gives the keys it took.
     bool liveMapping;
     readonly EObj?[] liveHeld = new EObj?[18];
+
+    void ToggleLiveMapping()
+    {
+        liveMapping = !liveMapping;
+        if (liveMapping) tool = 1;
+        Notification.Show(liveMapping ? "Live mapping enabled! Use your taiko/mania keybinds to map while the music is playing!" : "Live mapping disabled.", 3000);
+    }
 
     KeyboardKey[] LiveMap(Vector2 mouse)
     {
@@ -618,48 +624,22 @@ sealed class Editor : Screen
         if (Input.IsKeyPressed(Bound("keyGridChange", KeyboardKey.G)) && !Input.CtrlHeld) gridSize = gridSize == 32 ? 4 : gridSize * 2;
         // Nudge Left / Right (J / K): the selection a beat snap earlier / later
         int nudge = Input.CtrlHeld ? 0 : Input.IsKeyPressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Input.IsKeyPressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
-        if (nudge != 0 && selected.Count > 0)
-            Change(() =>
-            {
-                double step = RedAt(selected.Min(o => o.Time)).Beat / divisor;
-                foreach (var o in selected) { o.Time = Math.Round(o.Time + nudge * step); o.End = Math.Round(o.End + nudge * step); o.Raw = null; }
-            });
-        if (Input.IsKeyPressed(KeyboardKey.Delete) && selected.Count > 0) Change(() => { objs.RemoveAll(selected.Contains); selected.Clear(); });
-        // stable's Edit menu: Flip Horizontally / Vertically (Ctrl+H / J) across the playfield, Rotate 90° Clockwise /
-        // Anticlockwise (Ctrl+> / <) about its centre, Reverse Selection (Ctrl+G), Clone (Ctrl+D). Mania: H turns the
-        // columns the other way, J reverses the selection in time, no rotating.
+        if (nudge != 0 && selected.Count > 0) Nudge(nudge);
+        if (Input.IsKeyPressed(KeyboardKey.Delete) && selected.Count > 0) DeleteSel();
+        // stable's Edit menu keys (see the menu below)
         if (Input.CtrlHeld && selected.Count > 0)
         {
-            int keys = MKeys;
-            if (Input.IsKeyPressed(KeyboardKey.H))
-                Change(() => { if (mode == 3) foreach (var o in selected) { o.X = MColumnX(keys - 1 - MColumn(o, keys), keys); o.Raw = null; } else Transform(p => new(512 - p.X, p.Y)); });
-            if (Input.IsKeyPressed(KeyboardKey.J)) Change(() => { if (mode == 3) ReverseSelection(); else Transform(p => new(p.X, 384 - p.Y)); });
-            if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Period)) Change(() => Transform(p => new(256 - (p.Y - 192), 192 + (p.X - 256))));
-            if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Comma)) Change(() => Transform(p => new(256 + (p.Y - 192), 192 - (p.X - 256))));
+            if (Input.IsKeyPressed(KeyboardKey.H)) FlipH();
+            if (Input.IsKeyPressed(KeyboardKey.J)) FlipV();
+            if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Period)) Rotate90(clockwise: true);
+            if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Comma)) Rotate90(clockwise: false);
             if (mode != 3 && Input.ShiftHeld && (Input.IsKeyPressed(KeyboardKey.R) || Input.IsKeyPressed(KeyboardKey.S))) { OpenXform(scale: Input.IsKeyPressed(KeyboardKey.S)); return; }
             if (Input.IsKeyPressed(KeyboardKey.G)) Change(ReverseSelection);
             if (Input.IsKeyPressed(KeyboardKey.D)) Change(CloneSelection);
         }
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) { selected.Clear(); selected.UnionWith(objs); tool = 0; }
-        if (Input.CtrlHeld && (Input.IsKeyPressed(KeyboardKey.C) || Input.IsKeyPressed(KeyboardKey.X)) && selected.Count > 0)
-        {
-            clipboard = selected.OrderBy(o => o.Time).Select(o => o.Clone()).ToList();
-            if (Input.IsKeyPressed(KeyboardKey.X)) Change(() => { objs.RemoveAll(selected.Contains); selected.Clear(); });
-        }
-        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.V) && clipboard.Count > 0)
-            Change(() =>
-            {
-                // pasted at the current (snapped) time, keeping their spacing
-                double shift = Snap(time) - clipboard[0].Time;
-                selected.Clear();
-                foreach (var c in clipboard)
-                {
-                    var o = c.Clone();
-                    o.Raw = null; o.Time += shift; o.End += shift;
-                    objs.Add(o);
-                    selected.Add(o);
-                }
-            });
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) SelectAll();
+        if (Input.CtrlHeld && (Input.IsKeyPressed(KeyboardKey.C) || Input.IsKeyPressed(KeyboardKey.X)) && selected.Count > 0) CopySel(cut: Input.IsKeyPressed(KeyboardKey.X));
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.V) && clipboard.Count > 0) PasteClip();
 
         bool click = Input.IsMouseButtonPressed(MouseButton.Left), held = Input.IsMouseButtonDown(MouseButton.Left);
         if (click)
@@ -924,6 +904,218 @@ sealed class Editor : Screen
         }
     }
 
+    // ---- the Edit menu's actions (and their keys)
+    void Nudge(int dir) => Change(() =>
+    {
+        double step = RedAt(selected.Min(o => o.Time)).Beat / divisor;
+        foreach (var o in selected) { o.Time = Math.Round(o.Time + dir * step); o.End = Math.Round(o.End + dir * step); o.Raw = null; }
+    });
+    void DeleteSel() => Change(() => { objs.RemoveAll(selected.Contains); selected.Clear(); });
+    void SelectAll() { selected.Clear(); selected.UnionWith(objs); tool = 0; }
+    void CopySel(bool cut)
+    {
+        clipboard = selected.OrderBy(o => o.Time).Select(o => o.Clone()).ToList();
+        if (cut) DeleteSel();
+    }
+    // pasted at the current (snapped) time, keeping their spacing
+    void PasteClip() => Change(() =>
+    {
+        double shift = Snap(time) - clipboard[0].Time;
+        selected.Clear();
+        foreach (var c in clipboard)
+        {
+            var o = c.Clone();
+            o.Raw = null; o.Time += shift; o.End += shift;
+            objs.Add(o);
+            selected.Add(o);
+        }
+    });
+    // Flip Horizontally / Vertically across the playfield (mania: the columns the other way / the selection reversed in
+    // time), Rotate 90° about its centre
+    void FlipH()
+    {
+        int keys = MKeys;
+        Change(() => { if (mode == 3) foreach (var o in selected) { o.X = MColumnX(keys - 1 - MColumn(o, keys), keys); o.Raw = null; } else Transform(p => new(512 - p.X, p.Y)); });
+    }
+    void FlipV() => Change(() => { if (mode == 3) ReverseSelection(); else Transform(p => new(p.X, 384 - p.Y)); });
+    void Rotate90(bool clockwise) => Change(() => Transform(clockwise ? p => new(256 - (p.Y - 192), 192 + (p.X - 256)) : p => new(256 + (p.Y - 192), 192 - (p.X - 256))));
+    // Reset ... samples: back to the timing point's (no sample set, addition set, index, volume or file of their own)
+    void ResetSamples(IEnumerable<EObj> list) => Change(() =>
+    {
+        foreach (var o in list.ToList())
+        {
+            o.Sample = o.Sample.Length > 0 ? "0:0:0:0:" : "";
+            if (o.Slider && o.EdgeSets.Length > 0) o.EdgeSets = string.Join('|', Enumerable.Repeat("0:0", o.Slides + 1));
+            o.Raw = null;
+        }
+    });
+    void ResetComboColours() => Change(() => { foreach (var o in objs) if ((o.Type & 0x70) != 0) { o.Type &= ~0x70; o.Raw = null; } });
+    void ResetBreaks() => Change(() => { if (sections.FirstOrDefault(s => s.Name == "Events") is { } ev) ev.Lines.RemoveAll(l => l.StartsWith("2,") || l.StartsWith("Break,")); });
+    // Resnap All Notes: every start (and a spinner's or hold's end) onto the beat snap (Current Section: the timing
+    // section now playing's)
+    void ResnapAll() => Resnap(objs);
+    void ResnapSection()
+    {
+        var red = RedAt(time);
+        double next = timing.Where(p => p.Red && p.Time > red.Time).Select(p => p.Time).DefaultIfEmpty(double.MaxValue).Min();
+        Resnap(objs.Where(o => o.Time >= red.Time && o.Time < next).ToList());
+    }
+    void Resnap(List<EObj> list) => Change(() =>
+    {
+        foreach (var o in list)
+        {
+            double t = Snap(o.Time), end = o.Spinner || (o.Type & 128) != 0 ? Snap(o.End) : o.End + (t - o.Time);
+            if (t == o.Time && end == o.End) continue;
+            o.Time = t; o.End = end; o.Raw = null;
+        }
+    });
+    void RecalcSliders() => Change(() => { foreach (var o in objs) if (o.Slider) FitLength(o); });
+    void RevertToSaved()
+    {
+        Read(File.ReadAllLines(path));
+        mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
+        undo.Clear(); redo.Clear(); selected.Clear();
+        modified = false;
+        info = ReloadInfo();
+        Rebuild();
+    }
+    // the latest timing point at or before now
+    void DeleteTimingHere()
+    {
+        if (timing.Where(p => p.Time <= time + 1).OrderBy(p => p.Time).LastOrDefault() is { } p) Change(() => { timing.Remove(p); timingSel = -1; });
+    }
+
+    // ---- stable's menu bar: File, Edit, View, Compose, Design, Timing, Web, Help, each a dropdown (what this editor
+    // can't do greyed out, the keys shown); Snap Divisor, Audio Rate and Time Signature open to the side
+    sealed record MenuItem(string Label, string Keys = "", Action? Run = null, bool Checked = false, MenuItem[]? Sub = null)
+    {
+        public bool Separator => Label == "-";
+        public bool Enabled => Run != null || Sub != null;
+    }
+    static readonly MenuItem Sep = new("-");
+    static readonly string[] MenuTitles = ["File", "Edit", "View", "Compose", "Design", "Timing", "Web", "Help"];
+    int menuOpen = -1, menuSub = -1;
+    Action? Sel(Action a) => selected.Count > 0 ? a : null;
+    Action? NotMania(Action? a) => mode == 3 ? null : a;
+
+    MenuItem[] MenuItems(int i) => i switch
+    {
+        0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null), new("Open Difficulty..."), Sep,
+            new("Save", "Ctrl+S", Save), new("Create a new Difficulty..."), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod"), Sep,
+            new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package"), new("Import from..."), Sep,
+            new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
+            new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)), new("Open .osb in Notepad"), Sep,
+            new("Revert to Saved", "", modified ? RevertToSaved : null), Sep, new("Exit...", "Esc", AskExit)],
+        1 => [new("Undo", "Ctrl+Z", undo.Count > 0 ? () => Restore(undo, redo) : null), new("Redo", "Ctrl+Y", redo.Count > 0 ? () => Restore(redo, undo) : null), Sep,
+            new("Cut", "Ctrl+X", Sel(() => CopySel(cut: true))), new("Copy", "Ctrl+C", Sel(() => CopySel(cut: false))), new("Paste", "Ctrl+V", clipboard.Count > 0 ? PasteClip : null),
+            new("Delete", "Del", Sel(DeleteSel)), Sep, new("Select All", "Ctrl+A", SelectAll), new("Clone", "Ctrl+D", Sel(() => Change(CloneSelection))), Sep,
+            new("Reverse Selection", "Ctrl+G", Sel(() => Change(ReverseSelection))), new("Flip Horizontally", "Ctrl+H", Sel(FlipH)), new("Flip Vertically", "Ctrl+J", Sel(FlipV)),
+            new("Rotate 90° Clockwise", "Ctrl+>", NotMania(Sel(() => Rotate90(clockwise: true)))), new("Rotate 90° Anticlockwise", "Ctrl+<", NotMania(Sel(() => Rotate90(clockwise: false)))),
+            new("Rotate by...", "Ctrl+Shift+R", NotMania(Sel(() => OpenXform(scale: false)))), new("Scale by...", "Ctrl+Shift+S", NotMania(Sel(() => OpenXform(scale: true)))), Sep,
+            new("Reset selected objects' samples", "", Sel(() => ResetSamples(selected))), new("Reset all samples", "", () => ResetSamples(objs)),
+            new("Reset combo colours", "", ResetComboColours), new("Reset breaks", "", ResetBreaks), Sep,
+            new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
+        2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2"), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
+            new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6"), Sep,
+            new("Show Video/Storyboard"), new("Dim Background"), new("Show Sample Name"), Sep, new("Hit animations"), new("Follow points")],
+        3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
+                .Select(d => new MenuItem($"1/{d.Item1} {d.Item2}", "", () => divisor = d.Item1, divisor == d.Item1))]),
+            new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
+            new("Grid Snapping", "T", () => gridSnap = !gridSnap, gridSnap), Sep,
+            new("Create Polygon Circles", "Ctrl+Shift+D"), new("Convert Slider to Stream", "Ctrl+Shift+F"),
+            new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance")],
+        4 => [new("Move all elements in time...")],
+        5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
+            new("Metronome Clicks"), Sep,
+            new("Add Timing Section", "Ctrl+P", () => TimingAction(0)), new("Add Inheriting Section", "Ctrl+Shift+P", () => TimingAction(1)),
+            new("Reset Current Section"), new("Delete Timing Section", "Ctrl+I", DeleteTimingHere), new("Resnap Current Section", "", ResnapSection), Sep,
+            new("Resnap All Notes", "", ResnapAll), new("Move all notes in time..."), new("Recalculate Slider Lengths", "", RecalcSliders),
+            new("Delete All Timing Sections", "", timing.Count > 0 ? () => Change(() => { timing.Clear(); timingSel = -1; }) : null), Sep,
+            new("Set Current Position as Preview Point", "", () => SetKv("General", "PreviewTime", ((int)Math.Round(time)).ToString()))],
+        6 => [new("This Beatmap's Information Page"), new("This Beatmap's Thread")],
+        _ => [new("Show in-game help"), new("View FAQ")],
+    };
+
+    Rectangle MenuTitleRect(int i)
+    {
+        float u = U, x = 4 * u;
+        for (int k = 0; k < i; k++) x += Game.TextWidth(MenuTitles[k], 12 * u) + 12 * u;
+        return new Rectangle(x - 4 * u, 0, Game.TextWidth(MenuTitles[i], 12 * u) + 8 * u, 17 * u);
+    }
+
+    // the dropdown's rows: separators short, items 16 units
+    List<(MenuItem Item, Rectangle Rect)> MenuRows(MenuItem[] items, float x, float y)
+    {
+        float u = U, w = 200 * u;
+        foreach (var it in items) w = Math.Max(w, Game.TextWidth(it.Label, 11 * u) + Game.TextWidth(it.Keys, 11 * u) + 48 * u);
+        var rows = new List<(MenuItem, Rectangle)>();
+        foreach (var it in items)
+        {
+            float h = (it.Separator ? 7 : 16) * u;
+            rows.Add((it, new Rectangle(x, y, w, h)));
+            y += h;
+        }
+        return rows;
+    }
+
+    // true while the menu has the input
+    bool UpdateMenu(Vector2 mouse)
+    {
+        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+        int title = Enumerable.Range(0, MenuTitles.Length).FirstOrDefault(i => CheckCollisionPointRec(mouse, MenuTitleRect(i)), -1);
+        if (menuOpen < 0)
+        {
+            if (click && title >= 0) { menuOpen = title; menuSub = -1; return true; }
+            return false;
+        }
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { menuOpen = -1; return true; }
+        if (title >= 0 && title != menuOpen) { menuOpen = title; menuSub = -1; }
+        var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, 17 * U);
+        int hover = rows.FindIndex(r => CheckCollisionPointRec(mouse, r.Rect));
+        if (hover >= 0 && rows[hover].Item.Sub != null) menuSub = hover;
+        List<(MenuItem Item, Rectangle Rect)> sub = menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s ? MenuRows(s, rows[menuSub].Rect.X + rows[menuSub].Rect.Width, rows[menuSub].Rect.Y) : [];
+        if (!click) return true;
+        var hit = sub.FirstOrDefault(r => CheckCollisionPointRec(mouse, r.Rect)).Item ?? (hover >= 0 ? rows[hover].Item : null);
+        if (title == menuOpen && hit == null) { menuOpen = -1; return true; }
+        if (hit?.Sub != null) return true;
+        menuOpen = -1;
+        hit?.Run?.Invoke();
+        return true;
+    }
+
+    void DrawMenu(float u)
+    {
+        for (int i = 0; i < MenuTitles.Length; i++)
+        {
+            var r = MenuTitleRect(i);
+            if (menuOpen == i) DrawRectangleRec(r, new Color(255, 160, 40, 200));
+            Game.Text(MenuTitles[i], r.X + 4 * u, 1 * u, 12 * u, Color.White);
+        }
+        if (menuOpen < 0) return;
+        var mouse = Input.GetMousePosition();
+        void Panel(List<(MenuItem Item, Rectangle Rect)> rows)
+        {
+            if (rows.Count == 0) return;
+            var a = rows[0].Rect; var z = rows[^1].Rect;
+            var box = new Rectangle(a.X, a.Y, a.Width, z.Y + z.Height - a.Y);
+            DrawRectangleRec(box, new Color(25, 25, 30, 240));
+            DrawRectangleLinesEx(box, 1, ColorAlpha(Color.White, 0.3f));
+            foreach (var (it, r) in rows)
+            {
+                if (it.Separator) { DrawRectangle((int)(r.X + 6 * u), (int)(r.Y + r.Height / 2), (int)(r.Width - 12 * u), 1, ColorAlpha(Color.White, 0.25f)); continue; }
+                if (it.Enabled && CheckCollisionPointRec(mouse, r)) DrawRectangleRec(r, new Color(255, 160, 40, 110));
+                var c = it.Enabled ? Color.White : Color.Gray;
+                if (it.Checked) DrawCircleV(new(r.X + 9 * u, r.Y + r.Height / 2), 2.5f * u, c);
+                Game.Text(it.Label, r.X + 18 * u, r.Y + 2 * u, 11 * u, c);
+                string keys = it.Sub != null ? ">" : it.Keys;
+                Game.Text(keys, r.X + r.Width - 8 * u - Game.TextWidth(keys, 11 * u), r.Y + 2 * u, 11 * u, ColorAlpha(c, 0.7f));
+            }
+        }
+        var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, 17 * u);
+        Panel(rows);
+        if (menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s) Panel(MenuRows(s, rows[menuSub].Rect.X + rows[menuSub].Rect.Width, rows[menuSub].Rect.Y));
+    }
+
     // the selection's positions (slider points too) through f
     void Transform(Func<Vector2, Vector2> f)
     {
@@ -1142,6 +1334,21 @@ sealed class Editor : Screen
     Rectangle StepRect(int i, int dir) { float u = U; return new Rectangle(Game.W - (dir < 0 ? 210 : 40) * u, (270 + i * 26) * u, 30 * u, 22 * u); }
     int timingScroll;
 
+    // the Timing tab's buttons (also the Timing menu's and Ctrl+P / Ctrl+Shift+P)
+    void TimingAction(int i)
+    {
+        var sel = timingSel >= 0 && timingSel < timing.Count ? timing[timingSel] : null;
+        switch (i)
+        {
+            case 0: Change(() => { var red = RedAt(time); timing.Add(new ETiming { Time = Math.Round(time), Beat = red.Beat, Meter = red.Meter, Set = red.Set, Volume = red.Volume }); timingSel = timing.Count - 1; }); break;
+            case 1: Change(() => { var red = RedAt(time); timing.Add(new ETiming { Time = Snap(time), Beat = -100, Red = false, Set = red.Set, Volume = red.Volume }); timingSel = timing.Count - 1; }); break;
+            case 2: if (sel != null) Change(() => { timing.Remove(sel); timingSel = -1; }); break;
+            case 3: if (sel != null) Change(() => sel.Time = Math.Round(time)); break;
+            case 4: if (sel != null) Change(() => sel.Effects ^= 1); break;
+            case 5: if (sel != null) Change(() => sel.Effects ^= 8); break;
+        }
+    }
+
     void UpdateTiming(Vector2 mouse, float u)
     {
         var list = timing.OrderBy(t => t.Time).ToList();
@@ -1155,16 +1362,7 @@ sealed class Editor : Screen
         for (int i = 0; i < TimingButtons.Length; i++)
         {
             if (!CheckCollisionPointRec(mouse, TimingButton(i))) continue;
-            var sel = timingSel >= 0 && timingSel < timing.Count ? timing[timingSel] : null;
-            switch (i)
-            {
-                case 0: Change(() => { var red = RedAt(time); timing.Add(new ETiming { Time = Math.Round(time), Beat = red.Beat, Meter = red.Meter, Set = red.Set, Volume = red.Volume }); timingSel = timing.Count - 1; }); break;
-                case 1: Change(() => { var red = RedAt(time); timing.Add(new ETiming { Time = Snap(time), Beat = -100, Red = false, Set = red.Set, Volume = red.Volume }); timingSel = timing.Count - 1; }); break;
-                case 2: if (sel != null) Change(() => { timing.Remove(sel); timingSel = -1; }); break;
-                case 3: if (sel != null) Change(() => sel.Time = Math.Round(time)); break;
-                case 4: if (sel != null) Change(() => sel.Effects ^= 1); break;
-                case 5: if (sel != null) Change(() => sel.Effects ^= 8); break;
-            }
+            TimingAction(i);
             return;
         }
         if (timingSel < 0 || timingSel >= timing.Count) return;
@@ -1332,6 +1530,7 @@ sealed class Editor : Screen
         DrawTimeline(u);
         DrawTopBar(u);
         DrawBottomBar(u);
+        DrawMenu(u);
         if (xform != null) DrawXform(u);
         if (exitPrompt != null)
         {
@@ -1358,7 +1557,12 @@ sealed class Editor : Screen
     {
         DrawRectangle(0, 0, Game.W, (int)(17 * u), new Color(0, 0, 0, 200));
         string name = $"{Kv("Metadata", "Artist")} - {Kv("Metadata", "Title")} [{Kv("Metadata", "Version")}]{(modified ? " *" : "")}";
-        Game.Text(name, 4 * u, 1 * u, 12 * u, Color.White);
+        // (after the menu, cut short before the tabs)
+        var last = MenuTitleRect(MenuTitles.Length - 1);
+        float nx = last.X + last.Width + 14 * u;
+        BeginScissorMode((int)nx, 0, (int)Math.Max(0, TabRect(0).X - nx - 8 * u), (int)(17 * u));
+        Game.Text(name, nx, 1 * u, 12 * u, Color.LightGray);
+        EndScissorMode();
         string[] tabs = ["Compose", "Timing", "Song Setup"];
         for (int i = 0; i < 3; i++)
         {

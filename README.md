@@ -70,6 +70,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 <summary><b>Beatmap editor</b></summary>
 
 - From the main menu's **Edit** (pick a map in song select) or **Beatmap options** (`F3`) → **Edit**
+- Stable's menu bar (File, Edit, View, Compose, Design, Timing, Web, Help) with its items and keys; what this editor can't do yet is greyed out
 - **Compose** (`F1`): the timeline with beat ticks coloured by snap (`Alt`+wheel changes the divisor, `Ctrl`+wheel zooms), the playfield with its grid; tools `1`-`4` (select, circle, slider, spinner), new combo `Q` and hitsounds `W` `E` `R`, grid snap `T` and size `G`; drag-select, move, drag in time, copy / cut / paste, delete, undo / redo (`Ctrl+Z` / `Ctrl+Y`)
 - Sliders: click the head and each point, right-click (or click the last point again) to finish; the length snaps to the beat. A selected slider's points drag, `Ctrl`+click on its body adds one, right-click removes one
 - Stable's Edit menu keys: flip (`Ctrl+H` / `J`), rotate 90° (`Ctrl+<` / `>`), Rotate by / Scale by (`Ctrl+Shift+R` / `S`, previewed as you drag), reverse (`Ctrl+G`), clone (`Ctrl+D`); bookmarks (`Ctrl+B`, `Ctrl+Shift+B`, `Ctrl+←` / `→`); live mapping (`Ctrl+Tab`: tap your taiko or mania keys while the song plays)
