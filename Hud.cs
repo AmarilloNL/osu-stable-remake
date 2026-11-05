@@ -104,7 +104,7 @@ sealed partial class Player
         float fade = hudFade;
         hudFade = fade * ifaceAlpha;
         DrawScore(w, u, sd, frames);
-        if (mode == 0) DrawCombo(u, sd, now); // (the modes show it on their playfield)
+        if (mode is 0 or 2) DrawCombo(u, sd, now); // (taiko and mania show it on their playfield)
         hudFade = fade;
         DrawMeter(w, u, sd, now);
         DrawColourMeter(w, u, frames);

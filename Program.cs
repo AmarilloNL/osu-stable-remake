@@ -1199,9 +1199,10 @@ static class Game
                 if (checkMode != 0) Console.Error.WriteLine($"checking {b.Artist} - {b.Title} [{b.Version}] at {dt:0.##}ms");
                 for (int step = 0; step < 50_000_000 && !p.Result.Done; step++) p.Update(dt);
                 var x = p.Result;
+                double acc = p.Acc;
                 p.Dispose();
                 runs++;
-                if (x.N100 + x.N50 + x.NMiss == 0) continue;
+                if (checkMode != 0 ? acc >= 100 - 1e-9 : x.N100 + x.N50 + x.NMiss == 0) continue;
                 // Objects overlapping in time (2B maps) can't all be followed by one cursor - stable's Auto drops
                 // points there too - so those are tagged rather than counted.
                 var objs = Beatmap.Load(b.FilePath, mods: Mods.Autoplay | extra).Objects;
