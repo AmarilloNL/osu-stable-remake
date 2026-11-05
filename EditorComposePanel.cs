@@ -94,13 +94,22 @@ sealed partial class Editor
         return b.Start - prevEnd >= 200 && nextStart - b.End >= (int)Preempt && nextStart - prevEnd >= 5000;
     }
 
-    // stable's "Break" at each break's start on the timeline
+    // stable's breaks on the timeline: a grey band through its middle from the object before to the one after (the
+    // break itself red when under 50ms), "Break" at its start
     void DrawBreakLabels(Rectangle r, float u)
     {
+        float cy = r.Y + r.Height / 2 + 3 * u, thick = Math.Max(1, r.Height / 8 - 1);
+        var grey = new Color(100, 100, 100, 150);
         foreach (var b in info.Breaks)
         {
-            float x = TimelineX(b.Start);
-            if (x >= r.X - 60 * u && x <= r.X + r.Width) Game.Text("Break", x + 5 * u, r.Y + 12 * u, 14 * u, Color.White);
+            int next = objs.FindIndex(o => o.Time >= b.Start);
+            double before = next > 0 ? objs[next - 1].End : b.Start, after = next >= 0 ? objs[next].Time : b.End + Preempt;
+            float x0 = TimelineX(before), x1 = TimelineX(b.Start), x2 = TimelineX(b.End), x3 = TimelineX(after);
+            if (x3 < r.X || x0 > r.X + r.Width) continue;
+            DrawLineEx(new(x0, cy), new(x1, cy), thick, grey);
+            DrawLineEx(new(x1, cy), new(x2, cy), thick, b.End - b.Start < 50 ? new Color(255, 0, 0, 150) : new Color(100, 100, 100, 100));
+            DrawLineEx(new(x2, cy), new(x3, cy), thick, grey);
+            if (x1 >= r.X - 60 * u && x1 <= r.X + r.Width) Game.Text("Break", x1 + 5 * u, r.Y + 12 * u, 14 * u, Color.White);
         }
     }
 
