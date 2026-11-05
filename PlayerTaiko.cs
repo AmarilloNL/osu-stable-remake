@@ -247,7 +247,7 @@ sealed partial class Player
                     n.LastSwellRim = rim ? 1 : 0;
                     n.Hits++;
                     score += 300;
-                    if (n.Hits >= n.HitsNeeded) TaikoJudge(n, 300, at);
+                    if (n.Hits >= n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; }
                     return;
                 case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
                     if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
@@ -285,6 +285,7 @@ sealed partial class Player
         n.Result = result;
         n.JudgedAt = at;
         tLastJudge = (result, false, Game.NowMs);
+        tFailing = result == 0;
         Count(result);
         if (result > 0 && n.Kind is TKind.Don or TKind.Kat)
             tFlying.Add(new TFly { X = TaikoHitX, Y = TaikoLaneY, Scale = n.Big ? 1 : 0.65f, Vy = 169, Colour = n.Kind == TKind.Don ? new Color(235, 69, 44, 255) : new Color(67, 142, 172, 255), Big = n.Big });
@@ -318,12 +319,16 @@ sealed partial class Player
         var tint = ColorAlpha(Color.White, playfieldAlpha);
         float laneY = TaikoLaneY * u, hitX = TaikoHitX * u;
 
+        UpdateComboBursts();
+        DrawFlowers(u, sd);
+
         // the bar: a black backing, the stretched right part (its glow in kiai), then the drum on the left
         DrawRectangle(0, (int)(143 * u), w, (int)(109 * u), ColorAlpha(Color.Black, playfieldAlpha));
         bool kiai = map.PointAt(time).Kiai;
         foreach (var name in kiai ? new[] { "taiko-bar-right", "taiko-bar-right-glow" } : ["taiko-bar-right"])
             if (skin.Tex(name) is { } bar)
                 DrawTexturePro(bar.Tex, new Rectangle(0, 0, bar.Tex.Width, bar.Tex.Height), new Rectangle(0, 135 * u, w, bar.Height * sd), Vector2.Zero, 0, tint);
+        DrawMascot(kiai, u, sd, tint);
 
         // the hit target: approach ring and a faint big circle (and the kiai glow)
         if (kiai) skin.Tex("taiko-glow")?.Draw(new(hitX, laneY), 0.7f * sd, ColorAlpha(new Color(255, 228, 0, 255), playfieldAlpha));
@@ -448,6 +453,57 @@ sealed partial class Player
             float cx = 56 * u - Game.TextWidth(c, size) / 2;
             Game.TextBold(c, cx + 2 * u / 2.25f, laneY - size / 2 + 2 * u / 2.25f, size, ColorAlpha(Color.Black, 0.6f * playfieldAlpha)); // (a shadow: the drum is pale)
             Game.TextBold(c, cx, laneY - size / 2, size, tint);
+        }
+    }
+
+    // stable's mascot on the bar's top left (bottom-left at 0,160, at 0.6): pippidonidle, pippidonkiai in kiai time or
+    // pippidonfail after a miss (until a hit, or kiai starting or ending), a frame a beat; pippidonclear once (frames
+    // 0-6, 5, 6, 5-0 at 100ms) on a swell cleared, at the combo milestones and at the end
+    bool tFailing, tKiaiWas, tEndCleared;
+    double tClearAt = double.NegativeInfinity;
+    static readonly int[] TClearFrames = [0, 1, 2, 3, 4, 5, 6, 5, 6, 5, 4, 3, 2, 1, 0];
+
+    void DrawMascot(bool kiai, float u, float sd, Color tint)
+    {
+        if (kiai != tKiaiWas) { tKiaiWas = kiai; tFailing = false; }
+        if (finished && !tEndCleared) { tEndCleared = true; tClearAt = Game.NowMs; }
+        Sprite? frame = null;
+        double sinceClear = Game.NowMs - tClearAt;
+        if (sinceClear < TClearFrames.Length * 100 && skin.Animation("pippidonclear", false) is { Length: > 0 } clear)
+            frame = clear[Math.Min(clear.Length - 1, TClearFrames[(int)(sinceClear / 100)])];
+        else if (skin.Animation(tFailing ? "pippidonfail" : kiai ? "pippidonkiai" : "pippidonidle", false) is { Length: > 0 } loop)
+        {
+            var red = map.UninheritedAt(time);
+            long beat = (long)Math.Floor((time - red.Time) / Math.Max(1, red.BeatLength));
+            frame = loop[(int)(((beat % loop.Length) + loop.Length) % loop.Length)];
+        }
+        if (frame is { } f)
+            DrawTexturePro(f.Tex, new Rectangle(0, 0, f.Tex.Width, f.Tex.Height), new Rectangle(0, 160 * u - f.Height * 0.6f * sd, f.Width * 0.6f * sd, f.Height * 0.6f * sd), Vector2.Zero, 0, tint);
+    }
+
+    // a combo milestone: the mascot's cheer and (Combo bursts on) the skin's next taiko-flower-group frame popping up
+    // above the drum (bottom-centre 54,141): scaling 0.6 to 1 over 800ms (Out), in over 200ms, out from 1600 to 1900ms
+    readonly List<(Sprite Tex, double At)> tFlowers = [];
+    int tFlowerNext;
+
+    void TaikoBurst()
+    {
+        tClearAt = Game.NowMs;
+        if (!Config.GetBool("ComboBurst", false) || skin.Animation("taiko-flower-group", true) is not { Length: > 0 } frames) return;
+        if (skin.ComboBurstRandom) tFlowerNext = Random.Shared.Next(frames.Length);
+        tFlowers.Add((frames[tFlowerNext % frames.Length], Game.NowMs));
+        tFlowerNext = (tFlowerNext + 1) % frames.Length;
+    }
+
+    void DrawFlowers(float u, float sd)
+    {
+        tFlowers.RemoveAll(f => Game.NowMs - f.At > 1900);
+        foreach (var (tex, at) in tFlowers)
+        {
+            double age = Game.NowMs - at;
+            float s = (0.6f + 0.4f * (float)Easing.Apply(1, Math.Min(1, age / 800))) * sd;
+            float a = Math.Min(1, (float)(age / 200)) * (1 - (float)Easing.Apply(2, Math.Clamp((age - 1600) / 300, 0, 1)));
+            DrawTexturePro(tex.Tex, new Rectangle(0, 0, tex.Tex.Width, tex.Tex.Height), new Rectangle(54 * u - tex.Width * s / 2, 141 * u - tex.Height * s, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, a * playfieldAlpha));
         }
     }
 

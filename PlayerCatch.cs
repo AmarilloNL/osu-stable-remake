@@ -303,6 +303,8 @@ sealed partial class Player
 
     void CatchDraw(int w, int h)
     {
+        UpdateComboBursts();
+        DrawComboBursts(w, h);
         float s = h / 480f;
         var o = new Vector2((w - 512 * s) / 2, 72 * s);
         Vector2 Screen(float x, float y) => o + new Vector2(x, y) * s;
