@@ -43,7 +43,8 @@ sealed partial class Editor
     SbSprite? sbSel, sbHover;
     string sbTool = "M";
     readonly bool[] sbShow = [true, true, true, true, true];
-    bool sbLanesAlt, sbLibrary;
+    bool sbLanesAlt, sbLibrary, sbHitObjects;
+    (string Type, double Offset)? sbLaneDrag;
     Storyboard? sbView;
     bool sbDirty = true;
     double sbBuiltAt = double.NegativeInfinity;
@@ -367,6 +368,7 @@ sealed partial class Editor
         }
 
         // the panel
+        if (click && CheckCollisionPointRec(mouse, SbRow(2, 170))) { sbHitObjects = !sbHitObjects; return; }
         for (int i = 0; i < SbLayerRows.Length; i++)
             if (click && CheckCollisionPointRec(mouse, SbRow(2, SbLayerRows[i].Y))) { sbShow[i] = !sbShow[i]; if (sbView != null) Array.Copy(sbShow, sbView.ShowLayer, 5); return; }
         foreach (var (_, tool, y) in SbToolRows)
@@ -390,6 +392,37 @@ sealed partial class Editor
         if (click && mouse.X < 160 * u && mouse.Y > 66 * u && mouse.Y < 462 * u) return; // (the panel's own space)
         // the lanes' toggle (the arrows before them)
         if (click && CheckCollisionPointRec(mouse, new Rectangle(TimelineRect().X - 20 * u, 64 * u, 20 * u, 12 * u))) { sbLanesAlt = !sbLanesAlt; return; }
+
+        // a lane of the timeline dragged: the picked sprite's transformations of that kind moved in time (snapped to the
+        // beat unless Shift is held), as long as they all stay inside the song
+        var tl = TimelineRect();
+        if (sbLaneDrag is { } ld)
+        {
+            if (!Input.IsMouseButtonDown(MouseButton.Left) || sbSel is not { Editable: true } ls) { sbLaneDrag = null; return; }
+            var ofType = ls.Cmds.Where(c => c.Type == ld.Type).ToList();
+            if (ofType.Count == 0) { sbLaneDrag = null; return; }
+            double want = TimeAtX(mouse.X) - ld.Offset;
+            int delta = (int)Math.Round(Input.ShiftHeld ? want : Snap(want)) - ofType.Min(c => c.Start);
+            if (delta != 0 && ofType.All(c => c.Start + delta >= 0 && c.Start + delta < length))
+            {
+                foreach (var c in ofType) { c.Start += delta; c.End += delta; c.Raw = null; }
+                SbWrite(ls);
+            }
+            return;
+        }
+        if (click && CheckCollisionPointRec(mouse, tl) && sbSel is { Editable: true } lsel)
+        {
+            string[] lanes = sbLanesAlt ? ["S", "F", "R", "C"] : ["M", "S", "F", "R"];
+            string type = lanes[Math.Clamp((int)((mouse.Y - tl.Y) / (tl.Height / 4)), 0, 3)];
+            double at = TimeAtX(mouse.X);
+            var hitCmd = lsel.Cmds.FirstOrDefault(c => c.Type == type && TimelineX(c.Start) - 3 * u <= mouse.X && mouse.X <= Math.Max(TimelineX(c.End), TimelineX(c.Start) + 3 * u) + 3 * u);
+            if (hitCmd != null)
+            {
+                undo.Add(Snapshot()); redo.Clear();
+                sbLaneDrag = (type, at - lsel.Cmds.Where(c => c.Type == type).Min(c => c.Start));
+            }
+            return;
+        }
 
         // picking and dragging
         var sbMouse = SbFromScreen(mouse);
@@ -491,6 +524,7 @@ sealed partial class Editor
     {
         int w = Game.W, h = Game.H;
         sbView?.Draw(time, w, h, 1, overlay: false);
+        if (sbHitObjects && mode != 3) { fieldAsPlay = true; DrawPlayfield(u, objectsOnly: true); fieldAsPlay = false; }
         sbView?.Draw(time, w, h, 1, overlay: true);
         var mouse = Input.GetMousePosition();
         // the picked and the hovered sprite
@@ -522,7 +556,7 @@ sealed partial class Editor
         }
         Header("Layer Toggles", 80);
         for (int i = 0; i < SbLayerRows.Length; i++) Check(SbLayerRows[i].Label, SbLayerRows[i].Y, sbShow[i]);
-        Check("Hit Objects", 170, false, enabled: false);
+        Check("Hit Objects", 170, sbHitObjects, mode != 3);
         Header("Transformation", 200);
         foreach (var (label, tool, y) in SbToolRows) Check(label, y, sbTool == tool);
         Check("Colour", 275, false, enabled: false);

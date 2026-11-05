@@ -97,8 +97,9 @@ sealed partial class Editor : Screen
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static float U => Game.H / 480f;
     static KeyboardKey Bound(string key, KeyboardKey def) => Config.Key(key, def); // stable's editor bindings (Options)
-    float FieldScale => 0.9f * U;
-    Vector2 FieldOrigin => new((Game.W - 512 * FieldScale) / 2, 78 * U);
+    float FieldScale => fieldAsPlay ? U : 0.9f * U;
+    Vector2 FieldOrigin => fieldAsPlay ? new((Game.W - 512 * U) / 2, (Game.H - 384 * U) / 2 + 8 * U) : new((Game.W - 512 * FieldScale) / 2, 78 * U);
+    bool fieldAsPlay; // (Design's Hit Objects: the playfield where play has it, over the storyboard)
     Vector2 ToScreen(double x, double y) => FieldOrigin + new Vector2((float)x, (float)y) * FieldScale;
     Vector2 ToField(Vector2 s) => (s - FieldOrigin) / FieldScale;
 
@@ -2024,14 +2025,14 @@ sealed partial class Editor : Screen
         DrawToolbox(u);
     }
 
-    void DrawPlayfield(float u)
+    void DrawPlayfield(float u, bool objectsOnly = false)
     {
         var o0 = FieldOrigin;
         float fs = FieldScale;
-        DrawRectangleLinesEx(new Rectangle(o0.X, o0.Y, 512 * fs, 384 * fs), 1, ColorAlpha(Color.White, 0.3f));
-        if (gridSnap)
+        if (!objectsOnly) DrawRectangleLinesEx(new Rectangle(o0.X, o0.Y, 512 * fs, 384 * fs), 1, ColorAlpha(Color.White, 0.3f));
+        if (gridSnap && !objectsOnly)
             for (int gx = 0; gx <= 512; gx += gridSize) DrawLineV(ToScreen(gx, 0), ToScreen(gx, 384), ColorAlpha(Color.White, gx == 256 ? 0.25f : 0.08f));
-        if (gridSnap)
+        if (gridSnap && !objectsOnly)
             for (int gy = 0; gy <= 384; gy += gridSize) DrawLineV(ToScreen(0, gy), ToScreen(512, gy), ColorAlpha(Color.White, gy == 192 ? 0.25f : 0.08f));
 
         var colours = Colours;
