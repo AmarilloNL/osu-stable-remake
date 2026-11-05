@@ -761,7 +761,7 @@ sealed partial class Editor : Screen
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
                 breakDragFit = true;
             }
-            else { scrubFrom = mouse.X; scrubTime = time; }
+            else if (!PickBreakEdge(mouse.X)) { scrubFrom = mouse.X; scrubTime = time; }
             return;
         }
         if (endDrag is { } ed)
@@ -786,6 +786,11 @@ sealed partial class Editor : Screen
                 }
             }
             else { timeDrag = null; Rebuild(); }
+            return;
+        }
+        if (breakDrag != null)
+        {
+            if (!held) DropBreakEdge(mouse.X);
             return;
         }
         if (!double.IsNaN(scrubFrom))
