@@ -27,6 +27,10 @@ sealed partial class Player
     int mKeys;
     KeyboardKey[] mBind = [];
     bool[] mDown = [];
+    // stable's lighting: every judgement that isn't a miss bursts the column's lightingN once at the hit position
+    // (in over 80ms, out from 80 to 200ms); a hold being held loops lightingL there (in over 80ms, out over 120ms)
+    double[] mLitAt = [], mHoldOnAt = [], mHoldOffAt = [];
+    bool[] mHoldLit = [];
     double[] mAutoRelease = [];
     double mW300g, mW300, mW200, mW100, mW50, mWMiss;
     double mBonus = 100, mScore; // ScoreV1's bonus meter and the running score
@@ -80,6 +84,9 @@ sealed partial class Player
         mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map), 1, 10);
         mBind = ManiaKeys(mKeys);
         mDown = new bool[mKeys];
+        mLitAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();
+        mHoldOnAt = [.. mLitAt]; mHoldOffAt = [.. mLitAt];
+        mHoldLit = new bool[mKeys];
         mAutoRelease = Enumerable.Repeat(double.MinValue, mKeys).ToArray();
         mColumns = Enumerable.Range(0, mKeys).Select(_ => new List<MNote>()).ToArray();
         mNext = new int[mKeys];
@@ -266,6 +273,7 @@ sealed partial class Player
         n.Result = result;
         mJudged++;
         mLastJudge = (result, Game.NowMs);
+        if (result > 0) mLitAt[n.Column] = Game.NowMs;
         if (result == 0) mJudgeTilt = (float)(Random.Shared.NextDouble() * 0.2 - 0.1);
         double hp = map.RawHP;
         switch (result)
@@ -308,6 +316,8 @@ sealed partial class Player
         public float Start = 136, HitY = 402, ScoreY = 325, ComboY = 111;
         public float[] X = [], W = [];
         public string[] Note = [], NoteH = [], NoteL = [], NoteT = [], Key = [], KeyD = [];
+        public string LightingN = "lightingN", LightingL = "lightingL";
+        public float[] LightingNW = [], LightingLW = []; // (0: the column's width)
         public Color?[] Colour = [];
         public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
         public readonly Dictionary<int, string> Hit = new() { [320] = "mania-hit300g", [300] = "mania-hit300", [200] = "mania-hit200", [100] = "mania-hit100", [50] = "mania-hit50", [0] = "mania-hit0" };
@@ -348,6 +358,10 @@ sealed partial class Player
         look.StageRight = M("StageRight") ?? look.StageRight;
         look.StageHint = M("StageHint") ?? look.StageHint;
         look.StageLight = M("StageLight") ?? look.StageLight;
+        look.LightingN = M("LightingN") ?? look.LightingN;
+        look.LightingL = M("LightingL") ?? look.LightingL;
+        look.LightingNW = List("LightingNWidth", mKeys, 0);
+        look.LightingLW = List("LightingLWidth", mKeys, 0);
         foreach (var (key, result) in new[] { ("Hit300g", 320), ("Hit300", 300), ("Hit200", 200), ("Hit100", 100), ("Hit50", 50), ("Hit0", 0) })
             if (M(key) is { } img) look.Hit[result] = img;
         return look;
@@ -409,6 +423,8 @@ sealed partial class Player
                 DrawTexturePro(light.Tex, new Rectangle(0, 0, light.Tex.Width, light.Tex.Height), new Rectangle(x, hitY * u - light.Height * sd * 1.6f, cw, light.Height * sd * 1.6f), Vector2.Zero, 0, ColorAlpha(Color.White, 0.6f * alpha));
         }
 
+        DrawManiaLighting(look, left, u, sd, alpha);
+
         // stable's Hidden: black up from the hit position, taller with combo (160 + combo / 2 sprite px, at most 400, giving
         // back 2 a frame after a break), under the skin's stage-hidden fade; it fades in over 37 frames
         // (Fade In: the same cover down from the top, the fade under it turned over)
@@ -455,6 +471,37 @@ sealed partial class Player
             float size = 32 * u * (Game.NowMs - mComboAt < 80 ? 1.15f : 1);
             Game.TextBold(text, left + stageW * u / 2 - Game.TextWidth(text, size) / 2, look.ComboY * u, size, tint);
         }
+    }
+
+    void DrawManiaLighting(ManiaLook look, float left, float u, float sd, float alpha)
+    {
+        double now = Game.NowMs;
+        var burst = skin.Animation(look.LightingN, true);
+        var held = skin.Animation(look.LightingL, true) is { Length: > 0 } l ? l : burst;
+        BeginBlendMode(BlendMode.Additive);
+        for (int c = 0; c < mKeys; c++)
+        {
+            var centre = new Vector2(left + (look.X[c] + look.W[c] / 2) * u, look.HitY * u);
+            // (skins older than 2.5 keep the sprites' own size)
+            float Scale(float[] widths) => (skin.Version < 2.5 ? 1 : (widths[c] > 0 ? widths[c] : look.W[c]) / 30) * sd;
+            double age = now - mLitAt[c];
+            if (burst.Length > 0 && age < 200)
+            {
+                double delay = Math.Max(170.0 / burst.Length, 16.666666666666668);
+                float a = age < 80 ? (float)(age / 80) : 1 - (float)((age - 80) / 120);
+                burst[Math.Min(burst.Length - 1, (int)(age / delay))].Draw(centre, Scale(look.LightingNW), ColorAlpha(Color.White, a * alpha));
+            }
+            // the held hold's light: on from its press, off from its release or judgement
+            bool on = mNext[c] < mColumns[c].Count && mColumns[c][mNext[c]] is { Hold: true, Holding: true, Done: false };
+            if (on != mHoldLit[c]) { mHoldLit[c] = on; if (on) mHoldOnAt[c] = now; else mHoldOffAt[c] = now; }
+            float ha = on ? Math.Min(1, (float)((now - mHoldOnAt[c]) / 80)) : 1 - (float)Math.Min(1, (now - mHoldOffAt[c]) / 120);
+            if (held.Length > 0 && ha > 0)
+            {
+                double delay = Math.Max(170.0 / held.Length, 16.666666666666668);
+                held[(int)((now - mHoldOnAt[c]) / delay) % held.Length].Draw(centre, Scale(look.LightingLW), ColorAlpha(Color.White, ha * alpha));
+            }
+        }
+        EndBlendMode();
     }
 
     void ManiaNote(Sprite? s, float x, float bottomY, float cw, Color tint, bool flipY = false)
