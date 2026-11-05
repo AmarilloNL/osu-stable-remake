@@ -22,6 +22,7 @@ sealed partial class Editor
         public double[] From = [], To = [];
         public string? Raw; // the line as written, while it's unchanged
         public bool Span; // a loop's line: Start..End is when it runs (its iterations, like the game plays them)
+        public List<SbCmd>? Chain; // one of the transformations a line with a chain of values makes (in order)
     }
     sealed class SbSprite
     {
@@ -189,8 +190,10 @@ sealed partial class Editor
                     if (depth == 1 && f[0] == "L" && f.Length > 2) { loop = cmd; loopAt = Num(f[1], 0); loopCount = Math.Max(1, (int)Num(f[2], 1)); first = double.MaxValue; last = double.MinValue; }
                     else if (depth > 1 && loop != null && f.Length > 3 && Num(f[2], double.NaN) is var s && !double.IsNaN(s))
                     {
+                        double e = Num(f[3], s);
+                        int arity = Dims(f[0]) is > 0 and var dn ? dn : 1, steps = f[0] == "P" ? 1 : Math.Max(1, (f.Length - 4) / arity - 1);
                         first = Math.Min(first, s);
-                        last = Math.Max(last, Math.Max(s, Num(f[3], s)));
+                        last = Math.Max(last, e + (steps - 1) * (e - s)); // (a chain of values: one step after another)
                     }
                     continue;
                 }
@@ -204,7 +207,20 @@ sealed partial class Editor
                     var v = f[4..].Select(x => double.Parse(x, CultureInfo.InvariantCulture)).ToArray();
                     if (v.Length == n) { cmd.From = v; cmd.To = [.. v]; }
                     else if (v.Length == 2 * n) { cmd.From = v[..n]; cmd.To = v[n..]; }
-                    else cur.Editable = false; // (a chain of values)
+                    else if (v.Length % n == 0)
+                    {
+                        // a chain of values: a transformation for each pair, as long as the first and one after
+                        // another (like the game reads it); the line is written back as it was while none changes
+                        int d = cmd.End - cmd.Start;
+                        cmd.From = v[..n]; cmd.To = v[n..(2 * n)]; cmd.Chain = [cmd];
+                        for (int k = 1; k < v.Length / n - 1; k++)
+                        {
+                            var next = new SbCmd { Type = cmd.Type, Easing = cmd.Easing, Start = cmd.Start + k * d, End = cmd.End + k * d, From = v[(k * n)..((k + 1) * n)], To = v[((k + 1) * n)..((k + 2) * n)], Raw = raw, Chain = cmd.Chain };
+                            cmd.Chain.Add(next);
+                            cur.Cmds.Add(next);
+                        }
+                    }
+                    else cur.Editable = false; // (values that don't pair up)
                 }
                 catch (Exception e) when (e is FormatException or IndexOutOfRangeException or OverflowException) { cur.Editable = false; }
                 continue;
@@ -226,8 +242,13 @@ sealed partial class Editor
     {
         var lines = new List<string> { sp.RawHead ?? string.Join(',', sp.Head) };
         foreach (var c in sp.Cmds.Where(c => c.Type.Length > 0 && Dims(c.Type) > 0).OrderBy(c => c.Start).Concat(sp.Cmds.Where(c => c.Type.Length == 0 || Dims(c.Type) == 0)))
-            lines.Add(c.Raw ?? $" {c.Type},{c.Easing},{c.Start},{(c.End == c.Start ? "" : c.End.ToString(CultureInfo.InvariantCulture))},"
+        {
+            // (a chain's line once, while all of it is there unchanged; else each of its transformations on its own)
+            bool whole = c.Chain is { } ch && ch.All(x => x.Raw != null && sp.Cmds.Contains(x));
+            if (whole && c != c.Chain![0]) continue;
+            lines.Add((c.Chain == null || whole ? c.Raw : null) ?? $" {c.Type},{c.Easing},{c.Start},{(c.End == c.Start ? "" : c.End.ToString(CultureInfo.InvariantCulture))},"
                 + string.Join(',', (c.From.SequenceEqual(c.To) ? c.From : c.From.Concat(c.To)).Select(SbNum)));
+        }
         return lines;
     }
 

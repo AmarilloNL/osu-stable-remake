@@ -95,6 +95,7 @@ sealed partial class Editor
         ev.RemoveAll(l => BreakTimes(l) != null);
         if (at < 0) at = ev.FindIndex(l => l.Trim() == "//Break Periods") is >= 0 and var c ? c + 1 : ev.Count;
         ev.InsertRange(at, list.OrderBy(b => b.Start).Select(b => b.Raw != null && BreakTimes(b.Raw) == (b.Start, b.End) ? b.Raw : $"2,{b.Start},{b.End}"));
+        sbParsed = null; // (the storyboard's lines may have moved)
     }
 
     // a break stable leaves alone: 650ms or longer, 200ms after the object before and a preempt before the next, with
@@ -119,6 +120,7 @@ sealed partial class Editor
         if (t.Count > 1)
         {
             list.RemoveAll(b => !Fit(b, t, pre, drag ? 50 : 1200));
+            list = [.. list.OrderBy(b => b.Start).DistinctBy(b => (b.Start, b.End))]; // (two fitted into one place: written once)
             if (!drag)
             {
                 list.RemoveAll(b => !BreakFits(b, t, 1200));
@@ -183,6 +185,8 @@ sealed partial class Editor
     // the breaks' own edges as they stand (after an undo)
     void NoteBreaks()
     {
+        breakDragFit = false;
+        breakDrag = null;
         var t = ObjTimes();
         int pre = (int)Preempt;
         breakFlags = [];
@@ -191,7 +195,7 @@ sealed partial class Editor
     }
 
     // ---- a break's edge dragged on the timeline (stable's: grabbed within a few px inside the break, moved when let go)
-    (EBreak B, bool End, int Limit)? breakDrag;
+    (EBreak B, bool End, int Limit, float FromX)? breakDrag;
 
     bool PickBreakEdge(float mx)
     {
@@ -206,14 +210,15 @@ sealed partial class Editor
         var times = ObjTimes();
         int i = times.Index(b.Length / 2 + b.Start, out _);
         int limit = end ? (i < times.Count ? times.St[i] - 5000 : int.MinValue) : (i > 0 ? times.En[i - 1] + 5000 : int.MaxValue);
-        breakDrag = (b, end, limit);
+        breakDrag = (b, end, limit, mx);
         return true;
     }
 
     void DropBreakEdge(float mx)
     {
-        if (breakDrag is not var (b, isEnd, limit)) return;
+        if (breakDrag is not var (b, isEnd, limit, fromX)) return;
         breakDrag = null;
+        if (Math.Abs(mx - fromX) < 2) return; // (a click, not a drag)
         int t = (int)Snap(TimeAtX(mx)), pre = (int)Preempt, s = b.Start, e = b.End;
         var times = ObjTimes();
         bool around = times.Around(b, out int prev, out int next);
@@ -244,7 +249,11 @@ sealed partial class Editor
     void KeepBreaksAfterDrag()
     {
         bool down = Input.IsMouseButtonDown(MouseButton.Left) || Input.IsMouseButtonDown(MouseButton.Right);
-        if (!down && !mouseWasDown && ObjSig() != breakSig && KeepBreaks()) info = ReloadInfo();
+        if (!down && !mouseWasDown && xform == null && poly == null) // (not while a transform is previewed: a cancel puts it back)
+        {
+            if (ObjSig() != breakSig) { if (KeepBreaks()) info = ReloadInfo(); }
+            else breakDragFit = false; // (a press that changed nothing)
+        }
         mouseWasDown = down;
     }
 
@@ -285,7 +294,7 @@ sealed partial class Editor
             double before = next > 0 ? objs[next - 1].End : b.Start, after = next >= 0 ? objs[next].Time : b.End + Preempt;
             float x0 = TimelineX(before), x1 = TimelineX(b.Start), x2 = TimelineX(b.End), x3 = TimelineX(after);
             if (x3 < r.X || x0 > r.X + r.Width) continue;
-            if (breakDrag is var (db, _, _) && db.Start == (int)b.Start && db.End == (int)b.End) // (where the dragged edge would go)
+            if (breakDrag is var (db, _, _, _) && db.Start == (int)b.Start && db.End == (int)b.End) // (where the dragged edge would go)
                 DrawRectangle((int)TimelineX(Snap(TimeAtX(Input.GetMousePosition().X))) - 1, (int)r.Y, 2, (int)r.Height, Color.White);
             DrawLineEx(new(x0, cy), new(x1, cy), thick, grey);
             DrawLineEx(new(x1, cy), new(x2, cy), thick, b.End - b.Start < 50 ? new Color(255, 0, 0, 150) : new Color(100, 100, 100, 100));

@@ -431,6 +431,7 @@ sealed partial class Editor : Screen
         if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
         if (xform != null) { UpdateXform(mouse); return; }
         if (prompt != null) { UpdatePrompt(mouse); return; }
+        if (bmsWindow != null) { UpdateBmsImport(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(mouse)) return;
         // (the AiMod and Sample import windows: the editor below keeps its keys while they have the mouse)
@@ -836,15 +837,20 @@ sealed partial class Editor : Screen
                     });
                 break;
             case 2:
-                // the slider: a click for the head, one for each point; a right click (or a click on the last point) ends it
+                // the slider: a click for the head, one for each point (twice on one spot: a red point, where one curve
+                // ends and the next begins); a right click ends it at the cursor
                 if (click && inField)
                 {
                     var p = sliderDraft == null ? PlaceAt(fieldPos, Snap(time)) : GridSnap(fieldPos);
                     if (sliderDraft == null) { sliderDraft = [p]; sliderDraftTime = Snap(time); }
-                    else if (Vector2.Distance(p, sliderDraft[^1]) < 4) FinishSlider();
                     else sliderDraft.Add(p);
                 }
-                if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft != null) FinishSlider();
+                if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft != null)
+                {
+                    // (stable's: the slider ends where it's drawn to, at the cursor)
+                    if (GridSnap(fieldPos) is var end && end != sliderDraft[^1]) sliderDraft.Add(end);
+                    FinishSlider();
+                }
                 break;
             case 3:
                 if (click && inField)
@@ -1201,7 +1207,7 @@ sealed partial class Editor : Screen
         SetKv("Metadata", "Version", name);
         if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
         undo.Clear(); redo.Clear();
-        prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); Save(); }, "Yes", "No", Save);
+        prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); KeepBreaks(); Save(); }, "Yes", "No", Save);
     });
 
     void UpdatePrompt(Vector2 mouse)
@@ -1327,8 +1333,10 @@ sealed partial class Editor : Screen
         mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
         undo.Clear(); redo.Clear(); selected.Clear();
         modified = false;
-        info = ReloadInfo();
         Rebuild();
+        breakFlags = []; breakDragFit = false; breakDrag = null;
+        KeepBreaks(); // (as when it's opened)
+        info = ReloadInfo();
     }
     // the latest timing point at or before now
     void DeleteTimingHere()
@@ -1371,7 +1379,7 @@ sealed partial class Editor : Screen
         0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
             new("Open Difficulty...", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), Sep,
             new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod", "Ctrl+Shift+A", OpenAiMod), Sep,
-            new("Upload Beatmap..."), new("Extract Map Package", "", () => Notification.Show("Your beatmap is already extracted!", 3000)), new("Export Package", "", ExportPackage), new("Import from..."), Sep,
+            new("Upload Beatmap..."), new("Extract Map Package", "", () => Notification.Show("Your beatmap is already extracted!", 3000)), new("Export Package", "", ExportPackage), new("Import from...", Sub: [new("bms/bme", "", OpenBmsImport)]), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
             new("Open .osb in Notepad", "", Directory.EnumerateFiles(info.Folder, "*.osb").FirstOrDefault() is { } osb ? () => System.Diagnostics.Process.Start("notepad.exe", osb) : null), Sep,
@@ -1562,7 +1570,7 @@ sealed partial class Editor : Screen
     {
         var pts = sliderDraft!;
         sliderDraft = null;
-        if (pts.Count < 2) return;
+        if (pts.Count < 2 || pts.All(p => p == pts[0])) return; // (no length to it)
         Change(() =>
         {
             var o = new EObj { X = pts[0].X, Y = pts[0].Y, Time = sliderDraftTime, Type = 2 | (newComboNext ? 4 : 0), HitSound = soundNext, Anchors = pts.Skip(1).ToList() };
@@ -1611,6 +1619,14 @@ sealed partial class Editor : Screen
         }
         if (click && inField && PointAt(fieldPos) is { } pt)
         {
+            var a = pt.Slider.Anchors;
+            Vector2 before = pt.Index == 0 ? new((float)pt.Slider.X, (float)pt.Slider.Y) : a[pt.Index - 1];
+            // (Ctrl: an inner point not already red is doubled, making it red - stable's)
+            if (Input.CtrlHeld && pt.Index < a.Count - 1 && a[pt.Index] != before && a[pt.Index] != a[pt.Index + 1])
+            {
+                Change(() => { a.Insert(pt.Index, a[pt.Index]); FitLength(pt.Slider, retype: true); });
+                return;
+            }
             undo.Add(Snapshot()); redo.Clear();
             pointDrag = pt;
             return;
@@ -1650,7 +1666,8 @@ sealed partial class Editor : Screen
             {
                 var delta = fieldPos - d.From;
                 var anchor = d.Start.First();
-                var snapped = GridSnap(new Vector2((float)anchor.Value.X, (float)anchor.Value.Y) + delta) - new Vector2((float)anchor.Value.X, (float)anchor.Value.Y);
+                var snapped = delta == Vector2.Zero ? Vector2.Zero // (a click that doesn't move leaves it where it is)
+                    : GridSnap(new Vector2((float)anchor.Value.X, (float)anchor.Value.Y) + delta) - new Vector2((float)anchor.Value.X, (float)anchor.Value.Y);
                 foreach (var (o, p0) in d.Start)
                 {
                     double nx = p0.X + snapped.X, ny = p0.Y + snapped.Y;
@@ -1911,6 +1928,7 @@ sealed partial class Editor : Screen
             return;
         }
         tab = t;
+        breakDrag = null;
     }
 
     // ---- drawing
@@ -1946,6 +1964,7 @@ sealed partial class Editor : Screen
         DrawBottomBar(u);
         if (aimod != null) DrawAiMod(u);
         if (sampleImport != null) DrawSampleImport();
+        if (bmsWindow != null) DrawBmsImport();
         DrawMenu(u);
         if (xform != null) DrawXform(u);
         if (prompt != null) DrawPrompt(u);
