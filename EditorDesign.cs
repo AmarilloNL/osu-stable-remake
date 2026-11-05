@@ -339,7 +339,9 @@ sealed partial class Editor
     Rectangle SbLibraryButton() { float u = U; return new Rectangle(Game.W - 70 * u, 372 * u, 66 * u, 40 * u); }
     Rectangle SbLibraryPanel() { float u = U; return new Rectangle(Game.W / 2f - 200 * u, 90 * u, 400 * u, 300 * u); }
 
-    void UpdateDesign(Vector2 mouse, float u)
+    // the storyboard as its lines stand (the Design view, Compose's background and AiMod's checks): parsed again after
+    // any change to them, rebuilt at most every 150ms while a sprite is being dragged
+    void SbRefresh()
     {
         var ev = EventsSection;
         if (!ReferenceEquals(ev, sbParsed) || ev.Lines.Count != sbParsedCount || !ReferenceEquals(osbLines, sbParsedOsb) || (osbLines?.Count ?? -1) != sbParsedOsbCount) SbParse();
@@ -351,6 +353,12 @@ sealed partial class Editor
             sbDirty = false;
             sbBuiltAt = Game.NowMs;
         }
+    }
+
+    void UpdateDesign(Vector2 mouse, float u)
+    {
+        var ev = EventsSection;
+        SbRefresh();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
 
         if (sbLibrary)

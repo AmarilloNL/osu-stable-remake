@@ -137,8 +137,8 @@ sealed partial class Editor
             if (v.Width > 1280 && v.Height > 720) items.Add(new(D, 1, "Your video's dimensions must not exceed 1280x720 for the 16:9 format."));
             else if (v.Width > 1024 && v.Height > 768) items.Add(new(D, 1, "Your video's dimensions must not exceed 1024x768 for the 4:3 format."));
         }
-        EnsureStoryboard();
-        if (storyboard is not { } sb) return;
+        SbRefresh();
+        if (sbView is not { } sb) return;
         if (Kv("General", "EpilepsyWarning") != "1" && sb.CountShorterThan(100) + info.Breaks.Count(x => x.End - x.Start < 100) > 5)
             items.Add(new(D, 1, "This map may need an epilepsy warning, as it contains frequently toggled storyboards."));
         bool skinSprites = Kv("General", "UseSkinSprites") == "1";

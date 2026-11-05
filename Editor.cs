@@ -382,7 +382,6 @@ sealed partial class Editor : Screen
         music = null;
         video?.Dispose();
         video = null;
-        storyboard?.Unload();
         sbView?.Unload();
         samples.Unload();
         Game.FadeTo(back);
@@ -1095,7 +1094,6 @@ sealed partial class Editor : Screen
         music = null;
         video?.Dispose();
         video = null;
-        storyboard?.Unload();
         sbView?.Unload();
         samples.Unload();
         Game.FadeTo(() => new Editor(file, back));
@@ -1901,14 +1899,12 @@ sealed partial class Editor : Screen
         if (f.Length > 4 && f[4].Length > 0) return f[4].LastIndexOf('.') > 0 ? f[4][..f[4].LastIndexOf('.')] : f[4];
         return string.Join('|', new[] { (2, "W"), (4, "F"), (8, "C") }.Where(s => (o.HitSound & s.Item1) != 0).Select(s => s.Item2));
     }
-    Storyboard? storyboard;
     Video? video;
+    // the map's video (the storyboard itself is the Design tab's view, as its lines stand)
     void EnsureStoryboard()
     {
         if (storyboardLoaded) return;
         storyboardLoaded = true;
-        try { storyboard = Storyboard.Load(info, textures: true); }
-        catch (IOException e) { Console.Error.WriteLine($"storyboard not loaded: {e.Message}"); }
         var videoPath = Path.Combine(info.Folder, info.VideoFile);
         if (info.VideoFile.Length > 0 && File.Exists(videoPath)) video = new Video(videoPath);
     }
@@ -1922,8 +1918,15 @@ sealed partial class Editor : Screen
             DrawRectangle(0, 0, w, h, Color.Black); // (it replaces the background, like in play)
             DrawTexturePro(vt, new Rectangle(0, 0, vt.Width, vt.Height), new Rectangle((w - vt.Width * s) / 2, (h - vt.Height * s) / 2, vt.Width * s, vt.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, alpha));
         }
-        storyboard?.Draw(time, w, h, alpha, overlay: false);
-        storyboard?.Draw(time, w, h, alpha, overlay: true);
+        SbRefresh();
+        if (sbView is not { } sv) return;
+        var layers = sv.ShowLayer;
+        sv.ShowLayer = [true, true, true, true, true]; // (all of it, the pass or fail layer as in play)
+        sv.BothStates = false;
+        sv.Draw(time, w, h, alpha, overlay: false);
+        sv.Draw(time, w, h, alpha, overlay: true);
+        sv.ShowLayer = layers;
+        sv.BothStates = true;
     }
 
     Texture2D? bg;
