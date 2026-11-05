@@ -33,7 +33,7 @@ static class ModInfo
 {
     public const Mods Supported = (Mods)0x7FFF | Mods.ScoreV2 | ManiaOnly; // NF..PF, Score V2 and mania's; other stable mods (TD, key coop...) are dropped
     public const Mods KeyMods = Mods.Key1 | Mods.Key2 | Mods.Key3 | Mods.Key4 | Mods.Key5 | Mods.Key6 | Mods.Key7 | Mods.Key8 | Mods.Key9;
-    public const Mods ManiaOnly = KeyMods | Mods.FadeIn | Mods.Random | Mods.Mirror;
+    public const Mods ManiaOnly = KeyMods | Mods.KeyCoop | Mods.FadeIn | Mods.Random | Mods.Mirror;
     // stable's key mod button: 4K .. 9K, then 1K .. 3K
     static readonly Mods[] KeyCycle = [Mods.Key4, Mods.Key5, Mods.Key6, Mods.Key7, Mods.Key8, Mods.Key9, Mods.Key1, Mods.Key2, Mods.Key3];
     public static int Keys(this Mods m) { int i = Array.FindIndex(KeyCycle, k => (m & k) != 0); return i < 0 ? 0 : i < 6 ? i + 4 : i - 5; }
@@ -110,7 +110,7 @@ static class ModInfo
         if (m.HasFlag(Mods.Relax)) parts.Add("RX"); else Add(Mods.Autopilot, "AP");
         if (m.HasFlag(Mods.Perfect)) parts.Add("PF"); else Add(Mods.SuddenDeath, "SD");
         Add(Mods.Flashlight, "FL");
-        Add(Mods.FadeIn, "FI"); Add(Mods.Random, "RD"); Add(Mods.Mirror, "MR");
+        Add(Mods.FadeIn, "FI"); Add(Mods.KeyCoop, "2P"); Add(Mods.Random, "RD"); Add(Mods.Mirror, "MR");
         if (m.Keys() is > 0 and var k) parts.Add($"{k}K");
         return parts.Count == 0 ? "No mods" : string.Join(" ", parts);
     }
@@ -132,6 +132,7 @@ static class ModInfo
         KeyboardKey.F when Mania => m.HasFlag(Mods.FadeIn) ? m & ~Mods.FadeIn | Mods.Hidden : m.HasFlag(Mods.Hidden) ? m & ~Mods.Hidden : m | Mods.FadeIn,
         KeyboardKey.Z when Mania => CycleKeys(m, 1),
         KeyboardKey.X when Mania => Flip(m, Mods.Random, Mods.None),
+        KeyboardKey.C when Mania => Flip(m, Mods.KeyCoop, Mods.None),
         KeyboardKey.Null => Mania ? Flip(m, Mods.Mirror, Mods.None) : m, // (Mirror has no key)
         KeyboardKey.X or KeyboardKey.C when SongSelect.PlayMode != 0 => m, // (taiko and catch have no Autopilot or Spun Out)
         KeyboardKey.F => Flip(m, Mods.Hidden, Mods.None),
@@ -182,7 +183,7 @@ static class ModInfo
                 "SD" => Mods.SuddenDeath, "PF" => Mods.SuddenDeath | Mods.Perfect, "DT" => Mods.DoubleTime,
                 "NC" => Mods.DoubleTime | Mods.Nightcore, "HD" => Mods.Hidden, "FL" => Mods.Flashlight,
                 "RX" => Mods.Relax, "AP" => Mods.Autopilot, "SO" => Mods.SpunOut, "AT" => Mods.Autoplay, "CN" => Mods.Autoplay | Mods.Cinema, "V2" => Mods.ScoreV2,
-                "FI" => Mods.FadeIn, "RD" => Mods.Random, "MR" => Mods.Mirror, "1K" => Mods.Key1, "2K" => Mods.Key2, "3K" => Mods.Key3, "4K" => Mods.Key4,
+                "FI" => Mods.FadeIn, "RD" => Mods.Random, "MR" => Mods.Mirror, "2P" => Mods.KeyCoop, "1K" => Mods.Key1, "2K" => Mods.Key2, "3K" => Mods.Key3, "4K" => Mods.Key4,
                 "5K" => Mods.Key5, "6K" => Mods.Key6, "7K" => Mods.Key7, "8K" => Mods.Key8, "9K" => Mods.Key9,
                 _ => Mods.None,
             };

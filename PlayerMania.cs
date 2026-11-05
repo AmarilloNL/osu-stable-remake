@@ -25,6 +25,7 @@ sealed partial class Player
     List<MNote>[] mColumns = [];
     int[] mNext = [];
     int mKeys;
+    bool mSplit; // two stages
     KeyboardKey[] mBind = [];
     bool[] mDown = [];
     // stable's lighting: every judgement that isn't a miss bursts the column's lightingN once at the hit position
@@ -50,27 +51,39 @@ sealed partial class Player
     // the scroll: distance (units) covered from the map's start up to each red / green point
     readonly List<(double Time, double Dist, double PerMs)> mScroll = [];
 
-    static readonly KeyboardKey[][] ManiaDefaultKeys =
-    [
-        [KeyboardKey.Space],
-        [KeyboardKey.F, KeyboardKey.J],
-        [KeyboardKey.F, KeyboardKey.Space, KeyboardKey.J],
-        [KeyboardKey.D, KeyboardKey.F, KeyboardKey.J, KeyboardKey.K],
-        [KeyboardKey.D, KeyboardKey.F, KeyboardKey.Space, KeyboardKey.J, KeyboardKey.K],
-        [KeyboardKey.S, KeyboardKey.D, KeyboardKey.F, KeyboardKey.J, KeyboardKey.K, KeyboardKey.L],
-        [KeyboardKey.S, KeyboardKey.D, KeyboardKey.F, KeyboardKey.Space, KeyboardKey.J, KeyboardKey.K, KeyboardKey.L],
-        [KeyboardKey.A, KeyboardKey.S, KeyboardKey.D, KeyboardKey.F, KeyboardKey.J, KeyboardKey.K, KeyboardKey.L, KeyboardKey.Semicolon],
-        [KeyboardKey.A, KeyboardKey.S, KeyboardKey.D, KeyboardKey.F, KeyboardKey.Space, KeyboardKey.J, KeyboardKey.K, KeyboardKey.L, KeyboardKey.Semicolon],
-        [KeyboardKey.Q, KeyboardKey.W, KeyboardKey.E, KeyboardKey.R, KeyboardKey.V, KeyboardKey.N, KeyboardKey.U, KeyboardKey.I, KeyboardKey.O, KeyboardKey.P],
-    ];
+    // stable's default keys: one 18-key row (A S D F Space J K L ; for the first stage, Q W E R RightAlt U I O P for the
+    // second); each stage takes its keys around its middle (Space, RightAlt), skipping that for an even count under 10
+    static readonly KeyboardKey[] DefaultKeyRow = [KeyboardKey.A, KeyboardKey.S, KeyboardKey.D, KeyboardKey.F, KeyboardKey.Space, KeyboardKey.J,
+        KeyboardKey.K, KeyboardKey.L, KeyboardKey.Semicolon, KeyboardKey.Q, KeyboardKey.W, KeyboardKey.E, KeyboardKey.R, KeyboardKey.RightAlt,
+        KeyboardKey.U, KeyboardKey.I, KeyboardKey.O, KeyboardKey.P];
+    static KeyboardKey[] DefaultKeys(int keys, bool split)
+    {
+        var result = new List<KeyboardKey>();
+        int[] stages = split && keys > 1 ? [(keys + 1) / 2, keys / 2] : [keys];
+        for (int s = 0; s < stages.Length; s++)
+        {
+            int n = stages[s], middle = s == 0 ? 4 : 13, at = Math.Max(0, middle - n / 2);
+            for (int i = 0; i < n; i++)
+            {
+                if (n % 2 == 0 && n < 10 && at is 4 or 13) at++;
+                result.Add(at < DefaultKeyRow.Length ? DefaultKeyRow[at++] : KeyboardKey.Null);
+            }
+        }
+        return [.. result];
+    }
+    // stable splits 10 keys and more (and any Key Coop play) into two stages, unless the skin says otherwise
+    internal static bool SplitStages(int keys, bool coop) =>
+        keys > 1 && (Game.Skin.Mania.TryGetValue(keys, out var cfg) && cfg.TryGetValue("SplitStages", out var ss) && ss.Trim().Length > 0 ? ss.Trim() == "1" : keys >= 10 || coop);
 
     // The player's keys for this key count, from stable's cfg: ManiaLayouts{n}K holds layouts split by ';' (each the
     // columns' key names, "None" for a column without one) and ManiaLayoutSelected{n}K picks one (-1 or none: stable's
     // default layout).
-    internal static KeyboardKey[] ManiaKeys(int keys)
+    internal static KeyboardKey[] ManiaKeys(int keys, bool? split = null)
     {
-        if (keys is < 1 or > 10) return new KeyboardKey[Math.Max(0, keys)]; // (no layout: the columns unbound)
-        var def = ManiaDefaultKeys[keys - 1];
+        if (keys is < 1 or > 18) return new KeyboardKey[Math.Max(0, keys)]; // (no layout: the columns unbound)
+        bool sp = split ?? SplitStages(keys, false);
+        var def = DefaultKeys(keys, sp);
+        if (sp && keys < 10) return def; // (Key Coop: stable's two-stage keys, not the one-stage layout)
         var layouts = Config.Get($"ManiaLayouts{keys}K", "").Split(';');
         int pick = Config.GetInt($"ManiaLayoutSelected{keys}K", -1);
         if (pick < 0 || pick >= layouts.Length || layouts[pick].Trim().Length == 0) return def;
@@ -93,8 +106,11 @@ sealed partial class Player
     {
         bool native = map.Mode == 3;
         // stable's key mods set an osu! map's key count
-        mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map), 1, 10);
-        mBind = ManiaKeys(mKeys);
+        // Key Coop: an osu! map's keys doubled, and two stages (one for each player)
+        bool coop = mods.HasFlag(Mods.KeyCoop);
+        mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : (mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map)) * (coop ? 2 : 1), 1, 18);
+        mSplit = SplitStages(mKeys, coop);
+        mBind = ManiaKeys(mKeys, mSplit);
         mDown = new bool[mKeys];
         mStartAt = Game.NowMs;
         mLitAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();
@@ -381,7 +397,7 @@ sealed partial class Player
         look.X = new float[mKeys];
         for (int c = 1; c < mKeys; c++) look.X[c] = look.X[c - 1] + look.W[c - 1] + spacing[c - 1];
         // two stages: the first has the (larger) half of the columns, the second starts StageSeparation after it
-        bool split = mKeys > 1 && (M("SplitStages") is { } ss ? ss.Trim() == "1" : mKeys >= 10);
+        bool split = mSplit;
         int half = split ? (mKeys + 1) / 2 : mKeys;
         float separation = Math.Max(5, F("StageSeparation", 40));
         for (int c = half; c < mKeys; c++) look.X[c] += separation;
@@ -653,9 +669,15 @@ sealed partial class Player
     }
 
     // stable's default column looks: from each edge 1, 2, 1, 2..., the middle of an odd count special
-    string ManiaColumnKind(int c) => ManiaColumnKind(c, mKeys);
-    internal static string ManiaColumnKind(int c, int keys)
+    string ManiaColumnKind(int c) => ManiaColumnKind(c, mKeys, mSplit);
+    // a column's kind (1, 2 or S, the middle one), stage by stage
+    internal static string ManiaColumnKind(int c, int keys, bool? split = null)
     {
+        if (split ?? SplitStages(keys, false))
+        {
+            int half = (keys + 1) / 2;
+            return c < half ? ManiaColumnKind(c, half, false) : ManiaColumnKind(c - half, keys - half, false);
+        }
         if (keys % 2 == 1 && c == keys / 2) return "S";
         return Math.Min(c, keys - 1 - c) % 2 == 0 ? "1" : "2";
     }

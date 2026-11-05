@@ -2287,7 +2287,7 @@ sealed partial class SongSelect : Screen
         (Mods.Hidden, "hidden"), (Mods.Flashlight, "flashlight"), (Mods.Relax, "relax"), (Mods.Autopilot, "relax2"),
         (Mods.SpunOut, "spunout"), (Mods.Autoplay, "autoplay"), (Mods.ScoreV2, "scorev2"),
         (Mods.FadeIn, "fadein"), (Mods.Random, "random"), (Mods.Mirror, "mirror"), (Mods.Key1, "key1"), (Mods.Key2, "key2"), (Mods.Key3, "key3"),
-        (Mods.Key4, "key4"), (Mods.Key5, "key5"), (Mods.Key6, "key6"), (Mods.Key7, "key7"), (Mods.Key8, "key8"), (Mods.Key9, "key9"),
+        (Mods.Key4, "key4"), (Mods.Key5, "key5"), (Mods.Key6, "key6"), (Mods.Key7, "key7"), (Mods.Key8, "key8"), (Mods.Key9, "key9"), (Mods.KeyCoop, "keycoop"),
     ];
 
     // ---- stable's mode menu (the Mode button): osu!, osu!taiko, osu!catch, osu!mania upward from y 344 at x 140 (units),
@@ -2315,7 +2315,7 @@ sealed partial class SongSelect : Screen
     // stable's key count after a mania map's version (an osu! map's too in mania, where a single key mod picks it),
     // with an arrow when the map's OD rounds to 4 or less
     string KeyCountText(DbBeatmap b) => b.Mode == 3 || b.Mode == 0 && PlayMode == 3
-        ? $" ({(b.Mode == 0 && mods.Keys() > 0 ? mods.Keys() : ManiaKeys(b))}K{(Math.Round(b.OD) <= 4 ? "↓" : "")})" : "";
+        ? $" ({(b.Mode == 0 ? (mods.Keys() > 0 ? mods.Keys() : ManiaKeys(b)) * (mods.HasFlag(Mods.KeyCoop) ? 2 : 1) : ManiaKeys(b))}K{(Math.Round(b.OD) <= 4 ? "↓" : "")})" : "";
 
     double modeMenuAt = -1, modeMenuClosedAt = double.NegativeInfinity;
     int modeHover = -1;
@@ -2734,7 +2734,7 @@ sealed partial class SongSelect : Screen
             {
                 0 => [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.X, Mods.Autopilot, Mods.None, "relax2", ""), (KeyboardKey.C, Mods.SpunOut, Mods.None, "spunout", ""),
                     (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"), (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")],
-                3 => [(KeyboardKey.Z, ModInfo.KeyMods, Mods.None, "key4", ""), (KeyboardKey.Null, Mods.Mirror, Mods.None, "mirror", ""), (KeyboardKey.X, Mods.Random, Mods.None, "random", ""),
+                3 => [(KeyboardKey.Z, ModInfo.KeyMods, Mods.None, "key4", ""), (KeyboardKey.C, Mods.KeyCoop, Mods.None, "keycoop", ""), (KeyboardKey.Null, Mods.Mirror, Mods.None, "mirror", ""), (KeyboardKey.X, Mods.Random, Mods.None, "random", ""),
                     (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"), (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")],
                 _ => [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"), (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")],
             }),
@@ -2748,6 +2748,7 @@ sealed partial class SongSelect : Screen
         (3 or 1, Mods.Hidden) => "The notes fade out before you hit them!",
         (3, Mods.FadeIn) => "The notes appear lower from the top!",
         (3, Mods.Random) => "Shuffle around the notes!",
+        (3, Mods.KeyCoop) => "Double the key amount, double the fun!",
         (2, Mods.Relax) => "Use the mouse to control the catcher.\n** UNRANKED **",
         (1, Mods.Relax) => "Relax! You will no longer get dizzyfied by ninja-like spinners, demanding drumrolls or unexpected katu's.\n** UNRANKED **",
         _ => ModTips.TryGetValue(m, out var t) ? t : null,
