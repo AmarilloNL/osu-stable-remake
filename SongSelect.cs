@@ -2312,8 +2312,10 @@ sealed partial class SongSelect : Screen
         ApplyFilter(Selected);
     }
 
-    // stable's key count after a mania map's version (an osu! map's too in mania, marked converted)
-    static string KeyCountText(DbBeatmap b) => b.Mode == 3 ? $" ({ManiaKeys(b)}K)" : b.Mode == 0 && PlayMode == 3 ? $" ({ManiaKeys(b)}K↓)" : "";
+    // stable's key count after a mania map's version (an osu! map's too in mania, where a single key mod picks it),
+    // with an arrow when the map's OD rounds to 4 or less
+    string KeyCountText(DbBeatmap b) => b.Mode == 3 || b.Mode == 0 && PlayMode == 3
+        ? $" ({(b.Mode == 0 && mods.Keys() > 0 ? mods.Keys() : ManiaKeys(b))}K{(Math.Round(b.OD) <= 4 ? "↓" : "")})" : "";
 
     double modeMenuAt = -1, modeMenuClosedAt = double.NegativeInfinity;
     int modeHover = -1;
