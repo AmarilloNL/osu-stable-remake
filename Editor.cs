@@ -1357,7 +1357,7 @@ sealed partial class Editor : Screen
             new("Grid Snapping", "T", () => gridSnap = !gridSnap, gridSnap), Sep,
             new("Create Polygon Circles...", "Ctrl+Shift+D", NotMania(OpenPoly)), new("Convert slider to stream...", "Ctrl+Shift+F", NotMania(AnySliderSelected ? SliderToStream : null)),
             new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I", mode == 3 ? OpenSampleImport : null), new("Auto Volume Balance", "", mode == 3 ? AutoVolumeBalance : null)],
-        4 => [new("Move all elements in time...")],
+        4 => [new("Move all elements in time...", "", tab == 3 ? MoveAllElementsPrompt : null)], // (stable's: in Design only)
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
             new("Metronome Clicks", "", () => metronome = !metronome, metronome), Sep,
             new("Add Timing Section", "Ctrl+P", () => TimingAction(0)), new("Add Inheriting Section", "Ctrl+Shift+P", () => TimingAction(1)),

@@ -806,4 +806,40 @@ sealed partial class Editor
                 DrawRectangleRec(new Rectangle(x1 - 1, y, 2, laneH - 2), Color.White);
             }
     }
+    // Design → Move all elements in time... (stable's): the storyboard's samples, sprites and animations (their
+    // commands, a loop's start, a trigger's times - not what's in a loop or trigger, timed from those) and the video
+    // moved by an amount of milliseconds, in the .osu and the .osb
+    void MoveAllElementsPrompt() => prompt = new("Enter the number of milliseconds to shift by:", "0", text =>
+    {
+        if (!int.TryParse(text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int ms) || ms == 0) return;
+        Change(() =>
+        {
+            if (sections.FirstOrDefault(s => s.Name == "Events") is { } ev)
+                for (int i = 0; i < ev.Lines.Count; i++) ev.Lines[i] = ShiftElementLine(ev.Lines[i], ms);
+            if (osbLines != null)
+            {
+                var (from, to) = OsbEvents();
+                for (int i = from; i < to; i++) osbLines[i] = ShiftElementLine(osbLines[i], ms);
+                OsbChanged();
+            }
+        });
+        sbParsed = null;
+    }, "OK", "Cancel");
+
+    static string ShiftElementLine(string line, int ms)
+    {
+        int depth = 0;
+        while (depth < line.Length && line[depth] is ' ' or '_') depth++;
+        var f = line[depth..].Split(',');
+        int[] times = depth switch
+        {
+            0 => f[0].Trim() is "Sample" or "5" or "Video" or "1" ? [1] : [],
+            1 => f[0].Trim() == "L" ? [1] : [2, 3], // (a command's start and end, a trigger's too)
+            _ => [],
+        };
+        bool changed = false;
+        foreach (int i in times)
+            if (i < f.Length && int.TryParse(f[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int t)) { f[i] = (t + ms).ToString(CultureInfo.InvariantCulture); changed = true; }
+        return changed ? line[..depth] + string.Join(',', f) : line;
+    }
 }
