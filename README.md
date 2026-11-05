@@ -35,7 +35,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 | ⚡ **Fast** | ~0.2 ms average frame time during gameplay, almost no per-frame allocation, sprites decoded in the background while you pick a map. Judging runs in fixed 1 ms steps, so results never depend on your frame rate. |
 | 🎨 **Your skin, your way** | Reads your skins (with stable's default skin as fallback) and recreates stable's HUD: score, combo, accuracy pie, hit error meter, key overlay, health bar and the animated in-game leaderboard. |
 | 🥁 **All four modes** | osu!taiko, osu!catch and osu!mania play their own maps, and osu! maps convert to them, with stable's hit windows, scoring, health and Auto. |
-| ✏️ **Beatmap editor** | Place and move circles, sliders and spinners on stable's timeline and grid, edit timing points and song setup, test-play and save. |
+| ✏️ **Beatmap editor** | Place and move circles, sliders and spinners (mania notes and holds, taiko hits) on stable's timeline and grid, edit timing points and song setup, storyboard sprites in the Design tab, check the map with stable's AiMod, test-play and save. |
 | 🎬 **Storyboards** | Sprites, animations, all commands and 35 easings, loops, triggers, variables, layers and pass/fail states. |
 | 📼 **Replays** | Its own exact replay format, plus import and playback of your stable `.osr` replays, with stable's replay overlay and speed control. |
 | 🎵 **Low-latency audio** | BASS audio with a clock that stays within ~0.15 ms of the music. |
