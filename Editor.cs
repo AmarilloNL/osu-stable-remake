@@ -458,9 +458,61 @@ sealed class Editor : Screen
 
     // ---- compose
     static Rectangle ToolRect(int i) { float u = U; return new Rectangle(4 * u, (90 + i * 34) * u, 62 * u, 30 * u); }
-    Rectangle ToggleRect(int i) { float u = U; return new Rectangle(Game.W - 70 * u, (90 + i * 34) * u, 66 * u, 30 * u); }
+    Rectangle ToggleRect(int i) { float u = U; return new Rectangle(Game.W - 92 * u, (90 + i * 34) * u, 88 * u, 30 * u); }
     static readonly string[] ToolNames = ["Select", "Circle", "Slider", "Spinner"];
-    static readonly string[] ToggleNames = ["New combo", "Whistle", "Finish", "Clap", "Grid snap"];
+    static readonly string[] ToggleNames = ["New combo", "Whistle", "Finish", "Clap", "Grid snap", "Distance snap", "Sampleset", "Additions"];
+    static readonly string[] SetNames = ["Auto", "Normal", "Soft", "Drum"];
+    bool distSnap;
+    (int Normal, int Addition) setsNext; // for the next placed object (nothing selected)
+
+    // an object's sample sets (its hitsample's first two fields; 0 = the timing point's)
+    static (int, int) SetsOf(EObj o)
+    {
+        var p = o.Sample.Split(':');
+        return (p.Length > 0 && int.TryParse(p[0], out int n) ? n : 0, p.Length > 1 && int.TryParse(p[1], out int a) ? a : 0);
+    }
+
+    static void SetSets(EObj o, int normal, int addition)
+    {
+        var p = (o.Sample.Length > 0 ? o.Sample : "0:0:0:0:").Split(':').ToList();
+        while (p.Count < 5) p.Add(p.Count == 4 ? "" : "0");
+        p[0] = normal.ToString(); p[1] = addition.ToString();
+        o.Sample = string.Join(':', p);
+        o.Raw = null;
+    }
+
+    void CycleSet(bool addition)
+    {
+        if (selected.Count == 0) { setsNext = addition ? (setsNext.Normal, (setsNext.Addition + 1) % 4) : ((setsNext.Normal + 1) % 4, setsNext.Addition); return; }
+        var (n0, a0) = SetsOf(selected.First());
+        int next = ((addition ? a0 : n0) + 1) % 4;
+        Change(() => { foreach (var o in selected) { var (n, a) = SetsOf(o); SetSets(o, addition ? n : next, addition ? next : a); } });
+    }
+
+    // stable's distance snap: a new object goes the beat-snapped time's worth of slider travel (times the map's
+    // distance spacing) from where the previous one ends, in the cursor's direction
+    double DistanceSpacing => double.TryParse(Kv("Editor", "DistanceSpacing"), NumberStyles.Float, Inv, out double d) && d > 0 ? d : 1;
+    (Vector2 From, float Radius)? SnapRing(double t)
+    {
+        var prev = objs.LastOrDefault(o => o.End < t - 1 && !o.Spinner);
+        if (prev == null) return null;
+        var from = prev.Slider && prev.Path.Length > 0 ? (prev.Slides % 2 == 1 ? prev.Path[^1] : prev.Path[0]) : new Vector2((float)prev.X, (float)prev.Y);
+        double perMs = 100 * SliderMultiplier * SvAt(t) / RedAt(t).Beat;
+        return (from, (float)(DistanceSpacing * perMs * (t - prev.End)));
+    }
+
+    Vector2 PlaceAt(Vector2 fieldPos, double t)
+    {
+        var p = GridSnap(fieldPos);
+        if (distSnap && SnapRing(t) is { } ring && ring.Radius > 0)
+        {
+            var dir = fieldPos - ring.From;
+            if (dir.LengthSquared() < 1e-6f) dir = new Vector2(1, 0);
+            p = ring.From + Vector2.Normalize(dir) * ring.Radius;
+            p = new Vector2(MathF.Round(p.X), MathF.Round(p.Y));
+        }
+        return p;
+    }
 
     void UpdateCompose(Vector2 mouse, float u)
     {
@@ -471,6 +523,7 @@ sealed class Editor : Screen
         if (Input.IsKeyPressed(Bound("keyFinishToggle", KeyboardKey.E))) ToggleSound(4);
         if (Input.IsKeyPressed(Bound("keyClapToggle", KeyboardKey.R)) && !Input.CtrlHeld) ToggleSound(8);
         if (Input.IsKeyPressed(Bound("keyGridSnapToggle", KeyboardKey.T))) gridSnap = !gridSnap;
+        if (Input.IsKeyPressed(Bound("keyDistSnapToggle", KeyboardKey.Y))) distSnap = !distSnap;
         if (Input.IsKeyPressed(Bound("keyGridChange", KeyboardKey.G))) gridSize = gridSize == 32 ? 4 : gridSize * 2;
         // Nudge Left / Right (J / K): the selection a beat snap earlier / later
         int nudge = Input.IsKeyPressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Input.IsKeyPressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
@@ -506,10 +559,14 @@ sealed class Editor : Screen
         if (click)
         {
             for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, ToolRect(i))) { tool = i; sliderDraft = null; return; }
-            for (int i = 0; i < 5; i++)
+            for (int i = 0; i < ToggleNames.Length; i++)
                 if (CheckCollisionPointRec(mouse, ToggleRect(i)))
                 {
-                    if (i == 0) ToggleCombo(); else if (i < 4) ToggleSound(1 << i); else gridSnap = !gridSnap;
+                    if (i == 0) ToggleCombo();
+                    else if (i < 4) ToggleSound(1 << i);
+                    else if (i == 4) gridSnap = !gridSnap;
+                    else if (i == 5) distSnap = !distSnap;
+                    else CycleSet(addition: i == 7);
                     return;
                 }
         }
@@ -583,9 +640,10 @@ sealed class Editor : Screen
                 if (click && inField)
                     Change(() =>
                     {
-                        var p = GridSnap(fieldPos);
+                        var p = PlaceAt(fieldPos, Snap(time));
                         var o = new EObj { X = p.X, Y = p.Y, Time = Snap(time), Type = 1 | (newComboNext ? 4 : 0), HitSound = soundNext };
                         o.End = o.Time;
+                        if (setsNext != (0, 0)) SetSets(o, setsNext.Normal, setsNext.Addition);
                         objs.RemoveAll(x => Math.Abs(x.Time - o.Time) < 1 && !x.Spinner);
                         objs.Add(o);
                         selected.Clear();
@@ -596,7 +654,7 @@ sealed class Editor : Screen
                 // the slider: a click for the head, one for each point; a right click (or a click on the last point) ends it
                 if (click && inField)
                 {
-                    var p = GridSnap(fieldPos);
+                    var p = sliderDraft == null ? PlaceAt(fieldPos, Snap(time)) : GridSnap(fieldPos);
                     if (sliderDraft == null) { sliderDraft = [p]; sliderDraftTime = Snap(time); }
                     else if (Vector2.Distance(p, sliderDraft[^1]) < 4) FinishSlider();
                     else sliderDraft.Add(p);
@@ -1067,11 +1125,16 @@ sealed class Editor : Screen
             anySel ? selected.All(o => (o.HitSound & 2) != 0) : (soundNext & 2) != 0,
             anySel ? selected.All(o => (o.HitSound & 4) != 0) : (soundNext & 4) != 0,
             anySel ? selected.All(o => (o.HitSound & 8) != 0) : (soundNext & 8) != 0,
-            gridSnap,
+            gridSnap, distSnap, false, false,
         ];
-        string[] keys = ["Q", "W", "E", "R", "T"];
-        for (int i = 0; i < 5; i++) DrawButton(ToggleRect(i), $"{ToggleNames[i]} ({keys[i]})", on[i]);
-        Game.Text($"Grid {gridSize} (G)", Game.W - 70 * u, 262 * u, 10 * u, Color.LightGray);
+        var (selN, selA) = anySel ? SetsOf(selected.First()) : setsNext;
+        string[] keys = ["Q", "W", "E", "R", "T", "Y"];
+        for (int i = 0; i < ToggleNames.Length; i++)
+            DrawButton(ToggleRect(i), i < 6 ? $"{ToggleNames[i]} ({keys[i]})" : $"{ToggleNames[i]}: {SetNames[i == 6 ? selN : selA]}", on[i]);
+        Game.Text($"Grid {gridSize} (G)", Game.W - 92 * u, (90 + ToggleNames.Length * 34) * u, 10 * u, Color.LightGray);
+        // the distance snap's ring for an object placed now
+        if (distSnap && tool is 1 or 2 && sliderDraft == null && SnapRing(Snap(time)) is { } ring && ring.Radius > 0)
+            DrawCircleLinesV(ToScreen(ring.From.X, ring.From.Y), ring.Radius * FieldScale, ColorAlpha(Color.White, 0.5f));
         Game.Text($"{selected.Count} selected", 4 * u, 230 * u, 10 * u, Color.LightGray);
     }
 
