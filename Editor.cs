@@ -422,7 +422,8 @@ sealed partial class Editor : Screen
 
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
-            if (tab == 3 && sbLibrary) sbLibrary = false;
+            if (tab == 3 && sbColourPick) sbColourPick = false;
+            else if (tab == 3 && sbLibrary) sbLibrary = false;
             else if (tab == 3 && sbSel != null) sbSel = null;
             else if (sliderDraft != null) sliderDraft = null;
             else if (selected.Count > 0) selected.Clear();

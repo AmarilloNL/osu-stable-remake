@@ -304,7 +304,66 @@ sealed partial class Editor
         });
     }
 
-    SbCmd? SbRunning(SbSprite sp) { int t = (int)Math.Round(time); return sp.Cmds.FirstOrDefault(c => c.Type == sbTool && c.Start < t && t < c.End); }
+    SbCmd? SbRunning(SbSprite sp) { int t = (int)Math.Round(time); return sp.Cmds.FirstOrDefault(c => c.Type == sbTool && c.Start <= t && t <= c.End); }
+
+    // ---- Keyframe Control: + a keyframe now (Colour: picked from a palette), - the keyframe now taken out (the two
+    // transformations meeting there joined), < > to the previous / next keyframe of the transformation
+    void SbAddKeyframe()
+    {
+        if (sbSel is not { Editable: true } sp) return;
+        if (sbTool == "C") { sbColourPick = true; return; }
+        int t = (int)Math.Round(time);
+        var value = SbValue(sp, sbTool, t);
+        SbChange(sp, () => SbKeyframe(sp, sbTool, t, value));
+    }
+    void SbRemoveKeyframe()
+    {
+        if (sbSel is not { Editable: true } sp) return;
+        int t = (int)Math.Round(time);
+        SbChange(sp, () =>
+        {
+            var list = sp.Cmds.Where(c => c.Type == sbTool).OrderBy(c => c.Start).ToList();
+            SbCmd? ending = null, starting = null;
+            foreach (var c in list)
+            {
+                if (c.Start == t && c.End == t) { sp.Cmds.Remove(c); return; }
+                if (c.Start == t) { starting = c; break; }
+                if (c.End == t) ending = c;
+            }
+            if (ending != null && starting != null)
+            {
+                sp.Cmds.Remove(ending);
+                sp.Cmds.Remove(starting);
+                sp.Cmds.Add(new SbCmd { Type = sbTool, Start = ending.Start, End = starting.End, From = ending.From, To = starting.To });
+                return;
+            }
+            if (ending != null) { ending.End = ending.Start; ending.To = [.. ending.From]; ending.Raw = null; }
+            if (starting != null) { starting.Start = starting.End; starting.From = [.. starting.To]; starting.Raw = null; }
+        });
+    }
+    void SbJump(bool next)
+    {
+        if (sbSel == null) return;
+        int t = (int)Math.Round(time);
+        var list = sbSel.Cmds.Where(c => c.Type == sbTool).OrderBy(c => c.Start).ToList();
+        if (!next && list.LastOrDefault(c => c.Start < t || c.End < t) is { } p) Seek(p.End < t ? p.End : p.Start);
+        if (next && list.FirstOrDefault(c => c.Start > t || c.End > t) is { } n) Seek(n.Start > t ? n.Start : n.End);
+    }
+    static Vector2 SbKeyButton(int i, float u) => new((250 + 15 * i) * u, 70 * u);
+    Vector2 SbLaneButton(int i, float u) => new(TimelineRect().X + (5 + 15 * i) * u, 70 * u);
+
+    // the Colour transformation's colours: Windows' 48 basic colours (stable asks with Windows' own colour dialog)
+    bool sbColourPick;
+    static readonly uint[] BasicColours =
+    [
+        0xFF8080, 0xFFFF80, 0x80FF80, 0x00FF80, 0x80FFFF, 0x0080FF, 0xFF80C0, 0xFF80FF,
+        0xFF0000, 0xFFFF00, 0x80FF00, 0x00FF40, 0x00FFFF, 0x0080C0, 0x8080C0, 0xFF00FF,
+        0x804040, 0xFF8040, 0x00FF00, 0x008080, 0x004080, 0x8080FF, 0x800040, 0xFF0080,
+        0x800000, 0xFF8000, 0x008000, 0x008040, 0x0000FF, 0x0000A0, 0x800080, 0x8000FF,
+        0x400000, 0x804000, 0x004000, 0x004040, 0x000080, 0x000040, 0x400040, 0x400080,
+        0x000000, 0x808000, 0x808040, 0x808080, 0x408080, 0xC0C0C0, 0x400040, 0xFFFFFF,
+    ];
+    Rectangle ColourSwatch(int i) { float u = U; return new Rectangle(Game.W / 2f - 100 * u + (i % 8) * 25 * u, 180 * u + (i / 8) * 21 * u, 22 * u, 18 * u); }
 
     // an edit of one sprite: undoable, written back at once
     void SbChange(SbSprite sp, Action edit)
@@ -351,7 +410,7 @@ sealed partial class Editor
 
     // ---- the left panel (stable's: layer toggles, the transformation, tweening, easing, origin)
     static readonly (string Label, float Y)[] SbLayerRows = [("Background", 95), ("Failing", 110), ("Passing", 125), ("Foreground", 140), ("Overlay", 155)];
-    static readonly (string Label, string Tool, float Y)[] SbToolRows = [("Move", "M", 215), ("Scale", "S", 230), ("Fade", "F", 245), ("Rotate", "R", 260)];
+    static readonly (string Label, string Tool, float Y)[] SbToolRows = [("Move", "M", 215), ("Scale", "S", 230), ("Fade", "F", 245), ("Rotate", "R", 260), ("Colour", "C", 275)];
     Rectangle SbRow(float x, float y) { float u = U; return new Rectangle(x * u, y * u, 70 * u, 13 * u); }
     Rectangle SbLibraryButton() { float u = U; return new Rectangle(Game.W - 70 * u, 372 * u, 66 * u, 40 * u); }
     Rectangle SbLibraryPanel() { float u = U; return new Rectangle(Game.W / 2f - 200 * u, 90 * u, 400 * u, 300 * u); }
@@ -377,6 +436,22 @@ sealed partial class Editor
         var ev = EventsSection;
         SbRefresh();
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
+
+        // the colour palette: a colour keyframe now for the picked sprite
+        if (sbColourPick)
+        {
+            if (Input.IsKeyPressed(KeyboardKey.Escape) || sbSel is not { Editable: true } cs) { sbColourPick = false; return; }
+            if (!click) return;
+            sbColourPick = false;
+            for (int i = 0; i < BasicColours.Length; i++)
+                if (CheckCollisionPointRec(mouse, ColourSwatch(i)))
+                {
+                    uint c = BasicColours[i];
+                    int t = (int)Math.Round(time);
+                    SbChange(cs, () => SbKeyframe(cs, "C", t, [c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF]));
+                }
+            return;
+        }
 
         if (sbLibrary)
         {
@@ -448,7 +523,14 @@ sealed partial class Editor
         if (click && CheckCollisionPointRec(mouse, SbLibraryButton())) { SbOpenLibrary(); return; }
         if (click && mouse.X < 160 * u && mouse.Y > 66 * u && mouse.Y < 462 * u) return; // (the panel's own space)
         // the lanes' toggle (the arrows before them)
-        if (click && CheckCollisionPointRec(mouse, new Rectangle(TimelineRect().X - 20 * u, 64 * u, 20 * u, 12 * u))) { sbLanesAlt = !sbLanesAlt; return; }
+        for (int i = 0; i < 2; i++)
+            if (click && Vector2.Distance(mouse, SbLaneButton(i, u)) < 7 * u) { sbLanesAlt = i == 0; return; }
+        for (int i = 0; i < 4; i++)
+            if (click && Vector2.Distance(mouse, SbKeyButton(i, u)) < 7 * u)
+            {
+                if (i == 0) SbAddKeyframe(); else if (i == 1) SbRemoveKeyframe(); else SbJump(next: i == 3);
+                return;
+            }
 
         // a lane of the timeline dragged: the picked sprite's transformations of that kind moved in time (snapped to the
         // beat unless Shift is held), as long as they all stay inside the song
@@ -491,7 +573,7 @@ sealed partial class Editor
             }
             var m = SbFromScreen(mouse);
             if (Input.ShiftHeld) { if (Math.Abs(m.X - d.Mouse.X) > Math.Abs(m.Y - d.Mouse.Y)) m.Y = d.Mouse.Y; else m.X = d.Mouse.X; }
-            if (!d.Undo && m == d.Mouse) return; // (a click alone picks; only moving keyframes)
+            if (!d.Undo && m == d.Mouse || sbTool == "C") return; // (a click alone picks; only moving keyframes; Colour: from the palette)
             float up = d.Mouse.Y - m.Y; // (dragging up raises scale, fade and rotation)
             double[] value = sbTool switch
             {
@@ -630,13 +712,12 @@ sealed partial class Editor
         Check("Hit Objects", 170, sbHitObjects, mode != 3);
         Header("Transformation", 200);
         foreach (var (label, tool, y) in SbToolRows) Check(label, y, sbTool == tool);
-        Check("Colour", 275, false, enabled: false);
         if (sbPanelAlpha > 0)
         {
             bool canFlip = sbSel is { Editable: true };
             Check("Vector Scale", 215, sbTool == "V", true, 72, sbPanelAlpha);
-            Check("Horizontal Flip", 230, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "H")), canFlip, 72, sbPanelAlpha);
-            Check("Vertical Flip", 245, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "V")), canFlip, 72, sbPanelAlpha);
+            Check("Horizontal Flip", 230, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "H") && c.Start <= time && time <= c.End), canFlip, 72, sbPanelAlpha);
+            Check("Vertical Flip", 245, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "V") && c.Start <= time && time <= c.End), canFlip, 72, sbPanelAlpha);
         }
         var run = sbSel == null ? null : SbRunning(sbSel);
         bool can = sbSel is { Editable: true };
@@ -656,6 +737,22 @@ sealed partial class Editor
         DrawRectangleRounded(lb, 0.2f, 6, new Color(154, 205, 50, 220));
         Game.Text("Sprite", lb.X + lb.Width / 2 - Game.TextWidth("Sprite", 10 * u) / 2, lb.Y + 8 * u, 10 * u, Color.White);
         Game.Text("Library", lb.X + lb.Width / 2 - Game.TextWidth("Library", 10 * u) / 2, lb.Y + 20 * u, 10 * u, Color.White);
+
+        if (sbColourPick)
+        {
+            var first = ColourSwatch(0);
+            var box = new Rectangle(first.X - 10 * u, first.Y - 26 * u, 8 * 25 * u + 17 * u, 6 * 21 * u + 34 * u);
+            DrawRectangleRec(box, new Color(240, 240, 240, 255));
+            DrawRectangleLinesEx(box, 1, new Color(160, 160, 160, 255));
+            Game.Text("Basic colours:", box.X + 8 * u, box.Y + 6 * u, 10 * u, Color.Black);
+            for (int i = 0; i < BasicColours.Length; i++)
+            {
+                var r = ColourSwatch(i);
+                uint c = BasicColours[i];
+                DrawRectangleRec(r, new Color((int)(c >> 16 & 0xFF), (int)(c >> 8 & 0xFF), (int)(c & 0xFF), 255));
+                DrawRectangleLinesEx(r, 1, CheckCollisionPointRec(mouse, r) ? Color.Black : new Color(130, 130, 130, 255));
+            }
+        }
 
         if (sbLibrary)
         {
@@ -678,7 +775,11 @@ sealed partial class Editor
         string[] labels = sbLanesAlt ? ["Scale", "Fade", "Rotation", "Colour"] : ["Movement", "Scale", "Fade", "Rotation"];
         float laneH = r.Height / 4;
         for (int i = 0; i < 4; i++) Game.Text(labels[i], r.X - 4 * u - Game.TextWidth(labels[i], 7 * u), r.Y + laneH * i + (laneH - 7 * u) / 2, 7 * u, Color.White);
-        Game.Text(sbLanesAlt ? "<" : ">", r.X - 16 * u, 64 * u, 9 * u, Color.White);
+        float sd = Game.H / 768f;
+        for (int i = 0; i < 2; i++) // (stable's: the play button turned down and up)
+            skin.DefaultTex("editor-button-play")?.Draw(SbLaneButton(i, u), 0.7f * sd, ColorAlpha(Color.White, sbLanesAlt == (i == 0) ? 0.4f : 1), i == 0 ? 90 : -90);
+        string[] buttons = ["editor-timeline-plus", "editor-timeline-minus", "editor-timeline-left", "editor-timeline-right"];
+        for (int i = 0; i < 4; i++) skin.DefaultTex(buttons[i])?.Draw(SbKeyButton(i, u), 0.8f * sd, Color.White);
         Game.Text("Keyframe Control", 160 * u, 66 * u, 10 * u, Color.White);
     }
 
