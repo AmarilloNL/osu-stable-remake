@@ -10,7 +10,9 @@ namespace OsuStableRemake;
 // (with its grid) in the middle, the toolbox on the left (Select / Circle / Slider / Spinner: 1-4), new combo and
 // hitsound toggles on the right (Q, W / E / R), and the song's position, playback and rate along the bottom.
 // F1 Compose, F3 Timing, F4 Song Setup, F5 test play, Ctrl+S save, Ctrl+Z / Ctrl+Y undo / redo, Ctrl+C / X / V,
-// Ctrl+A, Delete; the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
+// Ctrl+A, Delete; the Edit menu's Ctrl+H / J (flip), Ctrl+< / > (rotate 90°), Ctrl+G (reverse), Ctrl+D (clone);
+// Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them;
+// the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
 // Like stable's, a taiko map's circles are red (blue with a whistle or clap) and its sliders yellow, a catch map's
 // distance snap only measures across, and a mania map gets its own compose view (Select / Note / Hold).
@@ -411,8 +413,27 @@ sealed class Editor : Screen
             if (Input.IsKeyPressed(Bound("keyJumpToEnd", KeyboardKey.V))) Seek(objs.Count > 0 ? objs[^1].End : length);
         }
         if (Input.IsKeyPressed(KeyboardKey.Space)) SetPlaying(!playing);
-        if (Input.IsKeyPressedRepeat(KeyboardKey.Left) || Input.IsKeyPressed(KeyboardKey.Left)) Seek(StepTime(time, -1));
-        if (Input.IsKeyPressedRepeat(KeyboardKey.Right) || Input.IsKeyPressed(KeyboardKey.Right)) Seek(StepTime(time, 1));
+        bool leftKey = Input.IsKeyPressedRepeat(KeyboardKey.Left) || Input.IsKeyPressed(KeyboardKey.Left);
+        bool rightKey = Input.IsKeyPressedRepeat(KeyboardKey.Right) || Input.IsKeyPressed(KeyboardKey.Right);
+        if (Input.CtrlHeld)
+        {
+            // the bookmarks: Ctrl+Left / Right seek to the previous / next one
+            var marks = Bookmarks();
+            if (leftKey && marks.LastOrDefault(b => b < time - 1, -1) is var prev and >= 0) Seek(prev);
+            if (rightKey && marks.FirstOrDefault(b => b > time + 1, -1) is var next and >= 0) Seek(next);
+            if (Input.IsKeyPressed(KeyboardKey.B))
+            {
+                // Ctrl+B adds one here, Ctrl+Shift+B removes the one here (within half a beat snap)
+                double near = RedAt(time).Beat / divisor / 2;
+                if (Input.ShiftHeld) SetBookmarks([.. marks.Where(b => Math.Abs(b - time) > near)]);
+                else if (!marks.Contains((int)Math.Round(time))) SetBookmarks([.. marks.Append((int)Math.Round(time)).Order()]);
+            }
+        }
+        else
+        {
+            if (leftKey) Seek(StepTime(time, -1));
+            if (rightKey) Seek(StepTime(time, 1));
+        }
         float wheel = Input.GetMouseWheelMove();
         if (wheel != 0)
         {
@@ -528,9 +549,9 @@ sealed class Editor : Screen
         if (Input.IsKeyPressed(Bound("keyClapToggle", KeyboardKey.R)) && !Input.CtrlHeld) ToggleSound(8);
         if (Input.IsKeyPressed(Bound("keyGridSnapToggle", KeyboardKey.T))) gridSnap = !gridSnap;
         if (Input.IsKeyPressed(Bound("keyDistSnapToggle", KeyboardKey.Y))) distSnap = !distSnap;
-        if (Input.IsKeyPressed(Bound("keyGridChange", KeyboardKey.G))) gridSize = gridSize == 32 ? 4 : gridSize * 2;
+        if (Input.IsKeyPressed(Bound("keyGridChange", KeyboardKey.G)) && !Input.CtrlHeld) gridSize = gridSize == 32 ? 4 : gridSize * 2;
         // Nudge Left / Right (J / K): the selection a beat snap earlier / later
-        int nudge = Input.IsKeyPressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Input.IsKeyPressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
+        int nudge = Input.CtrlHeld ? 0 : Input.IsKeyPressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Input.IsKeyPressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
         if (nudge != 0 && selected.Count > 0)
             Change(() =>
             {
@@ -538,6 +559,20 @@ sealed class Editor : Screen
                 foreach (var o in selected) { o.Time = Math.Round(o.Time + nudge * step); o.End = Math.Round(o.End + nudge * step); o.Raw = null; }
             });
         if (Input.IsKeyPressed(KeyboardKey.Delete) && selected.Count > 0) Change(() => { objs.RemoveAll(selected.Contains); selected.Clear(); });
+        // stable's Edit menu: Flip Horizontally / Vertically (Ctrl+H / J) across the playfield, Rotate 90° Clockwise /
+        // Anticlockwise (Ctrl+> / <) about its centre, Reverse Selection (Ctrl+G), Clone (Ctrl+D). Mania: H turns the
+        // columns the other way, J reverses the selection in time, no rotating.
+        if (Input.CtrlHeld && selected.Count > 0)
+        {
+            int keys = MKeys;
+            if (Input.IsKeyPressed(KeyboardKey.H))
+                Change(() => { if (mode == 3) foreach (var o in selected) { o.X = MColumnX(keys - 1 - MColumn(o, keys), keys); o.Raw = null; } else Transform(p => new(512 - p.X, p.Y)); });
+            if (Input.IsKeyPressed(KeyboardKey.J)) Change(() => { if (mode == 3) ReverseSelection(); else Transform(p => new(p.X, 384 - p.Y)); });
+            if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Period)) Change(() => Transform(p => new(256 - (p.Y - 192), 192 + (p.X - 256))));
+            if (mode != 3 && Input.IsKeyPressed(KeyboardKey.Comma)) Change(() => Transform(p => new(256 + (p.Y - 192), 192 - (p.X - 256))));
+            if (Input.IsKeyPressed(KeyboardKey.G)) Change(ReverseSelection);
+            if (Input.IsKeyPressed(KeyboardKey.D)) Change(CloneSelection);
+        }
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.A)) { selected.Clear(); selected.UnionWith(objs); tool = 0; }
         if (Input.CtrlHeld && (Input.IsKeyPressed(KeyboardKey.C) || Input.IsKeyPressed(KeyboardKey.X)) && selected.Count > 0)
         {
@@ -677,6 +712,72 @@ sealed class Editor : Screen
                     });
                 break;
         }
+    }
+
+    // the selection's positions (slider points too) through f
+    void Transform(Func<Vector2, Vector2> f)
+    {
+        foreach (var o in selected)
+        {
+            var p = f(new((float)o.X, (float)o.Y));
+            o.X = Math.Round(p.X); o.Y = Math.Round(p.Y);
+            for (int i = 0; i < o.Anchors.Count; i++) o.Anchors[i] = f(o.Anchors[i]);
+            o.Raw = null;
+        }
+    }
+
+    // stable's Reverse Selection: each object moved to where its mirror in time was (start = first start + last end -
+    // its end), the new combos staying in their places, sliders run the other way (from where they end)
+    void ReverseSelection()
+    {
+        var list = selected.OrderBy(o => o.Time).ToList();
+        double from = list.Min(o => o.Time), to = list.Max(o => o.End);
+        var combos = list.Select(o => o.NewCombo).ToList();
+        for (int i = 0; i < list.Count; i++)
+        {
+            var o = list[i];
+            o.NewCombo = combos[list.Count - 1 - i];
+            double d = o.End - o.Time;
+            o.Time = from + to - o.End; o.End = o.Time + d;
+            if (o.Slider && o.Anchors.Count > 0 && o.Path.Length > 1)
+            {
+                var pts = new List<Vector2> { new((float)o.X, (float)o.Y) };
+                pts.AddRange(o.Anchors);
+                pts.Reverse();
+                pts[0] = o.Path[^1];
+                o.X = Math.Round(pts[0].X); o.Y = Math.Round(pts[0].Y);
+                o.Anchors = pts.Skip(1).ToList();
+                if (o.Edges.Length > 0) o.Edges = string.Join('|', o.Edges.Split('|').Reverse());
+                if (o.EdgeSets.Length > 0) o.EdgeSets = string.Join('|', o.EdgeSets.Split('|').Reverse());
+            }
+            o.Raw = null;
+        }
+    }
+
+    // stable's Clone: a copy of the selection a beat (snapped) after its end, selected
+    void CloneSelection()
+    {
+        var list = selected.OrderBy(o => o.Time).ToList();
+        double from = list[0].Time, at = Snap(list.Max(o => o.End) + RedAt(time).Beat);
+        selected.Clear();
+        foreach (var o in list)
+        {
+            var c = o.Clone();
+            c.Raw = null; c.Time = at + (o.Time - from); c.End = c.Time + (o.End - o.Time);
+            objs.Add(c);
+            selected.Add(c);
+        }
+    }
+
+    // [Editor] Bookmarks: the times, comma-separated (the line left out with none, like stable)
+    List<int> Bookmarks() => [.. (Kv("Editor", "Bookmarks") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(s => int.TryParse(s, out int t) ? t : -1).Where(t => t >= 0).Order()];
+    void SetBookmarks(List<int> marks)
+    {
+        if (sections.FirstOrDefault(x => x.Name == "Editor") is not { } ed) return;
+        int i = ed.Lines.FindIndex(l => l.Split(':')[0].Trim() == "Bookmarks");
+        if (marks.Count == 0) { if (i >= 0) { ed.Lines.RemoveAt(i); modified = true; } return; }
+        if (i < 0) ed.Lines.Insert(0, "Bookmarks: "); // (stable writes it first)
+        SetKv("Editor", "Bookmarks", string.Join(',', marks));
     }
 
     void FinishSlider()
@@ -1521,6 +1622,7 @@ sealed class Editor : Screen
         DrawRectangle((int)r.X, (int)(r.Y + r.Height / 2 - 1 * u), (int)r.Width, (int)(2 * u), Color.Gray);
         // bookmarks of the timing: red and green ticks; kiai in orange
         foreach (var t in timing) DrawRectangle((int)(r.X + r.Width * t.Time / length), (int)r.Y, Math.Max(1, (int)u), (int)(r.Height / 2), t.Red ? Color.Red : Color.Green);
+        foreach (int b in Bookmarks()) DrawRectangle((int)(r.X + r.Width * b / length), (int)(r.Y + r.Height / 2), Math.Max(1, (int)u), (int)(r.Height / 2), new Color(60, 140, 255, 255));
         float x = r.X + r.Width * (float)(time / length);
         DrawRectangle((int)x - (int)u, (int)r.Y, (int)(3 * u), (int)r.Height, Color.White);
         string[] t3 = ["Play", playing ? "Pause" : "Paused", "Stop"];
