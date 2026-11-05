@@ -35,7 +35,7 @@ sealed partial class Editor
 
     static readonly string[] SbLayerNames = ["Background", "Fail", "Pass", "Foreground", "Overlay"];
     static int Dims(string type) => type switch { "M" or "V" => 2, "C" => 3, "MX" or "MY" or "S" or "F" or "R" => 1, _ => 0 };
-    static string SbNum(double v) => v.ToString("G15", CultureInfo.InvariantCulture);
+    static string SbNum(double v) => ((float)v).ToString(CultureInfo.InvariantCulture); // (stable keeps them as floats: the shortest exact float)
 
     List<SbSprite> sbSprites = [];
     Section? sbParsed;
@@ -44,6 +44,8 @@ sealed partial class Editor
     string sbTool = "M";
     readonly bool[] sbShow = [true, true, true, true, true];
     bool sbLanesAlt, sbLibrary, sbHitObjects;
+    float sbPanelAlpha;
+    SbSprite? sbCycleTo; // the panel's backing and second column: shown while the mouse is near the left edge, like stable's
     (string Type, double Offset, bool Undo)? sbLaneDrag;
     Storyboard? sbView;
     bool sbDirty = true;
@@ -287,6 +289,21 @@ sealed partial class Editor
         });
     }
 
+    // stable's flips: a P (H or V) keyframed at the current time when ticked, the one there (or the nearest) taken out when
+    // unticked
+    static bool IsFlip(SbCmd c, string axis) => c.Type == "P" && c.Raw != null && c.Raw.TrimEnd().EndsWith("," + axis);
+    void SbFlip(string axis)
+    {
+        if (sbSel is not { Editable: true } sp) return;
+        int t = (int)Math.Round(time);
+        SbChange(sp, () =>
+        {
+            var flips = sp.Cmds.Where(c => IsFlip(c, axis)).OrderBy(c => c.Start).ToList();
+            if (flips.Count == 0) { sp.Cmds.Add(new SbCmd { Type = "P", Start = t, End = t, Raw = $" P,0,{t},,{axis}" }); return; }
+            sp.Cmds.Remove(flips.FirstOrDefault(c => c.Start <= t && t <= c.End) ?? flips.LastOrDefault(c => c.End <= t) ?? flips[0]);
+        });
+    }
+
     SbCmd? SbRunning(SbSprite sp) { int t = (int)Math.Round(time); return sp.Cmds.FirstOrDefault(c => c.Type == sbTool && c.Start < t && t < c.End); }
 
     // an edit of one sprite: undoable, written back at once
@@ -402,6 +419,15 @@ sealed partial class Editor
         if (click && CheckCollisionPointRec(mouse, SbRow(2, 170))) { sbHitObjects = !sbHitObjects; return; }
         for (int i = 0; i < SbLayerRows.Length; i++)
             if (click && CheckCollisionPointRec(mouse, SbRow(2, SbLayerRows[i].Y))) { sbShow[i] = !sbShow[i]; if (sbView != null) Array.Copy(sbShow, sbView.ShowLayer, 5); return; }
+        // the second column (stable's: in with the mouse at the left edge, out past the panel)
+        float step = 0.08f * GetFrameTime() * 60;
+        sbPanelAlpha = mouse.X < 40 * u ? Math.Min(1, sbPanelAlpha + step) : mouse.X > 160 * u ? Math.Max(0, sbPanelAlpha - step) : sbPanelAlpha is > 0.5f and < 1 ? Math.Min(1, sbPanelAlpha + step) : sbPanelAlpha;
+        if (sbPanelAlpha > 0.5f)
+        {
+            if (click && CheckCollisionPointRec(mouse, SbRow(72, 215))) { sbTool = "V"; return; }
+            if (click && CheckCollisionPointRec(mouse, SbRow(72, 230))) { SbFlip("H"); return; }
+            if (click && CheckCollisionPointRec(mouse, SbRow(72, 245))) { SbFlip("V"); return; }
+        }
         foreach (var (_, tool, y) in SbToolRows)
             if (click && CheckCollisionPointRec(mouse, SbRow(2, y))) { sbTool = tool; return; }
         if (click && CheckCollisionPointRec(mouse, SbRow(2, 305))) { SbTween(sbSel == null || SbRunning(sbSel) == null); return; }
@@ -457,7 +483,12 @@ sealed partial class Editor
         bool held = Input.IsMouseButtonDown(MouseButton.Left);
         if (sbDrag is { } d)
         {
-            if (!held || sbSel is not { Editable: true } ds) { sbDrag = null; sbDirty = true; return; }
+            if (!held || sbSel is not { Editable: true } ds)
+            {
+                if (!held && !d.Undo && sbCycleTo != null) sbSel = sbCycleTo; // (a click, not a drag)
+                sbDrag = null; sbCycleTo = null; sbDirty = true;
+                return;
+            }
             var m = SbFromScreen(mouse);
             if (Input.ShiftHeld) { if (Math.Abs(m.X - d.Mouse.X) > Math.Abs(m.Y - d.Mouse.Y)) m.Y = d.Mouse.Y; else m.X = d.Mouse.X; }
             if (!d.Undo && m == d.Mouse) return; // (a click alone picks; only moving keyframes)
@@ -466,6 +497,7 @@ sealed partial class Editor
             {
                 "M" => [Math.Round(d.Value[0] + m.X - d.Mouse.X), Math.Round(d.Value[1] + m.Y - d.Mouse.Y)],
                 "S" => [Math.Clamp((d.Value[0] * 100 + up) / 100, 0.1, 5)],
+                "V" => [Math.Clamp((d.Value[0] * 100 + d.Mouse.X - m.X) / 100, 0.1, 5), Math.Clamp((d.Value[1] * 100 + d.Mouse.Y - m.Y) / 100, 0.1, 5)],
                 "F" => [Math.Clamp((d.Value[0] * 100 + up) / 100, 0, 1)],
                 _ => [Math.Clamp((d.Value[0] * 50 + up) / 50, -50, 50)],
             };
@@ -479,11 +511,14 @@ sealed partial class Editor
         // a click on the picked sprite again picks the one under it (stable cycles through them)
         var under = sbSprites.Where(s => sbShow[Math.Max(0, Array.IndexOf(SbLayerNames, s.Layer))] && SbCorners(s) is { } q && InQuad(mouse, q)).ToList();
         // (the picked sprite not showing now - before or after its keyframes: a drag anywhere keyframes it here)
-        if (under.Count == 0 && sbSel is { Editable: true } hidden && SbCorners(hidden) == null) { sbDrag = (sbMouse, SbValue(hidden, sbTool, time), false); return; }
+        if (under.Count == 0 && sbSel is { Editable: true } hidden && SbCorners(hidden) == null) { sbDrag = (sbMouse, SbValue(hidden, sbTool, time), false); sbCycleTo = null; return; }
         if (under.Count == 0) { sbSel = null; return; }
+        // stable: pressing on the picked sprite drags it; let go without moving, the one under it is picked instead
         int idx = sbSel == null ? -1 : under.IndexOf(sbSel);
-        sbSel = idx > 0 ? under[idx - 1] : idx == 0 && under.Count > 1 ? under[^1] : under[^1];
-        if (idx >= 0 && under.Count == 1) sbSel = under[0];
+        var below = idx > 0 ? under[idx - 1] : under[^1];
+        if (idx >= 0 && sbSel!.Editable) { sbDrag = (sbMouse, SbValue(sbSel, sbTool, time), false); sbCycleTo = below; return; }
+        sbSel = idx >= 0 ? below : under[^1];
+        sbCycleTo = null;
         if (sbSel.Editable) sbDrag = (sbMouse, SbValue(sbSel, sbTool, time), false);
     }
 
@@ -577,14 +612,14 @@ sealed partial class Editor
         Game.Text(string.Format(CultureInfo.InvariantCulture, "{0:#,0}ms", time), w - 200 * u, 81 * u, 10 * u, Color.White);
 
         // the panel
-        DrawRectangle(0, (int)(66 * u), (int)(160 * u), (int)(396 * u), new Color(0, 0, 0, 130));
+        DrawRectangle(0, (int)(66 * u), (int)(160 * u), (int)(396 * u), new Color(0, 0, 0, (int)(130 * sbPanelAlpha)));
         void Header(string text, float y) => Game.TextBold(text, 0, y * u, 10 * u, Color.White);
-        void Check(string text, float y, bool on, bool enabled = true)
+        void Check(string text, float y, bool on, bool enabled = true, float x = 2, float alpha = 1)
         {
-            var r = SbRow(2, y);
+            var r = SbRow(x, y);
             // stable's checkbox (the options' pink circle) at 0.7 of its size
-            var c = enabled ? Color.White : Color.Gray;
-            var pink = enabled ? new Color(235, 117, 140, 255) : Color.Gray;
+            var c = ColorAlpha(enabled ? Color.White : Color.Gray, alpha);
+            var pink = ColorAlpha(enabled ? new Color(235, 117, 140, 255) : Color.Gray, alpha);
             var at = new Vector2(r.X + 5 * u, r.Y + 6.5f * u);
             if (on) DrawCircleV(at, 2.7f * u, pink);
             else DrawRing(at, 2.1f * u, 2.7f * u, 0, 360, 24, pink);
@@ -596,6 +631,13 @@ sealed partial class Editor
         Header("Transformation", 200);
         foreach (var (label, tool, y) in SbToolRows) Check(label, y, sbTool == tool);
         Check("Colour", 275, false, enabled: false);
+        if (sbPanelAlpha > 0)
+        {
+            bool canFlip = sbSel is { Editable: true };
+            Check("Vector Scale", 215, sbTool == "V", true, 72, sbPanelAlpha);
+            Check("Horizontal Flip", 230, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "H")), canFlip, 72, sbPanelAlpha);
+            Check("Vertical Flip", 245, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "V")), canFlip, 72, sbPanelAlpha);
+        }
         var run = sbSel == null ? null : SbRunning(sbSel);
         bool can = sbSel is { Editable: true };
         Header("Tweening", 290);
