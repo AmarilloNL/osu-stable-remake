@@ -35,6 +35,7 @@ sealed class HitObject
     public double StableVelocity; // px per second, stable's arithmetic (slider timing walks the path with it)
     public int Slides = 1;
     public int[] EdgeSounds = [];
+    public Vector2 LastControlPoint; // the slider's last point as written (catch's HardRock offsets start from it)
     public (int Normal, int Addition)[] EdgeSets = [];
     public List<Checkpoint> Checkpoints = [];
 
@@ -321,6 +322,7 @@ sealed class Beatmap
             o.Slides = Math.Clamp(I(f[6]), 1, 10000);
             double declared = f.Length > 7 ? D(f[7]) : 0;
             o.Length = double.IsNaN(declared) ? 0 : Math.Clamp(declared, 0, 131072); // NaN (old files) = the drawn length
+            o.LastControlPoint = pts[^1];
             o.Path = SliderPath.Build(curve[0].Length > 0 ? curve[0][0] : 'B', pts, ref o.Length, FormatVersion);
             if (f.Length > 8) o.EdgeSounds = f[8].Split('|').Select(I).ToArray();
             if (f.Length > 9) o.EdgeSets = f[9].Split('|').Select(s => { var p = s.Split(':'); return (I(p[0]), I(p[1])); }).ToArray();

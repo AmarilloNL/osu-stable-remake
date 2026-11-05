@@ -711,6 +711,15 @@ static class Game
             foreach (var n in notes) Console.WriteLine($"{n.Time} {n.End} {n.Column}");
             return;
         }
+        // test hook: an osu! map's catch conversion, one "time x hyperdash" line an object
+        if (Arg("--catch-convert") is { } catchFile)
+        {
+            var catchMods = ModInfo.Parse(Arg("--mods") ?? "");
+            var m = Beatmap.Load(catchFile, mods: catchMods);
+            float width = 106.75f * (1 - 0.7f * ((float)m.CS - 5) / 5);
+            foreach (var f in Player.CatchConvert(m, width, catchMods.HasFlag(Mods.HardRock))) Console.WriteLine($"{f.Time} {f.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture)} {(f.Hyper ? 1 : 0)} {f.Kind}");
+            return;
+        }
         if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() is { } fl && !fl.StartsWith("--") ? fl : "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
         // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch), --song-shots 12000 (song ms)
