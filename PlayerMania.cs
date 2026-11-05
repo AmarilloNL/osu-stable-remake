@@ -26,7 +26,7 @@ sealed partial class Player
     int[] mNext = [];
     int mKeys;
     bool mSplit; // two stages
-    KeyboardKey[] mBind = [];
+    KeyboardKey[] mBind = [], mAltBind = [];
     bool[] mDown = [];
     // stable's lighting: every judgement that isn't a miss bursts the column's lightingN once at the hit position
     // (in over 80ms, out from 80 to 200ms); a hold being held loops lightingL there (in over 80ms, out over 120ms)
@@ -77,6 +77,16 @@ sealed partial class Player
         }
         return [.. result];
     }
+    // stable's second key for a stage's special column: Ctrl (left on the first stage, right on the second)
+    static KeyboardKey[] AltKeys(int keys, bool split)
+    {
+        var alt = new KeyboardKey[keys];
+        int style = SpecialStyle(keys), first = 0;
+        int[] stages = split && keys > 1 ? [(keys + 1) / 2, keys / 2] : [keys];
+        for (int s = 0; s < stages.Length; first += stages[s++])
+            if (SpecialColumn(stages[s], s, style) is >= 0 and var sp) alt[first + sp] = s == 0 ? KeyboardKey.LeftControl : KeyboardKey.RightControl;
+        return alt;
+    }
     // the skin's [Mania] SpecialStyle for a key count: 1 left, 2 right (0 none)
     internal static int SpecialStyle(int keys) =>
         Game.Skin.Mania.TryGetValue(keys, out var cfg) && cfg.TryGetValue("SpecialStyle", out var st) ? st.Trim() switch { "1" or "Left" => 1, "2" or "Right" => 2, _ => 0 } : 0;
@@ -123,6 +133,7 @@ sealed partial class Player
         mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : (mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map)) * (coop ? 2 : 1), 1, 18);
         mSplit = SplitStages(mKeys, coop);
         mBind = ManiaKeys(mKeys, mSplit);
+        mAltBind = AltKeys(mKeys, mSplit);
         mDown = new bool[mKeys];
         mStartAt = Game.NowMs;
         mLitAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();
@@ -228,7 +239,7 @@ sealed partial class Player
             }
         for (int c = 0; c < mKeys && playback == null; c++)
         {
-            bool down = auto ? time < mAutoRelease[c] : playback == null && Down(mBind[c]);
+            bool down = auto ? time < mAutoRelease[c] : playback == null && (Down(mBind[c]) || mAltBind[c] != KeyboardKey.Null && Down(mAltBind[c]));
             if (auto)
             {
                 // Auto: each note pressed on time, held to a hold's end (a tap for 40ms)
