@@ -36,6 +36,11 @@ sealed partial class Player
     static readonly byte[] TaikoBit = [2, 1, 4, 8]; // replays (stable's): left rim M2, left centre M1, right centre K1, right rim K2
     byte tRecorded;
     (int Result, bool Big, double At) tLastJudge = (-1, false, double.MinValue);
+    // stable throws a hit note at the health bar's fill: each 60Hz tick it closes 6.5% of the gap (plus 2), shrinks to 96.5%
+    // and rises by its speed / 11.5, the speed falling 7 a tick from 169; under 70 it fades out over 300ms, under -32 it's gone
+    sealed class TFly { public float X, Y, Scale, Vy, Alpha = 1; public double FadeAt = double.NaN; public Color Colour; public bool Big; }
+    readonly List<TFly> tFlying = [];
+    double tFlyTicks;
     int tAutoHand;
 
     const float TaikoHitX = 160, TaikoLaneY = 197; // screen units
@@ -228,7 +233,7 @@ sealed partial class Player
         tDrumAt[key] = Game.NowMs;
         bool rim = key is 0 or 3;
         var tp = map.PointAt(at + 5);
-        samples.Play(tp.SampleSet, rim ? "hitclap" : "hitnormal", tp.SampleIndex, Math.Max(8, tp.Volume), SamplePitch);
+        samples.Play(tp.SampleSet, rim ? "hitclap" : "hitnormal", tp.SampleIndex, Math.Max(8, tp.Volume), SamplePitch, key < 2 ? -0.2f : 0.2f); // (stable pans by side)
         if (!Resting(at) && !paused) keyCounts[key is 1 or 2 ? key - 1 : key == 0 ? 2 : 3]++;
 
         for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= at; i++)
@@ -281,6 +286,8 @@ sealed partial class Player
         n.JudgedAt = at;
         tLastJudge = (result, false, Game.NowMs);
         Count(result);
+        if (result > 0 && n.Kind is TKind.Don or TKind.Kat)
+            tFlying.Add(new TFly { X = TaikoHitX, Y = TaikoLaneY, Scale = n.Big ? 1 : 0.65f, Vy = 169, Colour = n.Kind == TKind.Don ? new Color(235, 69, 44, 255) : new Color(67, 142, 172, 255), Big = n.Big });
         if (result > 0)
         {
             combo++;
@@ -393,6 +400,25 @@ sealed partial class Player
             skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, left, c.X, c.Y + 80 * u - gh / 2, sd, 0.5f, st);
         }
 
+        // the thrown notes
+        float barX = 160;
+        if (skin.Tex("scorebar-colour") is { } bar2) barX = (12 + bar2.Width * (float)(hpShown / Health.Max)) * sd / u;
+        for (tFlyTicks += GetFrameTime() * 60; tFlyTicks >= 1; tFlyTicks--)
+            foreach (var f in tFlying)
+            {
+                f.X += (barX - f.X + 2) * 0.065f;
+                f.Scale *= 0.965f;
+                f.Y -= f.Vy / 11.5f;
+                f.Vy -= 7;
+                if (f.Vy < 70 && double.IsNaN(f.FadeAt)) f.FadeAt = Game.NowMs;
+            }
+        tFlying.RemoveAll(f => f.Vy < -32);
+        foreach (var f in tFlying)
+        {
+            float a = double.IsNaN(f.FadeAt) ? 1 : 1 - (float)Math.Clamp((Game.NowMs - f.FadeAt) / 300, 0, 1);
+            DrawTaikoCircle(new(f.X * u, f.Y * u), noteScale * f.Scale, f.Colour, f.Big, a);
+        }
+
         // the judgement at the target, fading out
         double age = Game.NowMs - tLastJudge.At;
         if (age < 400 && tLastJudge.Result >= 0)
@@ -407,7 +433,9 @@ sealed partial class Player
         if (skin.Tex("taiko-bar-left") is { } left2) left2.Draw(new(left2.Width * sd / 2, 135 * u + left2.Height * sd / 2), sd, tint);
         for (int k = 0; k < 4; k++)
         {
-            float a = 1 - (float)Math.Clamp((Game.NowMs - tDrumAt[k]) / 120, 0, 1);
+            // stable: lit at once, fading out from 100 to 150ms
+            double since = Game.NowMs - tDrumAt[k];
+            float a = since < 100 ? 1 : 1 - (float)Math.Clamp((since - 100) / 50, 0, 1);
             if (a <= 0) continue;
             bool rim = k is 0 or 3, rightHalf = k >= 2;
             if (skin.Tex(rim ? "taiko-drum-outer" : "taiko-drum-inner") is { } half)
@@ -423,10 +451,10 @@ sealed partial class Player
         }
     }
 
-    void DrawTaikoCircle(Vector2 at, float scale, Color colour, bool big)
+    void DrawTaikoCircle(Vector2 at, float scale, Color colour, bool big, float alpha = 1)
     {
         string body = big ? "taikobigcircle" : "taikohitcircle";
-        skin.Tex(body)?.Draw(at, scale, ColorAlpha(colour, playfieldAlpha));
-        (skin.AnimFrame(body + "overlay", Game.NowMs) ?? skin.Tex(body + "overlay"))?.Draw(at, scale, ColorAlpha(Color.White, playfieldAlpha));
+        skin.Tex(body)?.Draw(at, scale, ColorAlpha(colour, playfieldAlpha * alpha * colour.A / 255f));
+        (skin.AnimFrame(body + "overlay", Game.NowMs) ?? skin.Tex(body + "overlay"))?.Draw(at, scale, ColorAlpha(Color.White, playfieldAlpha * alpha));
     }
 }
