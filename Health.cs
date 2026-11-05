@@ -57,7 +57,7 @@ sealed class Health
             bool retry = false;
             double value = Max, uncapped = Max;
             void Change(double d) { value = Math.Clamp(value + d, 0, Max); uncapped += d; }
-            double last = objs[0].Time - map.Preempt;
+            double last = (int)objs[0].Time - (int)map.Preempt; // (whole milliseconds, like stable)
             int breakIndex = 0, lowComboEnds = 0;
             for (int i = 0; i < objs.Count; i++)
             {
