@@ -1649,7 +1649,7 @@ sealed partial class Editor : Screen
     Rectangle TimingRow(int i) { float u = U; return new Rectangle(80 * u, (100 + i * 18) * u, Game.W - 300 * u, 17 * u); }
     static readonly string[] TimingButtons = ["Add timing point", "Add inherited point", "Delete", "Move to current time", "Kiai toggle", "Omit first bar line"];
     Rectangle TimingButton(int i) { float u = U; return new Rectangle(Game.W - 210 * u, (100 + i * 26) * u, 200 * u, 22 * u); }
-    static readonly string[] Steppers = ["Offset", "BPM", "Slider velocity", "Meter", "Volume", "Sample set"];
+    static readonly string[] Steppers = ["Offset", "BPM", "Slider velocity", "Meter", "Volume", "Sample set", "Custom sample"];
     Rectangle StepRect(int i, int dir) { float u = U; return new Rectangle(Game.W - (dir < 0 ? 210 : 40) * u, (270 + i * 26) * u, 30 * u, 22 * u); }
     int timingScroll;
 
@@ -1720,6 +1720,7 @@ sealed partial class Editor : Screen
                         case 3: if (t.Red) t.Meter = Math.Clamp(t.Meter + dir, 1, 16); break;
                         case 4: t.Volume = Math.Clamp(t.Volume + dir * 5, 5, 100); break;
                         case 5: t.Set = (t.Set + dir + 4) % 4; break;
+                        case 6: t.Index = Math.Clamp(t.Index + dir, 0, 100); break; // (0: the skin's samples, 1+: the map's numbered ones)
                     }
                 });
                 return;
@@ -2450,14 +2451,14 @@ sealed partial class Editor : Screen
         if (timingSel >= 0 && timingSel < timing.Count)
         {
             var t = timing[timingSel];
-            string[] values = [FormatTime(t.Time), t.Red ? $"{t.Bpm:0.###}" : "-", t.Red ? "-" : $"{t.Sv:0.##}x", t.Red ? t.Meter.ToString() : "-", $"{t.Volume}%", sets[Math.Clamp(t.Set, 0, 3)]];
+            string[] values = [FormatTime(t.Time), t.Red ? $"{t.Bpm:0.###}" : "-", t.Red ? "-" : $"{t.Sv:0.##}x", t.Red ? t.Meter.ToString() : "-", $"{t.Volume}%", sets[Math.Clamp(t.Set, 0, 3)], t.Index == 0 ? "default" : t.Index.ToString(Inv)];
             for (int i = 0; i < Steppers.Length; i++)
             {
                 DrawButton(StepRect(i, -1), " -", false);
                 DrawButton(StepRect(i, 1), " +", false);
                 Game.Text($"{Steppers[i]}: {values[i]}", Game.W - 175 * u, (272 + i * 26) * u, 11 * u, Color.White);
             }
-            Game.Text("Shift: bigger / finer steps", Game.W - 210 * u, 430 * u, 10 * u, Color.LightGray);
+            Game.Text("Shift: bigger / finer steps", Game.W - 210 * u, 256 * u, 10 * u, Color.LightGray);
         }
     }
 
