@@ -375,6 +375,7 @@ sealed partial class Editor : Screen
         video?.Dispose();
         video = null;
         storyboard?.Unload();
+        sbView?.Unload();
         samples.Unload();
         Game.FadeTo(back);
     }
@@ -413,12 +414,15 @@ sealed partial class Editor : Screen
 
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
-            if (sliderDraft != null) sliderDraft = null;
+            if (tab == 3 && sbLibrary) sbLibrary = false;
+            else if (tab == 3 && sbSel != null) sbSel = null;
+            else if (sliderDraft != null) sliderDraft = null;
             else if (selected.Count > 0) selected.Clear();
             else AskExit();
             return;
         }
         if (Input.IsKeyPressed(KeyboardKey.F1)) tab = 0;
+        if (Input.IsKeyPressed(KeyboardKey.F2)) tab = 3;
         if (Input.IsKeyPressed(KeyboardKey.F3)) tab = 1;
         if (Input.IsKeyPressed(KeyboardKey.F4)) tab = 2;
         if (Input.IsKeyPressed(KeyboardKey.F6)) tab = 1; // (stable's Timing Setup: this editor's Timing tab)
@@ -478,7 +482,7 @@ sealed partial class Editor : Screen
         // the top tabs, the bottom bar
         if (Input.IsMouseButtonPressed(MouseButton.Left))
         {
-            for (int i = 0; i < 3; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { tab = i; return; }
+            for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { tab = TabOrder[i]; return; }
             if (UpdateBottomBar(mouse)) return;
         }
         else if (Input.IsMouseButtonDown(MouseButton.Left) && !double.IsNaN(scrubFrom)) { }
@@ -488,6 +492,7 @@ sealed partial class Editor : Screen
             case 0: UpdateCompose(mouse, u); break;
             case 1: Metronome(); UpdateTiming(mouse, u); break;
             case 2: UpdateSetup(mouse, u); break;
+            case 3: UpdateDesign(mouse, u); break;
         }
     }
 
@@ -1083,6 +1088,7 @@ sealed partial class Editor : Screen
         video?.Dispose();
         video = null;
         storyboard?.Unload();
+        sbView?.Unload();
         samples.Unload();
         Game.FadeTo(() => new Editor(file, back));
     }
@@ -1318,7 +1324,7 @@ sealed partial class Editor : Screen
             new("Reset selected objects' samples", "", Sel(() => ResetSamples(selected))), new("Reset all samples", "", () => ResetSamples(objs)),
             new("Reset combo colours", "", ResetComboColours), new("Reset breaks", "", ResetBreaks), Sep,
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
-        2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2"), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
+        2 => [new("Compose", "F1", () => tab = 0, tab == 0), new("Design", "F2", () => tab = 3, tab == 3), new("Timing", "F3", () => tab = 1, tab == 1), Sep,
             new("Song Setup...", "F4", () => tab = 2, tab == 2), new("Timing Setup...", "F6", () => tab = 1), Sep,
             new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => followPoints = !followPoints, followPoints)],
         3 => [new("Snap Divisor", Sub: [.. new[] { (1, "Full Beats"), (2, "Half Beats"), (4, "Quarter Beats"), (8, "Eighth Beats"), (3, "Triplets*"), (6, "Double Triplets*") }
@@ -1825,7 +1831,8 @@ sealed partial class Editor : Screen
     const float PromptY = 120;
 
     // ---- drawing
-    Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (3 - i) * 92 * u, 0, 90 * u, 16 * u); }
+    Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }
+    static readonly int[] TabOrder = [0, 3, 1, 2]; // Compose, Design, Timing, Song Setup (tab numbers)
     Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - 150 * u, 44 * u); }
     float PxPerMs() => 50 * U * zoom / (float)RedAt(time).Beat;
     float TimelineX(double t) { var r = TimelineRect(); return r.X + r.Width / 2 + (float)((t - time) * PxPerMs()); }
@@ -1841,7 +1848,7 @@ sealed partial class Editor : Screen
         if (bg is { } tex && tex.Id != 0)
         {
             float s = Math.Max(w / (float)tex.Width, h / (float)tex.Height);
-            DrawTexturePro(tex, new Rectangle(0, 0, tex.Width, tex.Height), new Rectangle((w - tex.Width * s) / 2, (h - tex.Height * s) / 2, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, dimBg ? 0.3f : 1));
+            DrawTexturePro(tex, new Rectangle(0, 0, tex.Width, tex.Height), new Rectangle((w - tex.Width * s) / 2, (h - tex.Height * s) / 2, tex.Width * s, tex.Height * s), Vector2.Zero, 0, ColorAlpha(Color.White, dimBg && tab != 3 ? 0.3f : 1));
         }
         if (showVideo && tab == 0) DrawStoryboard(w, h);
         switch (tab)
@@ -1849,6 +1856,7 @@ sealed partial class Editor : Screen
             case 0: DrawCompose(u); break;
             case 1: DrawTiming(u); break;
             case 2: DrawSetup(u); break;
+            case 3: DrawDesign(u); break;
         }
         DrawTimeline(u);
         DrawTopBar(u);
@@ -1927,11 +1935,11 @@ sealed partial class Editor : Screen
         BeginScissorMode((int)nx, 0, (int)Math.Max(0, TabRect(0).X - nx - 8 * u), (int)(17 * u));
         Game.Text(name, nx, 1 * u, 12 * u, Color.LightGray);
         EndScissorMode();
-        string[] tabs = ["Compose", "Timing", "Song Setup"];
-        for (int i = 0; i < 3; i++)
+        string[] tabs = ["Compose", "Design", "Timing", "Song Setup"];
+        for (int i = 0; i < 4; i++)
         {
             var r = TabRect(i);
-            DrawRectangleRec(r, tab == i ? new Color(255, 160, 40, 255) : new Color(60, 60, 60, 255));
+            DrawRectangleRec(r, tab == TabOrder[i] ? new Color(255, 160, 40, 255) : new Color(60, 60, 60, 255));
             float tw = Game.TextWidth(tabs[i], 12 * u);
             Game.Text(tabs[i], r.X + (r.Width - tw) / 2, r.Y + 1 * u, 12 * u, Color.White);
         }
@@ -1968,7 +1976,7 @@ sealed partial class Editor : Screen
         }
         // the objects
         var colours = Colours;
-        foreach (var o in objs)
+        foreach (var o in tab == 3 ? [] : objs) // (Design: the picked sprite's transformations instead)
         {
             float x0 = TimelineX(o.Time), x1 = TimelineX(o.End);
             if (x1 < r.X - 20 * u || x0 > r.X + r.Width + 20 * u) continue;
@@ -1980,7 +1988,9 @@ sealed partial class Editor : Screen
             if (selected.Contains(o)) DrawCircleLinesV(new(x0, cy), rad + 2 * u, new Color(255, 200, 0, 255));
             if (!o.Spinner) Game.Text(o.Combo.ToString(), x0 - Game.TextWidth(o.Combo.ToString(), 11 * u) / 2, cy - 6 * u, 11 * u, Color.White);
         }
+        if (tab == 3) DrawDesignLanes(r, u);
         EndScissorMode();
+        if (tab == 3) DrawDesignLaneLabels(r, u);
         // the current time
         DrawRectangle((int)(r.X + r.Width / 2), (int)r.Y, Math.Max(2, (int)(2 * u)), (int)r.Height, new Color(255, 255, 255, 230));
         // the beat snap divisor

@@ -78,6 +78,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - osu!mania keysounds: **Sample import** (`Ctrl+Shift+I`) gives the selected notes one of the folder's sound files (or a custom sample set) and a volume, or adds it as a storyboard sound; **Auto Volume Balance** shares out the volume between notes struck together
 - View options like stable's: the map's video and storyboard behind the playfield (*Show Video/Storyboard*), *Dim Background*, *Hit animations*, *Follow points*, and the mania view's *Show Sample Name*
 - Each mode like stable's editor: taiko maps red and blue (whistle / clap for kat), catch's distance snap across only, and mania maps in their own compose view: a column stage with the beat snap's lines, the song's note density beside it, Note and Hold tools
+- **Design** (`F2`): the storyboard at the editor's time with stable's layer toggles; add sprites from the **Sprite Library** (`I`) and keyframe them: pick Move, Scale, Fade or Rotate and drag the sprite (or nudge with `W` `A` `S` `D`) to set its value now, Tweening joins keyframes into a transformation (eased In or Out), the timeline shows the picked sprite's transformations. The difficulty's own sprites can be edited; the `.osb`'s are shown
 - **Timing** (`F3`): add, move and delete red and green points, BPM, offset, meter, slider velocity, volume, sample set and kiai
 - **Song setup** (`F4`): artist, title, creator, difficulty name, source, tags, the difficulty sliders (mania's Key Count) and the map's mode
 - Playback with hitsounds at 25-100% speed (`Space`, `Z` `X` `C` `V` `B`), the wheel and arrow keys step through the beat snap
@@ -133,7 +134,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Other modes: osu!taiko, osu!catch, osu!mania (their own maps and osu! conversions)
 - [x] The beatmap editor (compose, timing, song setup, test play, saving)
 - [x] Replays for taiko, catch and mania; stable's osu!mania conversion patterns
-- [ ] The editor's Design (storyboard) tab
+- [ ] The Design tab for `.osb` sprites, loops and triggers (the difficulty's own sprites can be edited)
 - [ ] osu!mania Key Coop (two stages) and maps with more than 10 keys
 - [ ] Linux / macOS (currently uses Windows fonts and Windows BASS builds)
 
