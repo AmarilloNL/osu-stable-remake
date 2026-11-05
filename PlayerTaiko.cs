@@ -33,6 +33,8 @@ sealed partial class Player
     readonly double[] tDrumAt = [double.MinValue, double.MinValue, double.MinValue, double.MinValue]; // outer L, inner L, inner R, outer R
     readonly KeyboardKey[] tKeys = new KeyboardKey[4];
     readonly bool[] tHeld = new bool[4];
+    static readonly byte[] TaikoBit = [2, 1, 4, 8]; // replays (stable's): left rim M2, left centre M1, right centre K1, right rim K2
+    byte tRecorded;
     (int Result, bool Big, double At) tLastJudge = (-1, false, double.MinValue);
     int tAutoHand;
 
@@ -138,11 +140,28 @@ sealed partial class Player
         // input: a key going down hits; Auto presses at each note's time
         if (auto) TaikoAuto();
         else if (playback == null)
+        {
+            byte bits = 0;
             for (int k = 0; k < 4; k++)
             {
                 bool down = Down(tKeys[k]);
                 if (down && !tHeld[k]) TaikoPress(k, time);
                 tHeld[k] = down;
+                if (down) bits |= TaikoBit[k];
+            }
+            if (bits != tRecorded) { recording.Add(new ReplayFrame(time, 0, 0, bits)); tRecorded = bits; } // (changes only)
+        }
+        else
+            // a replay: stable's bits, each key going down hits at its frame's time
+            while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
+            {
+                var f = playback[pbIndex++];
+                for (int k = 0; k < 4; k++)
+                {
+                    bool down = (f.Keys & TaikoBit[k]) != 0;
+                    if (down && !tHeld[k]) TaikoPress(k, f.Time);
+                    tHeld[k] = down;
+                }
             }
 
         // misses and ends

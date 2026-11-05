@@ -165,7 +165,7 @@ sealed partial class Player : Screen
         modMul = mods.ScoreMultiplier();
         health = new Health(map, mods.HasFlag(Mods.HalfTime));
         objs = map.Objects;
-        mode = map.PlayMode;
+        mode = watching?.Mode ?? map.PlayMode; // (a replay: the mode it was played in)
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
         skin.PreloadGameplay();
@@ -1157,12 +1157,12 @@ sealed partial class Player : Screen
     {
         BeatmapMd5 = Replays.Md5Of(map.File), Artist = map.Artist, Title = map.Title, Version = map.Version,
         Mods = mods, Score = score, MaxCombo = maxCombo, N300 = n300, N100 = n100, N50 = n50, NMiss = nMiss,
-        Accuracy = Accuracy, Date = DateTime.Now,
+        NGeki = nGeki, NKatu = nKatu, Mode = mode, Accuracy = Accuracy, Date = DateTime.Now,
     };
 
     void SaveReplay()
     {
-        if (auto || playback != null || recording.Count == 0 || mode != 0 || ReturnTo != null) return;
+        if (auto || playback != null || recording.Count == 0 || ReturnTo != null) return;
         try
         {
             savedReplay = Replays.Save(CurrentInfo(), recording);
@@ -2962,20 +2962,20 @@ sealed partial class Player : Screen
     }
 
     internal double Acc => Accuracy; // (--auto-check in the other modes)
-    double Accuracy
+    double Accuracy => AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu);
+
+    // stable's accuracy per mode (percent)
+    internal static double AccuracyFor(int mode, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu)
     {
-        get
+        int total = n300 + n100 + n50 + nMiss;
+        if (mode == 1) return total == 0 ? 100 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half
+        if (mode == 2) return total + nKatu == 0 ? 100 : (double)(n300 + n100 + n50) / (total + nKatu) * 100; // catch: anything caught (katu: tiny droplets missed)
+        if (mode == 3) // mania: MAX (geki) and 300 full, 200 (katu) two thirds, 100 a third, 50 a sixth
         {
-            int total = n300 + n100 + n50 + nMiss;
-            if (mode == 1) return total == 0 ? 100 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half
-            if (mode == 2) return total + nKatu == 0 ? 100 : (double)(n300 + n100 + n50) / (total + nKatu) * 100; // catch: anything caught (katu: tiny droplets missed)
-            if (mode == 3) // mania: MAX (geki) and 300 full, 200 (katu) two thirds, 100 a third, 50 a sixth
-            {
-                int all = total + nGeki + nKatu;
-                return all == 0 ? 100 : (50.0 * n50 + 100.0 * n100 + 200.0 * nKatu + 300.0 * (n300 + nGeki)) / (300.0 * all) * 100;
-            }
-            return total == 0 ? 100 : (300.0 * n300 + 100.0 * n100 + 50.0 * n50) / (300.0 * total) * 100;
+            int all = total + nGeki + nKatu;
+            return all == 0 ? 100 : (50.0 * n50 + 100.0 * n100 + 200.0 * nKatu + 300.0 * (n300 + nGeki)) / (300.0 * all) * 100;
         }
+        return total == 0 ? 100 : (300.0 * n300 + 100.0 * n100 + 50.0 * n50) / (300.0 * total) * 100;
     }
 
     (double Ur, double Mean) HitStats()
@@ -3075,9 +3075,12 @@ sealed partial class Player : Screen
     }
 
     // stable's grade rules.
-    string Grade()
+    string Grade() => GradeFor(mode, mods, n300, n100, n50, nMiss, nGeki, nKatu);
+
+    internal static string GradeFor(int mode, Mods mods, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu)
     {
         int total = n300 + n100 + n50 + nMiss;
+        double Accuracy = AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu);
         if (mode == 3) // mania: by accuracy
         {
             double acc = Accuracy / 100;

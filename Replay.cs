@@ -13,6 +13,7 @@ sealed class ReplayInfo
     public Mods Mods;
     public long Score;
     public int MaxCombo, N300, N100, N50, NMiss, NGeki, NKatu;
+    public int Mode; // 0 osu!, 1 taiko, 2 catch, 3 mania
     public bool Perfect; // full combo (the .osr flag)
     public double Accuracy;
     public DateTime Date;
@@ -22,7 +23,9 @@ sealed class ReplayInfo
 static class Replays
 {
     const int Magic = 0x50525253; // "SRRP"
-    const int Version = 3; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid
+    const int Version = 4; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu
+    // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
+    // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
 
     static long ZigZag(long v) => (v << 1) ^ (v >> 63);
@@ -45,6 +48,7 @@ static class Replays
         w.Write((int)info.Mods); w.Write(info.Score); w.Write(info.MaxCombo);
         w.Write(info.N300); w.Write(info.N100); w.Write(info.N50); w.Write(info.NMiss);
         w.Write(info.Accuracy); w.Write(info.Date.ToBinary());
+        w.Write(info.Mode); w.Write(info.NGeki); w.Write(info.NKatu);
         w.Write(frames.Count);
         using var z = new BinaryWriter(new DeflateStream(w.BaseStream, CompressionLevel.SmallestSize, leaveOpen: true));
         long prev = 0;
@@ -64,14 +68,17 @@ static class Replays
 
     static ReplayInfo ReadHeader(BinaryReader r, string path)
     {
-        if (r.ReadInt32() != Magic || r.ReadInt32() != Version) throw new InvalidDataException($"not a replay: {path}");
-        return new ReplayInfo
+        int version;
+        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or Version)) throw new InvalidDataException($"not a replay: {path}");
+        var info = new ReplayInfo
         {
             Path = path, BeatmapMd5 = r.ReadString(), Artist = r.ReadString(), Title = r.ReadString(), Version = r.ReadString(),
             Mods = (Mods)r.ReadInt32(), Score = r.ReadInt64(), MaxCombo = r.ReadInt32(),
             N300 = r.ReadInt32(), N100 = r.ReadInt32(), N50 = r.ReadInt32(), NMiss = r.ReadInt32(),
             Accuracy = r.ReadDouble(), Date = DateTime.FromBinary(r.ReadInt64()),
         };
+        if (version >= 4) { info.Mode = r.ReadInt32(); info.NGeki = r.ReadInt32(); info.NKatu = r.ReadInt32(); }
+        return info;
     }
 
     public static ReplayInfo ReadInfo(string path)
@@ -115,8 +122,8 @@ static class Replays
         info.Mods = (Mods)r.ReadInt32() & ModInfo.Supported;
         OsrString(r); // life bar graph
         info.Date = new DateTime(r.ReadInt64(), DateTimeKind.Utc).ToLocalTime();
-        int total = info.N300 + info.N100 + info.N50 + info.NMiss;
-        info.Accuracy = total == 0 ? 0 : (300.0 * info.N300 + 100.0 * info.N100 + 50.0 * info.N50) / (3.0 * total);
+        info.Mode = mode;
+        info.Accuracy = Player.AccuracyFor(mode, info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu);
         info.FromStable = true;
         byte[] data = withData ? r.ReadBytes(r.ReadInt32()) : [];
         return (info, mode, data);
@@ -134,14 +141,14 @@ static class Replays
         foreach (var f in frames)
         {
             long t = (long)Math.Round(f.Time);
-            int z = ((f.Keys & 1) != 0 ? 5 : 0) | ((f.Keys & 2) != 0 ? 10 : 0) | ((f.Keys & 4) != 0 ? 1 : 0) | ((f.Keys & 8) != 0 ? 2 : 0) | (f.Keys & 16);
+            int z = info.Mode != 0 ? f.Keys : ((f.Keys & 1) != 0 ? 5 : 0) | ((f.Keys & 2) != 0 ? 10 : 0) | ((f.Keys & 4) != 0 ? 1 : 0) | ((f.Keys & 8) != 0 ? 2 : 0) | (f.Keys & 16);
             text.Append(inv, $"{t - last}|{f.X:R}|{f.Y:R}|{z},");
             last = t;
         }
         text.Append("-12345|0|0|0,");
         using var w = new BinaryWriter(File.Create(path));
         void Str(string s) { w.Write((byte)0x0b); w.Write(s); } // BinaryWriter's length prefix is the same ULEB128
-        w.Write((byte)0);
+        w.Write((byte)info.Mode);
         w.Write(20250101);
         Str(info.BeatmapMd5);
         Str(info.Player);
@@ -189,7 +196,7 @@ static class Replays
 
     public static string OsrText(string path) => System.Text.Encoding.ASCII.GetString(Lzma.Decode(ReadOsr(path, withData: true).Data));
 
-    public static ReplayFrame[] ReadOsrFrames(string path)
+    public static ReplayFrame[] ReadOsrFrames(string path, bool rawKeys = false)
     {
         var text = OsrText(path);
         var frames = new List<ReplayFrame>();
@@ -204,14 +211,14 @@ static class Replays
             t += w;
             int z = int.Parse(p[3], inv);
             // stable: M1=1, M2=2, K1=4 (+M1), K2=8 (+M2). Ours: K1, K2, M1, M2 as bits 0-3.
-            byte keys = (byte)(((z & 4) != 0 ? 1 : 0) | ((z & 8) != 0 ? 2 : 0)
-                | ((z & 1) != 0 && (z & 4) == 0 ? 4 : 0) | ((z & 2) != 0 && (z & 8) == 0 ? 8 : 0) | (z & 16)); // 16: smoke
+            byte keys = rawKeys ? (byte)z : (byte)(((z & 4) != 0 ? 1 : 0) | ((z & 8) != 0 ? 2 : 0)
+                | ((z & 1) != 0 && (z & 4) == 0 ? 4 : 0) | ((z & 2) != 0 && (z & 8) == 0 ? 8 : 0) | (z & 16)); // 16: smoke (rawKeys: the other modes, stable's bits as they are)
             frames.Add(new ReplayFrame(t, float.Parse(p[1], inv), float.Parse(p[2], inv), keys));
         }
         return frames.ToArray();
     }
 
-    public static ReplayFrame[] Frames(ReplayInfo info) => info.FromStable ? ReadOsrFrames(info.Path) : ReadFrames(info.Path);
+    public static ReplayFrame[] Frames(ReplayInfo info) => info.FromStable ? ReadOsrFrames(info.Path, rawKeys: info.Mode != 0) : ReadFrames(info.Path);
 
     public static ReplayInfo ReadAnyInfo(string path) =>
         path.EndsWith(".osr", StringComparison.OrdinalIgnoreCase) ? ReadOsr(path, withData: false).Info : ReadInfo(path);
@@ -258,7 +265,9 @@ static class Replays
                 }
                 fresh[file] = entry;
                 var (info, mode) = (entry.Info, entry.Mode);
-                if (mode != 0) continue;
+                if (mode > 3) continue;
+                info.Mode = mode;
+                if (mode != 0) info.Accuracy = Player.AccuracyFor(mode, info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu); // (cached entries from before)
                 if (!index.TryGetValue(info.BeatmapMd5, out var list)) index[info.BeatmapMd5] = list = [];
                 if (list.Any(o => o.FromStable && o.Score == info.Score && o.Date == info.Date)) continue; // same play exported twice
                 list.Add(info);

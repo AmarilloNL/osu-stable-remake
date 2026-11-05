@@ -28,6 +28,7 @@ sealed partial class Player
     double cLastTime = double.NaN, cFailUntil = double.MinValue;
     float cHyperSpeed; int cHyperDir; CFruit? cHyperTarget;
     KeyboardKey cLeft, cRight, cDash;
+    (float X, bool Dash) cRecorded = (float.NaN, false);
     (float X, double T) cAutoFrom = (256, double.MinValue);
     readonly LegacyRandom cPlateRng = new(1337);
 
@@ -141,8 +142,17 @@ sealed partial class Player
             if (move != 0) { cX += move * speed * (float)dt; cDir = move; }
             // a hyperdash ends on reaching its fruit's spot
             if (cHyperDir != 0 && cHyperTarget != null && (cHyperDir > 0 ? cX >= cHyperTarget.X : cX <= cHyperTarget.X)) { cX = cHyperTarget.X; cHyperDir = 0; }
-            cX = Math.Clamp(cX, 0, 512);
+            cX = MathF.Round(Math.Clamp(cX, 0, 512) * Replays.PosScale) / Replays.PosScale; // (on the replay's grid, so playback is exact)
+            if (cX != cRecorded.X || dash != cRecorded.Dash) { recording.Add(new ReplayFrame(time, cX, 0, (byte)(dash ? 1 : 0))); cRecorded = (cX, dash); }
         }
+        else if (playback != null)
+            // a replay: the catcher where its latest frame put it
+            while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
+            {
+                float x = Math.Clamp(playback[pbIndex++].X, 0, 512);
+                if (x != cX) cDir = x > cX ? 1 : -1;
+                cX = x;
+            }
 
         for (int i = cNext; i < cFruits.Count && cFruits[i].Time <= time; i++)
         {

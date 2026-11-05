@@ -114,12 +114,26 @@ sealed partial class Player
         return s.Dist + (t - s.Time) * s.PerMs;
     }
 
-    int mJudged;
+    int mJudged, mRecorded;
     bool ManiaDone => mJudged >= mNotes.Count;
 
     void ManiaStep()
     {
-        for (int c = 0; c < mKeys; c++)
+        if (playback != null)
+            // a replay: stable's held columns as bits in x
+            while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
+            {
+                var f = playback[pbIndex++];
+                int held = (int)f.X;
+                for (int c = 0; c < mKeys; c++)
+                {
+                    bool down = (held >> c & 1) != 0;
+                    if (down && !mDown[c]) ManiaPress(c, f.Time);
+                    if (!down && mDown[c]) ManiaRelease(c, f.Time);
+                    mDown[c] = down;
+                }
+            }
+        for (int c = 0; c < mKeys && playback == null; c++)
         {
             bool down = auto ? time < mAutoRelease[c] : playback == null && Down(mBind[c]);
             if (auto)
@@ -138,6 +152,12 @@ sealed partial class Player
             if (down && !mDown[c]) ManiaPress(c, time);
             if (!down && mDown[c]) ManiaRelease(c, time);
             mDown[c] = down;
+        }
+        if (playback == null && !auto)
+        {
+            int mask = 0;
+            for (int c = 0; c < mKeys; c++) if (mDown[c]) mask |= 1 << c;
+            if (mask != mRecorded) { recording.Add(new ReplayFrame(time, mask, 0, 0)); mRecorded = mask; }
         }
 
         for (int c = 0; c < mKeys; c++)

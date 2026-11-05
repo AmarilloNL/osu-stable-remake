@@ -70,7 +70,7 @@ sealed partial class SongSelect : Screen
     Task<Dictionary<string, List<ReplayInfo>>>? scoresLoading;
     Dictionary<string, List<ReplayInfo>> scores = [];
     static readonly List<ReplayInfo> NoScores = []; // read-only: returned when a map has no scores
-    List<ReplayInfo> SelectedScores => Selected is { } b && scores.TryGetValue(b.Md5, out var l) ? l : NoScores;
+    List<ReplayInfo> SelectedScores => Selected is { } b && scores.TryGetValue(ScoreKey(b), out var l) ? l : NoScores;
     // osu!.db ranked status (4 ranked, 5 approved, 6 qualified, 7 loved, ...); null until the library has loaded.
     internal byte? StatusOf(string md5)
     {
@@ -99,7 +99,8 @@ sealed partial class SongSelect : Screen
     {
         if (Cleared(info)) return;
         rankedFor = null; // By Rank Achieved may change
-        if (!scores.TryGetValue(info.BeatmapMd5, out var list)) scores[info.BeatmapMd5] = list = [];
+        string key = ScoreKey(info.BeatmapMd5, info.Mode);
+        if (!scores.TryGetValue(key, out var list)) scores[key] = list = [];
         list.Add(info);
         // score, then name (stable's scoreboard order); equal ones keep their order
         var sorted = list.OrderByDescending(s => s.Score).ThenBy(s => s.Player, StringComparer.CurrentCulture).ToList();
@@ -2063,24 +2064,17 @@ sealed partial class SongSelect : Screen
 
     string? BestGrade(DbBeatmap b)
     {
-        if (!scores.TryGetValue(b.Md5, out var list)) return null;
+        if (!scores.TryGetValue(ScoreKey(b), out var list)) return null;
         string me = Config.Get("Username", ""); // like stable: the local player's own scores only (as Personal Best)
         foreach (var r in list) if (!r.FromStable || r.Player.Equals(me, StringComparison.OrdinalIgnoreCase)) return GradeOf(r);
         return null;
     }
 
-    static string GradeOf(ReplayInfo r)
-    {
-        int total = r.N300 + r.N100 + r.N50 + r.NMiss;
-        if (total == 0) return "D";
-        double r300 = r.N300 / (double)total, r50 = r.N50 / (double)total;
-        bool silver = r.Mods.HasFlag(Mods.Hidden) || r.Mods.HasFlag(Mods.Flashlight);
-        if (r.N300 == total) return silver ? "XH" : "X";
-        if (r300 > 0.9 && r50 < 0.01 && r.NMiss == 0) return silver ? "SH" : "S";
-        if (r300 > 0.8 && r.NMiss == 0 || r300 > 0.9) return "A";
-        if (r300 > 0.7 && r.NMiss == 0 || r300 > 0.8) return "B";
-        return r300 > 0.6 ? "C" : "D";
-    }
+    static string GradeOf(ReplayInfo r) => Player.GradeFor(r.Mode, r.Mods, r.N300, r.N100, r.N50, r.NMiss, r.NGeki, r.NKatu);
+
+    // the scores are kept per map and mode (osu! ones under the plain MD5)
+    internal static string ScoreKey(string md5, int mode) => mode == 0 ? md5 : $"{md5}:{mode}";
+    static string ScoreKey(DbBeatmap b) => ScoreKey(b.Md5, b.Mode is >= 1 and <= 3 ? b.Mode : PlayMode);
 
     // stable's song select header (stable's sizes/positions, in 640x480 units; the right-hand group was
     // measured from a stable capture): map info top left, Group/Sort boxes and the group tabs top right, search at

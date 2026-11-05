@@ -453,7 +453,7 @@ sealed partial class Player
             Game.TextBold(hint, 2 * u, 186.3f * u, 12.4f * u, ColorAlpha(Color.White, (float)(1 - hintAge / 6000) * boardAlpha));
         if (boardAlpha <= 0 || overlayHidden) return;
         mapMd5 ??= Replays.Md5Of(map.File);
-        var others = back.ScoresFor(mapMd5); // includes the replay being watched, as stable lists it
+        var others = back.ScoresFor(SongSelect.ScoreKey(mapMd5, mode)); // includes the replay being watched, as stable lists it
         string me = watching is { Player.Length: > 0 } wr ? wr.Player : auto && playback == null ? "osu!" : Config.Get("Username", "You"); // stable's Auto player
         // stable's order: score, then name; the live entry was made first, so it goes before a stored one with its name.
         int rank = 1;
