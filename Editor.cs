@@ -468,7 +468,7 @@ sealed class Editor : Screen
         switch (tab)
         {
             case 0: UpdateCompose(mouse, u); break;
-            case 1: UpdateTiming(mouse, u); break;
+            case 1: Metronome(); UpdateTiming(mouse, u); break;
             case 2: UpdateSetup(mouse, u); break;
         }
     }
@@ -1255,7 +1255,7 @@ sealed class Editor : Screen
             new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance")],
         4 => [new("Move all elements in time...")],
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
-            new("Metronome Clicks"), Sep,
+            new("Metronome Clicks", "", () => metronome = !metronome, metronome), Sep,
             new("Add Timing Section", "Ctrl+P", () => TimingAction(0)), new("Add Inheriting Section", "Ctrl+Shift+P", () => TimingAction(1)),
             new("Reset Current Section"), new("Delete Timing Section", "Ctrl+I", DeleteTimingHere), new("Resnap Current Section", "", ResnapSection), Sep,
             new("Resnap All Notes", "", ResnapAll), new("Move all notes in time...", "", objs.Count > 0 ? MoveAllPrompt : null), new("Recalculate Slider Lengths", "", RecalcSliders),
@@ -1562,6 +1562,25 @@ sealed class Editor : Screen
     static readonly string[] Steppers = ["Offset", "BPM", "Slider velocity", "Meter", "Volume", "Sample set"];
     Rectangle StepRect(int i, int dir) { float u = U; return new Rectangle(Game.W - (dir < 0 ? 210 : 40) * u, (270 + i * 26) * u, 30 * u, 22 * u); }
     int timingScroll;
+
+    // stable's metronome (Timing tab, while the song plays): each beat, the bar's first metronomehigh, the rest
+    // metronomelow at 0.8 (in 4/4 the third at 0.6)
+    bool metronome = true;
+    long metronomeBeat = long.MinValue;
+
+    void Metronome()
+    {
+        if (!playing || !metronome) { metronomeBeat = long.MinValue; return; }
+        var red = RedAt(time);
+        long beat = (long)Math.Floor((time - red.Time) / red.Beat);
+        if (beat == metronomeBeat) return;
+        bool next = metronomeBeat == beat - 1 || metronomeBeat > beat; // (not when it first starts mid-beat)
+        metronomeBeat = beat;
+        if (!next) return;
+        long inBar = ((beat % red.Meter) + red.Meter) % red.Meter;
+        float vol = BeatmapSamples.EffectVolume * (inBar == 0 ? 1 : red.Meter == 4 && inBar == 2 ? 0.6f : 0.8f);
+        (inBar == 0 ? skin.Sound("metronomehigh") : skin.Sound("metronomelow"))?.Play(vol);
+    }
 
     // the Timing tab's buttons (also the Timing menu's and Ctrl+P / Ctrl+Shift+P)
     void TimingAction(int i)
