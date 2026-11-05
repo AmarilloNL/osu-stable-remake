@@ -11,7 +11,7 @@ namespace OsuStableRemake;
 // hitsound toggles on the right (Q, W / E / R), and the song's position, playback and rate along the bottom.
 // F1 Compose, F3 Timing, F4 Song Setup, F5 test play, Ctrl+S save, Ctrl+Z / Ctrl+Y undo / redo, Ctrl+C / X / V,
 // Ctrl+A, Delete; the Edit menu's Ctrl+H / J (flip), Ctrl+< / > (rotate 90°), Ctrl+G (reverse), Ctrl+D (clone);
-// Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them; a selected slider's points drag, a
+// Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them; Ctrl+Tab live mapping; a selected slider's points drag, a
 // Ctrl+click on its body adds one and a right click on one removes it;
 // the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
@@ -404,14 +404,24 @@ sealed class Editor : Screen
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Z)) Restore(undo, redo);
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Y)) Restore(redo, undo);
 
+        // stable's live mapping (Compose: Ctrl+Tab)
+        if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.Tab))
+        {
+            liveMapping = !liveMapping;
+            if (liveMapping) tool = 1;
+            Notification.Show(liveMapping ? "Live mapping enabled! Use your taiko/mania keybinds to map while the music is playing!" : "Live mapping disabled.", 3000);
+        }
+        var live = Input.CtrlHeld ? Array.Empty<KeyboardKey>() : LiveMap(mouse);
+
         // playback (stable's bindings): Jump To First Note (Z), Play From Beginning (X), Audio Pause (C), Jump To End
-        // (V); Space plays / pauses
+        // (V); Space plays / pauses (the live mapping's keys come first)
+        bool Pressed(KeyboardKey k) => Input.IsKeyPressed(k) && !live.Contains(k);
         if (!Input.CtrlHeld)
         {
-            if (Input.IsKeyPressed(Bound("keyJumpToBegin", KeyboardKey.Z))) Seek(objs.Count > 0 ? objs[0].Time : 0);
-            if (Input.IsKeyPressed(Bound("keyPlayFromBegin", KeyboardKey.X))) { Seek(0); SetPlaying(true); }
-            if (Input.IsKeyPressed(Bound("keyAudioPause", KeyboardKey.C))) SetPlaying(!playing);
-            if (Input.IsKeyPressed(Bound("keyJumpToEnd", KeyboardKey.V))) Seek(objs.Count > 0 ? objs[^1].End : length);
+            if (Pressed(Bound("keyJumpToBegin", KeyboardKey.Z))) Seek(objs.Count > 0 ? objs[0].Time : 0);
+            if (Pressed(Bound("keyPlayFromBegin", KeyboardKey.X))) { Seek(0); SetPlaying(true); }
+            if (Pressed(Bound("keyAudioPause", KeyboardKey.C))) SetPlaying(!playing);
+            if (Pressed(Bound("keyJumpToEnd", KeyboardKey.V))) Seek(objs.Count > 0 ? objs[^1].End : length);
         }
         if (Input.IsKeyPressed(KeyboardKey.Space)) SetPlaying(!playing);
         bool leftKey = Input.IsKeyPressedRepeat(KeyboardKey.Left) || Input.IsKeyPressed(KeyboardKey.Left);
@@ -457,6 +467,59 @@ sealed class Editor : Screen
             case 1: UpdateTiming(mouse, u); break;
             case 2: UpdateSetup(mouse, u); break;
         }
+    }
+
+    // Live mapping, while the song plays in Compose: the taiko keys put a circle at the cursor (in the playfield) on
+    // the beat snap (the rims with a clap); in a mania map the column keys put a note in their column, a hold when let
+    // go over 300ms later. Gives the keys it took.
+    bool liveMapping;
+    readonly EObj?[] liveHeld = new EObj?[18];
+
+    KeyboardKey[] LiveMap(Vector2 mouse)
+    {
+        if (!liveMapping || !playing || tab != 0) return [];
+        if (mode == 3)
+        {
+            int keys = MKeys;
+            var bind = Player.ManiaKeys(keys);
+            for (int c = 0; c < keys && c < liveHeld.Length; c++)
+            {
+                if (Input.IsKeyPressed(bind[c]))
+                {
+                    int col = c;
+                    var n = new EObj { X = MColumnX(col, keys), Y = 192, Time = Snap(time), Type = 1, HitSound = soundNext };
+                    n.End = n.Time;
+                    if (objs.Any(o => MColumn(o, keys) == col && Math.Abs(o.Time - n.Time) < 1)) continue; // (one there already: kept)
+                    Change(() => { objs.Add(n); selected.Clear(); });
+                    liveHeld[c] = n;
+                }
+                else if (!Input.IsKeyDown(bind[c]) && liveHeld[c] is { } held)
+                {
+                    double end = Snap(time);
+                    if (end - held.Time > 300) { held.Type = (held.Type & ~1) | 128; held.End = end; held.Raw = null; modified = true; Rebuild(); }
+                    liveHeld[c] = null;
+                }
+            }
+            return bind;
+        }
+        var field = ToField(mouse);
+        if (field.X < 0 || field.X > 512 || field.Y < 0 || field.Y > 384) return [];
+        KeyboardKey[] drum = [Config.Key("keyTaikoInnerLeft", KeyboardKey.X), Config.Key("keyTaikoInnerRight", KeyboardKey.C),
+            Config.Key("keyTaikoOuterLeft", KeyboardKey.Z), Config.Key("keyTaikoOuterRight", KeyboardKey.V)];
+        for (int i = 0; i < drum.Length; i++)
+            if (Input.IsKeyPressed(drum[i]))
+            {
+                bool rim = i >= 2;
+                Change(() =>
+                {
+                    var p = GridSnap(field);
+                    var o = new EObj { X = p.X, Y = p.Y, Time = Snap(time), Type = 1, HitSound = rim ? 8 : 0 };
+                    o.End = o.Time;
+                    objs.Add(o);
+                    selected.Clear();
+                });
+            }
+        return drum;
     }
 
     void PlayHitsounds()

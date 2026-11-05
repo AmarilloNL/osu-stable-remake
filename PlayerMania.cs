@@ -66,7 +66,7 @@ sealed partial class Player
     // The player's keys for this key count, from stable's cfg: ManiaLayouts{n}K holds layouts split by ';' (each the
     // columns' key names, "None" for a column without one) and ManiaLayoutSelected{n}K picks one (-1 or none: stable's
     // default layout).
-    static KeyboardKey[] ManiaKeys(int keys)
+    internal static KeyboardKey[] ManiaKeys(int keys)
     {
         var def = ManiaDefaultKeys[keys - 1];
         var layouts = Config.Get($"ManiaLayouts{keys}K", "").Split(';');
