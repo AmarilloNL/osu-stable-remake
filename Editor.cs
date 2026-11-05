@@ -306,13 +306,19 @@ sealed partial class Editor : Screen
     // A change: the state before it goes on the undo stack.
     void Change(Action edit)
     {
-        undo.Add(Snapshot());
+        string before = Snapshot();
+        undo.Add(before);
         if (undo.Count > 100) undo.RemoveAt(0);
         redo.Clear();
         edit();
         modified = true;
         tapUndoAt = double.NegativeInfinity;
-        info = ReloadInfo();
+        // info (timing, breaks, colours, files: the editor takes no objects from it) reloaded only when something
+        // before the hit objects changed - a big map's reload takes tens of ms
+        var lines = Write();
+        int head = before.IndexOf("\n[HitObjects]", StringComparison.Ordinal);
+        if (head < 0 || !before.AsSpan(0, head).SequenceEqual(string.Join("\n", lines.TakeWhile(l => l != "[HitObjects]"))))
+            info = ReloadInfo(lines);
         Rebuild();
     }
 
@@ -1821,11 +1827,11 @@ sealed partial class Editor : Screen
         if (field >= 0) fieldText = Kv(Fields[field].Section, Fields[field].Key) ?? "";
     }
 
-    Beatmap ReloadInfo()
+    Beatmap ReloadInfo(string[]? lines = null)
     {
         try
         {
-            var tmp = Beatmap.Load(path, lines: Write());
+            var tmp = Beatmap.Load(path, lines: lines ?? Write());
             return tmp;
         }
         catch (Exception e) when (e is not OutOfMemoryException) { return info; }
