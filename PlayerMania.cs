@@ -41,6 +41,7 @@ sealed partial class Player
     double mStarTicks;
     int mBurstNext;
     bool[] mHoldLit = [];
+    double mStartAt; // (the keys' names fade from it)
     double[] mAutoRelease = [];
     double mW300g, mW300, mW200, mW100, mW50, mWMiss;
     double mBonus = 100, mScore; // ScoreV1's bonus meter and the running score
@@ -94,6 +95,7 @@ sealed partial class Player
         mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map), 1, 10);
         mBind = ManiaKeys(mKeys);
         mDown = new bool[mKeys];
+        mStartAt = Game.NowMs;
         mLitAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();
         mHoldOnAt = [.. mLitAt]; mHoldOffAt = [.. mLitAt];
         mHoldLit = new bool[mKeys];
@@ -336,6 +338,7 @@ sealed partial class Player
         public float[] X = [], W = [];
         public string[] Note = [], NoteH = [], NoteL = [], NoteT = [], Key = [], KeyD = [];
         public string LightingN = "lightingN", LightingL = "lightingL", WarningArrow = "mania-warningarrow";
+        public Color KeyWarning = Color.Black; // ColourKeyWarning: the keys' names on them at the start
         public float[] LightingNW = [], LightingLW = []; // (0: the column's width)
         public Color?[] Colour = [];
         public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
@@ -379,6 +382,7 @@ sealed partial class Player
         look.StageLight = M("StageLight") ?? look.StageLight;
         look.LightingN = M("LightingN") ?? look.LightingN;
         look.WarningArrow = M("WarningArrow") ?? look.WarningArrow;
+        if (M("ColourKeyWarning") is { } kw && ParseRgba(kw) is { } kwc) look.KeyWarning = kwc;
         look.LightingL = M("LightingL") ?? look.LightingL;
         look.LightingNW = List("LightingNWidth", mKeys, 0);
         look.LightingLW = List("LightingLWidth", mKeys, 0);
@@ -453,6 +457,14 @@ sealed partial class Player
             {
                 float kh = k.Height * (cw / k.Width);
                 DrawTexturePro(k.Tex, new Rectangle(0, 0, k.Tex.Width, k.Tex.Height), new Rectangle(x, h - kh, cw, kh), Vector2.Zero, 0, tint);
+                // stable: the column's key on it as the play starts, fading out from 0.5 to 3.5 seconds (not watching)
+                double shown = Game.NowMs - mStartAt;
+                if (playback == null && !auto && shown < 3500 && c < mBind.Length && mBind[c] != KeyboardKey.Null)
+                {
+                    string name = KeyName(mBind[c]);
+                    float size = look.W[c] / 2 * u, ka = shown < 500 ? 1 : 1 - (float)((shown - 500) / 3000);
+                    Game.TextBold(name, x + cw / 2 - Game.TextWidth(name, size) / 2, h - kh / 2 - size / 2, size, ColorAlpha(look.KeyWarning, look.KeyWarning.A / 255f * ka * alpha));
+                }
             }
             if (mDown[c] && skin.Tex(look.StageLight) is { } light)
                 DrawTexturePro(light.Tex, new Rectangle(0, 0, light.Tex.Width, light.Tex.Height), new Rectangle(x, hitY * u - light.Height * sd * 1.6f, cw, light.Height * sd * 1.6f), Vector2.Zero, 0, ColorAlpha(Color.White, 0.6f * alpha));
@@ -563,6 +575,16 @@ sealed partial class Player
             star.Draw(new(st.X * u, st.Y * u), (1 + (st.Grow - 1) * e) * sd, ColorAlpha(Color.White, (1 - e) * alpha), (st.Rot0 + (st.Rot1 - st.Rot0) * e) * 180 / MathF.PI);
         }
     }
+
+    static string KeyName(KeyboardKey k) => k switch
+    {
+        >= KeyboardKey.A and <= KeyboardKey.Z or >= KeyboardKey.Zero and <= KeyboardKey.Nine => ((char)k).ToString(),
+        >= KeyboardKey.Kp0 and <= KeyboardKey.Kp9 => $"NumPad{k - KeyboardKey.Kp0}",
+        KeyboardKey.Semicolon => ";", KeyboardKey.Comma => ",", KeyboardKey.Period => ".", KeyboardKey.Slash => "/",
+        KeyboardKey.Apostrophe => "'", KeyboardKey.LeftBracket => "[", KeyboardKey.RightBracket => "]", KeyboardKey.Backslash => "\\",
+        KeyboardKey.LeftShift => "LShift", KeyboardKey.RightShift => "RShift", KeyboardKey.LeftControl => "LCtrl", KeyboardKey.RightControl => "RCtrl",
+        _ => k.ToString(),
+    };
 
     void DrawManiaLighting(ManiaLook look, float left, float u, float sd, float alpha)
     {
