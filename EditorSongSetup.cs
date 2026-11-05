@@ -95,11 +95,22 @@ sealed partial class Editor
             SetGeneral("SampleSet", set == "Normal" ? "Soft" : set == "Soft" ? "Drum" : "Normal");
             return true;
         }
-        if (mode == 0 && CheckCollisionPointRec(mouse, SetupRow(346)))
+        // the map-wide volume and custom sample set: every timing point's (only when they all share one, like stable's)
+        for (int k = 0; k < 2; k++)
+        {
+            var r = SetupRow(332 + k * 14);
+            if (!CheckCollisionPointRec(mouse, r) || timing.Count == 0) continue;
+            var values = timing.Select(p => k == 0 ? p.Volume : p.Index).Distinct().ToList();
+            if (values.Count != 1) return true;
+            int step = (mouse.X < r.X + r.Width / 2 ? -1 : 1) * (k == 0 ? 5 : 1), to = Math.Clamp(values[0] + step, k == 0 ? 5 : 0, 100);
+            if (to != values[0]) Change(() => { foreach (var p in timing) { if (k == 0) p.Volume = to; else p.Index = to; p.Raw = null; } });
+            return true;
+        }
+        if (mode == 0 && CheckCollisionPointRec(mouse, SetupRow(374)))
         {
             // Rarely Stack (0.2) to Always Stack (1.0): the left half lowers, the right raises
             double stack = double.TryParse(General("StackLeniency", "0.7"), NumberStyles.Float, CultureInfo.InvariantCulture, out double sl) ? sl : 0.7;
-            var r = SetupRow(346);
+            var r = SetupRow(374);
             stack = Math.Clamp(Math.Round(stack + (mouse.X < r.X + r.Width / 2 ? -0.1 : 0.1), 1), 0.2, 1.0);
             SetGeneral("StackLeniency", stack.ToString(CultureInfo.InvariantCulture));
             return true;
@@ -123,7 +134,7 @@ sealed partial class Editor
             }
             Game.Text(text, r.X + (on == null ? 2 : 14) * u, r.Y, 10 * u, hover ? new Color(255, 200, 120, 255) : Color.White);
         }
-        DrawRectangle((int)((SetupX - 6) * u), (int)(80 * u), (int)(186 * u), (int)(290 * u), new Color(0, 0, 0, 200));
+        DrawRectangle((int)((SetupX - 6) * u), (int)(80 * u), (int)(186 * u), (int)(312 * u), new Color(0, 0, 0, 200));
 
         Header("Colours", 96);
         var combos = ComboColours();
@@ -160,10 +171,14 @@ sealed partial class Editor
         Row("Samples match playback rate", 288, General("SamplesMatchPlaybackRate", "0") == "1");
         Header("Audio", 304);
         Row($"Default sample set: {General("SampleSet", "Normal")}", 318);
+        var volumes = timing.Select(p => p.Volume).Distinct().ToList();
+        var sets = timing.Select(p => p.Index).Distinct().ToList();
+        Row(volumes.Count == 1 ? $"Sample volume: {volumes[0]}%  (- / +)" : "Sample volume: per timing section", 332);
+        Row(sets.Count == 1 ? $"Custom sample set: {(sets[0] == 0 ? "off" : sets[0].ToString(CultureInfo.InvariantCulture))}  (- / +)" : "Custom sample set: per timing section", 346);
         if (mode == 0)
         {
-            Header("Advanced", 332);
-            Row($"Stack Leniency: {General("StackLeniency", "0.7")}  (- / +)", 346);
+            Header("Advanced", 360);
+            Row($"Stack Leniency: {General("StackLeniency", "0.7")}  (- / +)", 374);
         }
 
         if (setupColourPick >= 0)
