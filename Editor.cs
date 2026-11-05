@@ -129,6 +129,7 @@ sealed partial class Editor : Screen
 
     void Read(string[] lines)
     {
+        drag = null; pointDrag = null; timeDrag = null; endDrag = null; boxFrom = null; holdDraft = null; mDrag = null; mBox = null; breakDrag = null;
         sections.Clear(); objs = []; timing = [];
         Section? cur = null;
         foreach (var raw in lines)
@@ -314,6 +315,10 @@ sealed partial class Editor : Screen
     static Vector2 EndPosOf(EObj o) => o.Slider && o.Path.Length > 0 ? (o.Slides % 2 == 1 ? o.Path[^1] : o.Path[0]) : PosOf(o);
     Vector2 StackShift(EObj o) { float off = o.Stack * (Radius * 1.00041f / 10f); return new(-off, -off); }
     Vector2 StackedPos(EObj o) => PosOf(o) + StackShift(o);
+    // the object (head) under the cursor: of those it's over, the nearest where it's drawn (in a stack, the circle
+    // clicked on), the earliest (drawn on top) when level
+    EObj? ObjectAt(Vector2 fieldPos) => Visible().Where(o => !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius)
+        .OrderBy(o => Vector2.Distance(StackedPos(o), fieldPos)).ThenBy(o => o.Time).FirstOrDefault();
     void ApplyStacking()
     {
         float threshold = (float)Preempt * (float)(double.TryParse(Kv("General", "StackLeniency"), NumberStyles.Float, Inv, out double sl) ? sl : 0.7);
@@ -865,7 +870,7 @@ sealed partial class Editor : Screen
             return;
         }
         if (Input.IsMouseButtonPressed(MouseButton.Right) && sliderDraft == null && pointDrag == null && inField
-            && Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius) is { } gone)
+            && ObjectAt(fieldPos) is { } gone)
         {
             Change(() => { objs.Remove(gone); selected.Remove(gone); });
             return;
@@ -1712,7 +1717,7 @@ sealed partial class Editor : Screen
         // Ctrl+click with only a slider selected, not on another object (stable's): a new point there, in the part of
         // its outline nearest, dragged on
         if (click && inField && Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } body
-            && Vector2.Distance(new((float)body.X, (float)body.Y), fieldPos) > Radius
+            && Vector2.Distance(StackedPos(body), fieldPos) > Radius
             && !Visible().Any(o => o != body && !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius))
         {
             undo.Add(Snapshot()); redo.Clear();
@@ -1729,7 +1734,7 @@ sealed partial class Editor : Screen
         if (click && inField)
         {
             // the topmost visible object under the cursor (its head)
-            var hit = Visible().Reverse().FirstOrDefault(o => !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius);
+            var hit = ObjectAt(fieldPos);
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
@@ -1766,7 +1771,7 @@ sealed partial class Editor : Screen
             if (!held)
             {
                 var r = new Rectangle(Math.Min(bf.X, fieldPos.X), Math.Min(bf.Y, fieldPos.Y), Math.Abs(fieldPos.X - bf.X), Math.Abs(fieldPos.Y - bf.Y));
-                foreach (var o in Visible()) if (CheckCollisionPointRec(new((float)o.X, (float)o.Y), r)) selected.Add(o);
+                foreach (var o in Visible()) if (CheckCollisionPointRec(StackedPos(o), r)) selected.Add(o);
                 boxFrom = null;
             }
         }

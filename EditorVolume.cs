@@ -28,6 +28,7 @@ sealed partial class Editor
         float s = AiS;
         w.Mouse = mouse;
         if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - VolW * s) / 2, (Game.H - (VolH + AiCaption) * s) / 2);
+        if (Input.IsKeyPressed(KeyboardKey.Escape)) { volumeWindow = null; Input.Muted = true; return true; } // (like the other windows)
         bool click = Input.IsMouseButtonPressed(MouseButton.Left), held = Input.IsMouseButtonDown(MouseButton.Left);
         if (w.Drag is { } d)
         {
