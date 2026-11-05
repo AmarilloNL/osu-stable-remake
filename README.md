@@ -20,7 +20,7 @@ in a new client written from the ground up in C#. The goal is to judge, look and
 while running with sub-millisecond frame times and handling frames better.
 
 It is **offline only**: it never talks to any osu! server. Everything it saves (its own settings, replays,
-screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, save a beatmap in the editor, delete a beatmap (to the Recycle Bin, like stable), export your skin (`Exports`), change collections (`collection.db`) or use Remove from Unplayed / Mark all maps as played (flags in `osu!.db`); the last ones only while stable is closed.
+screenshots) goes next to its own executable; it only writes to your osu! folder when you import a beatmap or skin, save a beatmap in the editor (and its `.osb`, after a change in the Design tab), delete a beatmap (to the Recycle Bin, like stable), export your skin (`Exports`), change collections (`collection.db`) or use Remove from Unplayed / Mark all maps as played (flags in `osu!.db`); the last ones only while stable is closed.
 
 > [!NOTE]
 > This is a personal hobby project. It is not affiliated with, endorsed by, or connected to ppy Pty Ltd

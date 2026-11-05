@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>osu!stable remake</AssemblyName>
     <RootNamespace>OsuStableRemake</RootNamespace>
-    <Version>0.2.5</Version>
+    <Version>0.3.0</Version>
     <!-- release exe: precompiled, so starting the game and a play don't wait for the JIT -->
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
