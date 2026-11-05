@@ -264,7 +264,7 @@ sealed partial class Player
                     if (rim == (n.Kind == TKind.Kat) && key != n.FirstKey && at - n.FirstHitAt < 30)
                     {
                         n.Pending = false;
-                        TaikoBigBonus(n);
+                        TaikoBigBonus(n, together: at <= n.FirstHitAt);
                         return;
                     }
                     continue;
@@ -316,9 +316,12 @@ sealed partial class Player
         }
     }
 
-    void TaikoBigBonus(TNote n)
+    // stable: both keys in the same frame are one judgement worth double, counted as a geki / katu; the second hand
+    // up to 30ms later is a bonus of its own that adds its health again but isn't counted
+    void TaikoBigBonus(TNote n, bool together)
     {
-        if (n.Result == 300) nGeki++; else nKatu++;
+        if (together) { if (n.Result == 300) nGeki++; else nKatu++; }
+        else health.Add(n.Result == 300 ? tHpMul * 6 : tHpMul * Beatmap.Range(map.HP, 17.6, 2.2, 2.2));
         score += TaikoValue(n.Result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai, comboOffset: -1); // stable: the second hand's bonus counts one combo less
         tLastJudge = (n.Result, true, Game.NowMs);
     }
