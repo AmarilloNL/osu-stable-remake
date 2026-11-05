@@ -192,6 +192,7 @@ sealed class Beatmap
             int drain = ((int)map.Objects[^1].Time - (int)map.Objects[0].Time - map.Breaks.Sum(b => (int)b.End - (int)b.Start)) / 1000;
             float density = drain == 0 ? 16 : Math.Clamp((float)map.Objects.Count / drain * 8f, 0f, 16f);
             map.DifficultyMultiplier = (int)Math.Round(((float)map.HP + (float)map.CS + (float)map.OD + density) / 38f * 5f);
+            map.TaikoDifficultyMultiplier = (int)Math.Round(((float)map.HP + 2f + (float)map.OD + density) / 38f * 5f); // (taiko counts CS as 2)
         }
         (map.RawCS, map.RawOD, map.RawHP, map.RawAR) = (map.CS, map.OD, map.HP, map.AR); // (before mods: osu!mania's keys and windows)
         if (mods.HasFlag(Mods.HardRock)) map.ScaleDifficulty(1.3, 1.4);
@@ -202,7 +203,7 @@ sealed class Beatmap
 
     bool flipY;
     public List<(double Start, double End)> Breaks = [];
-    public int DifficultyMultiplier;
+    public int DifficultyMultiplier, TaikoDifficultyMultiplier;
 
     // HP in float; CS, AR and OD in double on the float value, like stable's difficulty ranges (AR 7 * 1.4 = 480ms, not 479).
     void ScaleDifficulty(double cs, double rest)

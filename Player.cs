@@ -219,7 +219,7 @@ sealed partial class Player : Screen
             Toast.Show($"Mouse buttons are currently disabled. Hit {Config.Get("keyDisableMouseButtons", "F10")} to enable them again.", new Color(245, 245, 220, 255), 10000);
         }
 
-        diffMul = map.DifficultyMultiplier;
+        diffMul = mode == 1 ? map.TaikoDifficultyMultiplier : map.DifficultyMultiplier;
         InitScoreV2();
 
         // stable counts retries in a row of a live play (any other way in starts over)

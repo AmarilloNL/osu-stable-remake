@@ -194,8 +194,7 @@ sealed partial class Player
             else if (n.Kind == TKind.Roll && time > n.RollEnd) { n.Done = true; n.JudgedAt = n.End; }
             else if (n.Kind == TKind.Swell && time > n.End)
             {
-                // stable: all the hits a 300, over half a 100, else a miss
-                TaikoJudge(n, n.Hits >= n.HitsNeeded ? 300 : n.Hits > n.HitsNeeded / 2 ? 100 : 0, n.End);
+                TaikoJudge(n, 0, n.End); // (not cleared in time)
             }
         }
         while (tNext < tNotes.Count && tNotes[tNext].Done) tNext++;
@@ -219,10 +218,11 @@ sealed partial class Player
                         TaikoPress((tAutoHand++ & 1) == 0 ? 1 : 2, n.Ticks[n.AutoNext]);
                     break;
                 case TKind.Swell:
-                    // stable's Auto: centre and rim in turn, spread over the swell (duration / (hits + 1) apart)
-                    double gap = (n.End - n.Time) / (n.HitsNeeded + 1);
-                    for (; n.AutoNext < n.HitsNeeded && n.Time + gap * (n.AutoNext + 1) <= time; n.AutoNext++)
-                        TaikoPress((n.AutoNext % 4) switch { 0 => 1, 1 => 0, 2 => 2, _ => 3 }, n.Time + gap * (n.AutoNext + 1));
+                    // stable's Auto: centre and rim in turn, the count plus one hits from the swell's start, (int)(duration /
+                    // (count + 1)) apart
+                    int gap = Math.Max(1, (int)(n.End - n.Time) / (n.HitsNeeded + 1));
+                    for (; n.AutoNext <= n.HitsNeeded && n.Time + gap * n.AutoNext < n.End && n.Time + gap * n.AutoNext <= time; n.AutoNext++)
+                        TaikoPress((n.AutoNext % 4) switch { 0 => 1, 1 => 0, 2 => 2, _ => 3 }, n.Time + gap * n.AutoNext);
                     break;
             }
         }
@@ -247,13 +247,15 @@ sealed partial class Player
                     n.LastSwellRim = rim ? 1 : 0;
                     n.Hits++;
                     score += 300;
-                    if (n.Hits >= n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; }
+                    if (n.Hits > n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; } // (stable: one more than its count)
                     return;
                 case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
                     if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
                     {
                         n.TicksHit++;
-                        score += n.Big ? 360 : 300; // stable: a big roll's ticks are worth 1.2x
+                        // stable: 300 a tick, 1.2x in kiai (the roll's start), a big roll's a fifth more
+                        int tick = map.PointAt(n.Time).Kiai ? 360 : 300;
+                        score += n.Big ? tick + tick / 5 : tick;
                         health.Add(0.0001);
                     }
                     return;
@@ -284,6 +286,15 @@ sealed partial class Player
         n.Done = true;
         n.Result = result;
         n.JudgedAt = at;
+        if (n.Kind == TKind.Swell)
+        {
+            // stable: a cleared swell is a bonus (300 with the combo's bonus, 1.2x in kiai, doubled) leaving the combo
+            // and the counts alone; one not cleared just costs some health
+            if (result > 0) { tLastJudge = (300, false, Game.NowMs); score += 2 * TaikoValue(300, map.PointAt(at).Kiai); }
+            else health.Add(Beatmap.Range(map.HP, -4, -15, -28));
+            tFailing = false;
+            return;
+        }
         tLastJudge = (result, false, Game.NowMs);
         tFailing = result == 0;
         Count(result);
@@ -291,9 +302,10 @@ sealed partial class Player
             tFlying.Add(new TFly { X = TaikoHitX, Y = TaikoLaneY, Scale = n.Big ? 1 : 0.65f, Vy = 169, Colour = n.Kind == TKind.Don ? new Color(235, 69, 44, 255) : new Color(67, 142, 172, 255), Big = n.Big });
         if (result > 0)
         {
+            // (scored on the combo before this hit, like stable)
+            score += TaikoValue(result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai);
             combo++;
             maxCombo = Math.Max(maxCombo, combo);
-            TaikoScore(result == 300 ? 300 : 150);
             if (result != 300 && mods.HasFlag(Mods.Perfect)) Fail(); // (Perfect: greats only)
             health.Add(result == 300 ? tHpMul * 6 : tHpMul * Beatmap.Range(map.HP, 17.6, 2.2, 2.2));
         }
@@ -307,12 +319,17 @@ sealed partial class Player
     void TaikoBigBonus(TNote n)
     {
         if (n.Result == 300) nGeki++; else nKatu++;
-        TaikoScore(n.Result == 300 ? 300 : 150, comboOffset: -1); // stable: the second hand's bonus counts one combo less
+        score += TaikoValue(n.Result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai, comboOffset: -1); // stable: the second hand's bonus counts one combo less
         tLastJudge = (n.Result, true, Game.NowMs);
     }
 
-    // stable: the hit's value plus (value / 35 x 2 x (difficulty + 1) x mod multiplier) for every 10 combo (up to 100)
-    void TaikoScore(int value, int comboOffset = 0) => score += value + (int)((double)(value / 35 * 2 * (diffMul + 1)) * modMul) * (Math.Min(100, combo + comboOffset) / 10);
+    // stable: the hit's value plus (value / 35 x 2 x (difficulty + 1) x mod multiplier) for every 10 combo (up to 100),
+    // 1.2x in kiai
+    int TaikoValue(int value, bool kiai, int comboOffset = 0)
+    {
+        int v = value + (int)((double)(value / 35 * 2 * (diffMul + 1)) * modMul) * (Math.Min(100, combo + comboOffset) / 10);
+        return kiai ? (int)(v * 1.2f) : v;
+    }
 
     void TaikoDraw(int w, int h)
     {
@@ -401,7 +418,7 @@ sealed partial class Player
             var st = ColorAlpha(mods.HasFlag(Mods.SpunOut) ? Color.Gray : Color.White, (float)Math.Clamp((time - n.Time + 1) / 201, 0, 1) * playfieldAlpha);
             skin.Tex("spinner-circle")?.Draw(c, 0.8f * sd, st, n.Hits * 20 % 360);
             if (!mods.HasFlag(Mods.Hidden)) skin.Tex("spinner-approachcircle")?.Draw(c, 0.8f * sd * (1.86f - 1.76f * p), st);
-            string left = (n.HitsNeeded - n.Hits).ToString();
+            string left = (n.HitsNeeded + 1 - n.Hits).ToString();
             float gh = (skin.Glyph(skin.ScorePrefix, '0')?.Height ?? 30) * sd;
             skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, left, c.X, c.Y + 80 * u - gh / 2, sd, 0.5f, st);
         }
