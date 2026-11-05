@@ -12,6 +12,8 @@ namespace OsuStableRemake;
 // F1 Compose, F3 Timing, F4 Song Setup, F5 test play, Ctrl+S save, Ctrl+Z / Ctrl+Y undo / redo, Ctrl+C / X / V,
 // Ctrl+A, Delete; the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
+// Like stable's, a taiko map's circles are red (blue with a whistle or clap) and its sliders yellow, a catch map's
+// distance snap only measures across, and a mania map gets its own compose view (Select / Note / Hold).
 sealed class Editor : Screen
 {
     // ---- the file: its sections as written, key-value sections editable, timing points and objects parsed
@@ -26,7 +28,7 @@ sealed class Editor : Screen
         public List<Vector2> Anchors = []; // a slider's points after its head
         public int Slides = 1;
         public double Length;
-        public string Edges = "", EdgeSets = "", Sample = "", Rest = ""; // kept as written (Rest: a spinner / hold's tail)
+        public string Edges = "", EdgeSets = "", Sample = ""; // kept as written
         public string? Raw; // the line as read, written back as long as nothing changed
         public Vector2[] Path = []; // (built for drawing)
         public int Combo, Colour;
@@ -66,7 +68,8 @@ sealed class Editor : Screen
 
     // ---- editing state
     int tab; // 0 compose, 1 timing, 2 song setup
-    int tool = 1; // 0 select, 1 circle, 2 slider, 3 spinner
+    int tool = 1; // 0 select, 1 circle, 2 slider, 3 spinner (mania: 0 select, 1 note, 2 hold)
+    int mode; // the map's (General: Mode)
     int divisor = 4;
     static readonly int[] Divisors = [1, 2, 3, 4, 6, 8, 12, 16];
     int gridSize = 32;
@@ -102,6 +105,7 @@ sealed class Editor : Screen
         info = Beatmap.Load(file);
         samples = new BeatmapSamples(info.Folder);
         Read(File.ReadAllLines(file));
+        mode = int.TryParse(Kv("General", "Mode"), out int m) ? m : 0;
         music = Track.Load(Path.Combine(info.Folder, info.AudioFilename), tempo: true);
         if (music != null) { music.Volume = Config.MusicVolume; length = Math.Max(1, music.LengthMs); }
         else length = Math.Max(1, objs.Count > 0 ? objs[^1].End + 2000 : 60000);
@@ -179,7 +183,7 @@ sealed class Editor : Screen
                 o.Edges = f.Length > 8 ? f[8] : ""; o.EdgeSets = f.Length > 9 ? f[9] : ""; o.Sample = f.Length > 10 ? f[10] : "";
             }
             else if (o.Spinner && f.Length > 5) { o.End = double.Parse(f[5], Inv); o.Sample = f.Length > 6 ? f[6] : ""; }
-            else if ((o.Type & 128) != 0 && f.Length > 5) { o.Rest = f[5]; o.End = double.Parse(f[5].Split(':')[0], Inv); }
+            else if ((o.Type & 128) != 0 && f.Length > 5) { int c = f[5].IndexOf(':'); o.End = double.Parse(c < 0 ? f[5] : f[5][..c], Inv); o.Sample = c < 0 ? "" : f[5][(c + 1)..]; }
             else o.Sample = f.Length > 5 ? f[5] : "";
             return o;
         }
@@ -199,7 +203,7 @@ sealed class Editor : Screen
             return $"{head},{o.Curve}|{pts},{o.Slides},{Num(o.Length)},{edges},{sets},{sample}";
         }
         if (o.Spinner) return $"{head},{Num(Math.Round(o.End))},{sample}";
-        if ((o.Type & 128) != 0) return $"{head},{o.Rest}";
+        if ((o.Type & 128) != 0) return $"{head},{Num(Math.Round(o.End))}:{sample}";
         return $"{head},{sample}";
     }
 
@@ -459,7 +463,7 @@ sealed class Editor : Screen
     // ---- compose
     static Rectangle ToolRect(int i) { float u = U; return new Rectangle(4 * u, (90 + i * 34) * u, 62 * u, 30 * u); }
     Rectangle ToggleRect(int i) { float u = U; return new Rectangle(Game.W - 92 * u, (90 + i * 34) * u, 88 * u, 30 * u); }
-    static readonly string[] ToolNames = ["Select", "Circle", "Slider", "Spinner"];
+    string[] ToolNames => mode == 3 ? ["Select", "Note", "Hold"] : ["Select", "Circle", "Slider", "Spinner"];
     static readonly string[] ToggleNames = ["New combo", "Whistle", "Finish", "Clap", "Grid snap", "Distance snap", "Sampleset", "Additions"];
     static readonly string[] SetNames = ["Auto", "Normal", "Soft", "Drum"];
     bool distSnap;
@@ -495,7 +499,7 @@ sealed class Editor : Screen
     (Vector2 From, float Radius)? SnapRing(double t)
     {
         var prev = objs.LastOrDefault(o => o.End < t - 1 && !o.Spinner);
-        if (prev == null) return null;
+        if (prev == null || mode is 1 or 3) return null;
         var from = prev.Slider && prev.Path.Length > 0 ? (prev.Slides % 2 == 1 ? prev.Path[^1] : prev.Path[0]) : new Vector2((float)prev.X, (float)prev.Y);
         double perMs = 100 * SliderMultiplier * SvAt(t) / RedAt(t).Beat;
         return (from, (float)(DistanceSpacing * perMs * (t - prev.End)));
@@ -508,7 +512,7 @@ sealed class Editor : Screen
         {
             var dir = fieldPos - ring.From;
             if (dir.LengthSquared() < 1e-6f) dir = new Vector2(1, 0);
-            p = ring.From + Vector2.Normalize(dir) * ring.Radius;
+            p = mode == 2 ? new(ring.From.X + (dir.X < 0 ? -1 : 1) * ring.Radius, p.Y) : ring.From + Vector2.Normalize(dir) * ring.Radius;
             p = new Vector2(MathF.Round(p.X), MathF.Round(p.Y));
         }
         return p;
@@ -517,7 +521,7 @@ sealed class Editor : Screen
     void UpdateCompose(Vector2 mouse, float u)
     {
         string[] toolKeys = ["keySelectTool", "keyNormalTool", "keySliderTool", "keySpinnerTool"];
-        for (int k = 0; k < 4; k++) if (Input.IsKeyPressed(Bound(toolKeys[k], KeyboardKey.One + k)) && !Input.CtrlHeld) { tool = k; sliderDraft = null; }
+        for (int k = 0; k < ToolNames.Length; k++) if (Input.IsKeyPressed(Bound(toolKeys[k], KeyboardKey.One + k)) && !Input.CtrlHeld) { tool = k; sliderDraft = null; }
         if (Input.IsKeyPressed(Bound("keyNewComboToggle", KeyboardKey.Q))) ToggleCombo();
         if (Input.IsKeyPressed(Bound("keyWhistleToggle", KeyboardKey.W))) ToggleSound(2);
         if (Input.IsKeyPressed(Bound("keyFinishToggle", KeyboardKey.E))) ToggleSound(4);
@@ -558,7 +562,7 @@ sealed class Editor : Screen
         bool click = Input.IsMouseButtonPressed(MouseButton.Left), held = Input.IsMouseButtonDown(MouseButton.Left);
         if (click)
         {
-            for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, ToolRect(i))) { tool = i; sliderDraft = null; return; }
+            for (int i = 0; i < ToolNames.Length; i++) if (CheckCollisionPointRec(mouse, ToolRect(i))) { tool = i; sliderDraft = null; return; }
             for (int i = 0; i < ToggleNames.Length; i++)
                 if (CheckCollisionPointRec(mouse, ToggleRect(i)))
                 {
@@ -622,6 +626,8 @@ sealed class Editor : Screen
             else scrubFrom = double.NaN;
             return;
         }
+
+        if (mode == 3) { UpdateMania(mouse, click, held); return; }
 
         // the playfield
         var fieldPos = ToField(mouse);
@@ -999,13 +1005,8 @@ sealed class Editor : Screen
                 if (t < segStart || t >= segEnd) continue;
                 long inBeat = ((n % divisor) + divisor) % divisor;
                 long beatIndex = (long)Math.Floor(n / (double)divisor);
-                Color c; float hgt;
-                if (inBeat == 0) { c = Color.White; hgt = beatIndex % p.Meter == 0 ? 1 : 0.6f; }
-                else
-                {
-                    int den = divisor / Gcd((int)inBeat, divisor);
-                    (c, hgt) = den switch { 2 => (new Color(255, 70, 70, 255), 0.5f), 4 => (new Color(80, 130, 255, 255), 0.4f), 3 or 6 => (new Color(190, 90, 255, 255), 0.4f), 8 => (new Color(255, 220, 60, 255), 0.3f), _ => (Color.Gray, 0.25f) };
-                }
+                var c = TickColour(inBeat, divisor);
+                float hgt = inBeat == 0 ? (beatIndex % p.Meter == 0 ? 1 : 0.6f) : (divisor / Gcd((int)inBeat, divisor)) switch { 2 => 0.5f, 4 or 3 or 6 => 0.4f, 8 => 0.3f, _ => 0.25f };
                 float x = TimelineX(t);
                 DrawRectangle((int)x, (int)(r.Y + r.Height * (1 - hgt)), Math.Max(1, (int)u), (int)(r.Height * hgt), ColorAlpha(c, 0.8f));
             }
@@ -1017,7 +1018,7 @@ sealed class Editor : Screen
             float x0 = TimelineX(o.Time), x1 = TimelineX(o.End);
             if (x1 < r.X - 20 * u || x0 > r.X + r.Width + 20 * u) continue;
             float cy = r.Y + r.Height / 2, rad = 9 * u;
-            var col = o.Spinner ? Color.Gray : colours[o.Colour % colours.Length];
+            var col = o.Spinner ? Color.Gray : ObjColour(o, colours);
             if (o.Slider || o.Spinner) DrawRectangleRounded(new Rectangle(x0 - rad, cy - rad, x1 - x0 + rad * 2, rad * 2), 1, 8, ColorAlpha(col, 0.7f));
             DrawCircleV(new(x0, cy), rad, col);
             DrawCircleLinesV(new(x0, cy), rad, selected.Contains(o) ? new Color(255, 200, 0, 255) : Color.White);
@@ -1036,7 +1037,23 @@ sealed class Editor : Screen
 
     static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
 
+    // the beat snap's colours: a beat white, then 1/2 red, 1/4 blue, 1/3 and 1/6 purple, 1/8 yellow, the rest grey
+    static Color TickColour(long inBeat, int divisor) => inBeat == 0 ? Color.White : (divisor / Gcd((int)inBeat, divisor)) switch
+    {
+        2 => new Color(255, 70, 70, 255), 4 => new Color(80, 130, 255, 255), 3 or 6 => new Color(190, 90, 255, 255), 8 => new Color(255, 220, 60, 255), _ => Color.Gray,
+    };
+
+    // stable colours a taiko map's objects by what they'll be: a don red, a kat (whistle or clap) blue, a drumroll yellow
+    Color ObjColour(EObj o, Color[] colours) => mode != 1 ? colours[o.Colour % colours.Length]
+        : o.Slider ? new Color(252, 184, 6, 255) : (o.HitSound & 10) != 0 ? new Color(67, 142, 172, 255) : new Color(235, 69, 44, 255);
+
     void DrawCompose(float u)
+    {
+        if (mode == 3) DrawMania(u); else DrawPlayfield(u);
+        DrawToolbox(u);
+    }
+
+    void DrawPlayfield(float u)
     {
         var o0 = FieldOrigin;
         float fs = FieldScale;
@@ -1055,7 +1072,7 @@ sealed class Editor : Screen
             var o = vis[k];
             float alpha = time < o.Time - pre + 400 ? (float)((time - (o.Time - pre)) / 400) : time > o.End ? 1 - (float)((time - o.End) / 800) : 1;
             alpha = Math.Clamp(alpha, 0, 1);
-            var col = colours[o.Colour % colours.Length];
+            var col = ObjColour(o, colours);
             if (o.Spinner)
             {
                 var c = ToScreen(256, 192);
@@ -1115,9 +1132,12 @@ sealed class Editor : Screen
             var a = ToScreen(bf.X, bf.Y); var b = Input.GetMousePosition();
             DrawRectangleLinesEx(new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y)), 1, Color.White);
         }
+    }
 
+    void DrawToolbox(float u)
+    {
         // the toolbox and the toggles
-        for (int i = 0; i < 4; i++) DrawButton(ToolRect(i), $"{i + 1}. {ToolNames[i]}", tool == i);
+        for (int i = 0; i < ToolNames.Length; i++) DrawButton(ToolRect(i), $"{i + 1}. {ToolNames[i]}", tool == i);
         bool anySel = selected.Count > 0;
         bool[] on =
         [
@@ -1134,8 +1154,227 @@ sealed class Editor : Screen
         Game.Text($"Grid {gridSize} (G)", Game.W - 92 * u, (90 + ToggleNames.Length * 34) * u, 10 * u, Color.LightGray);
         // the distance snap's ring for an object placed now
         if (distSnap && tool is 1 or 2 && sliderDraft == null && SnapRing(Snap(time)) is { } ring && ring.Radius > 0)
-            DrawCircleLinesV(ToScreen(ring.From.X, ring.From.Y), ring.Radius * FieldScale, ColorAlpha(Color.White, 0.5f));
+        {
+            if (mode == 2)
+                foreach (int side in new[] { -1, 1 }) DrawLineV(ToScreen(ring.From.X + side * ring.Radius, 0), ToScreen(ring.From.X + side * ring.Radius, 384), ColorAlpha(Color.White, 0.5f));
+            else DrawCircleLinesV(ToScreen(ring.From.X, ring.From.Y), ring.Radius * FieldScale, ColorAlpha(Color.White, 0.5f));
+        }
         Game.Text($"{selected.Count} selected", 4 * u, 230 * u, 10 * u, Color.LightGray);
+    }
+
+    // ---- mania: stable's own compose view. The map's columns as a stage (30 wide, from x 160) scrolling through the
+    // beat snap's lines, a twelfth of the timeline's span below the judgement line (now) and a third above; beside it
+    // the whole song's note density in a hundred slices (yellow, pink past 0.6 notes a column per half beat) under a
+    // marker of what the stage shows. Notes are stable's default mania-note1 at 0.1875 tinted by column (white, pink,
+    // the middle yellow; selected sky blue), holds with the note1L body between their ends.
+    const float MTop = 66, MBottom = 458, MLeft = 160, MStrip = 80;
+    EObj? holdDraft; double holdFrom; // the hold being drawn: its other end follows the cursor
+    (double Time, int Column, Dictionary<EObj, (double Time, double End, int Column)> Start)? mDrag;
+    (float X, float Y, double Time)? mBox;
+    int MKeys => Math.Clamp((int)Math.Round(double.TryParse(Kv("Difficulty", "CircleSize"), NumberStyles.Float, Inv, out double cs) ? cs : 4), 1, 18);
+    static float MColW(int keys) => Math.Min(30, (Game.W / U - MLeft - 70) / keys);
+    double MFrom => time - 6000 / zoom / 12;
+    double MTo => time + 6000 / zoom / 3;
+    float MY(double t) => MBottom - (float)((t - MFrom) / (MTo - MFrom)) * (MBottom - MTop);
+    double MTime(float y) => MFrom + (MBottom - y) / (MBottom - MTop) * (MTo - MFrom);
+    static int MColumn(EObj o, int keys) => Math.Clamp((int)(o.X * keys / 512), 0, keys - 1);
+    static double MColumnX(int c, int keys) => (int)((c + 0.5) * 512 / keys);
+
+    // a note's sprite (bottom on its time) in 480-units
+    Rectangle MNote(int c, double t, float colW)
+    {
+        var n = skin.DefaultTex("mania-note1");
+        float w = (n?.Width ?? 256) * 0.1875f / 1.6f * colW / 30, h = (n?.Height ?? 82) * 0.1875f / 1.6f;
+        return new Rectangle(MLeft + colW * c, MY(t) - h, w, h);
+    }
+
+    // what's under the cursor: a note (its head or body), or a hold's tail
+    (EObj? Obj, bool Tail) MHit(float mx, float my, int keys, float colW)
+    {
+        var at = new Vector2(mx, my);
+        for (int i = objs.Count - 1; i >= 0; i--)
+        {
+            var o = objs[i];
+            if (o.End < MFrom - 1000 || o.Time > MTo + 1000) continue;
+            int c = MColumn(o, keys);
+            bool hold = (o.Type & 128) != 0;
+            if (hold && CheckCollisionPointRec(at, MNote(c, o.End, colW))) return (o, true);
+            if (CheckCollisionPointRec(at, MNote(c, o.Time, colW))) return (o, false);
+            if (hold && mx >= MLeft + colW * c && mx < MLeft + colW * (c + 1) && my <= MY(o.Time) && my >= MY(o.End)) return (o, false);
+        }
+        return (null, false);
+    }
+
+    void UpdateMania(Vector2 mouse, bool click, bool held)
+    {
+        float u = U, mx = mouse.X / u, my = mouse.Y / u;
+        int keys = MKeys;
+        float colW = MColW(keys);
+        int col = mx > MLeft ? (int)((mx - MLeft) / colW) : -1;
+        bool inStage = col >= 0 && col < keys && my > MTop && my < MBottom;
+
+        // a hold being drawn follows the cursor; let go, both ends snap (and with no length left it's a note)
+        if (holdDraft is { } hd)
+        {
+            double t = MTime(my);
+            hd.Time = Math.Min(holdFrom, t); hd.End = Math.Max(holdFrom, t); hd.Raw = null; modified = true;
+            if (!held)
+            {
+                hd.Time = Snap(hd.Time); hd.End = Snap(hd.End);
+                if (hd.End <= hd.Time) { hd.Type = (hd.Type & ~128) | 1; hd.End = hd.Time; }
+                holdDraft = null;
+                Rebuild();
+            }
+            return;
+        }
+        // the selection dragged: in time (snapped) and across the columns
+        if (mDrag is { } d)
+        {
+            if (!held) { mDrag = null; Rebuild(); return; }
+            double first = d.Start.Values.Min(s => s.Time);
+            double shift = Snap(first + MTime(my) - d.Time) - first;
+            int lo = d.Start.Values.Min(s => s.Column), hi = d.Start.Values.Max(s => s.Column);
+            int dc = Math.Clamp((mx > MLeft ? (int)((mx - MLeft) / colW) : -1) - d.Column, -lo, keys - 1 - hi);
+            foreach (var (o, s) in d.Start)
+            {
+                double nx = MColumnX(s.Column + dc, keys);
+                if (Math.Abs(o.Time - (s.Time + shift)) < 0.5 && o.X == nx) continue;
+                o.Time = s.Time + shift; o.End = s.End + shift; o.X = nx; o.Raw = null; modified = true;
+            }
+            return;
+        }
+        // a box: in the stage, the columns and times it covers; in the density strip, the part of the song
+        if (mBox is { } b)
+        {
+            if (held) return;
+            bool strip = b.X > MStrip && b.X < MStrip + 60 && mx > MStrip && mx < MStrip + 60;
+            double t0 = strip ? (MBottom - b.Y) / (MBottom - MTop) * length : b.Time, t1 = strip ? (MBottom - my) / (MBottom - MTop) * length : MTime(my);
+            int c0 = (int)Math.Floor((Math.Min(b.X, mx) - MLeft) / colW), c1 = (int)Math.Floor((Math.Max(b.X, mx) - MLeft) / colW);
+            foreach (var o in objs)
+                if (o.Time >= Math.Min(t0, t1) && o.Time <= Math.Max(t0, t1) && (strip || MColumn(o, keys) >= c0 && MColumn(o, keys) <= c1)) selected.Add(o);
+            mBox = null;
+            return;
+        }
+
+        var (hit, tail) = inStage ? MHit(mx, my, keys, colW) : (null, false);
+        // a right click deletes the note under the cursor (the selection, if it's in it)
+        if (Input.IsMouseButtonPressed(MouseButton.Right) && hit != null)
+        {
+            Change(() => { if (selected.Contains(hit)) { objs.RemoveAll(selected.Contains); selected.Clear(); } else objs.Remove(hit); });
+            return;
+        }
+        if (!click) return;
+        if (!inStage && !(mx > MStrip && mx < MStrip + 60 && my > MTop && my < MBottom)) return;
+        undo.Add(string.Join("\n", Write())); redo.Clear();
+        if (tool == 0)
+        {
+            if (hit != null && (tail || Input.ShiftHeld))
+            {
+                // a hold's tail drags its end; Shift on a note makes it a hold from there
+                if (!tail) { hit.Type = (hit.Type & ~1) | 128; hit.End = hit.Time; hit.Raw = null; }
+                holdDraft = hit; holdFrom = hit.Time;
+                return;
+            }
+            if (hit != null)
+            {
+                if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
+                else if (Input.CtrlHeld) { selected.Remove(hit); undo.RemoveAt(undo.Count - 1); return; }
+                mDrag = (MTime(my), col, selected.ToDictionary(o => o, o => (o.Time, o.End, MColumn(o, keys))));
+                return;
+            }
+            undo.RemoveAt(undo.Count - 1);
+            if (!Input.CtrlHeld) selected.Clear();
+            mBox = (mx, my, MTime(my));
+            return;
+        }
+        if (!inStage) { undo.RemoveAt(undo.Count - 1); return; }
+        var n = new EObj { X = MColumnX(col, keys), Y = 192, Time = Snap(MTime(my)), Type = tool == 2 ? 128 : 1, HitSound = soundNext };
+        n.End = n.Time;
+        if (setsNext != (0, 0)) SetSets(n, setsNext.Normal, setsNext.Addition);
+        objs.RemoveAll(o => MColumn(o, keys) == col && Math.Abs(o.Time - n.Time) < 1);
+        objs.Add(n);
+        selected.Clear();
+        modified = true;
+        if (tool == 2) { holdDraft = n; holdFrom = n.Time; }
+        else Rebuild();
+    }
+
+    // stable's "main" BPM: the one the song spends longest in
+    double MainBpm()
+    {
+        var reds = timing.Where(p => p.Red && p.Beat > 0).OrderBy(p => p.Time).ToList();
+        return reds.Count == 0 ? 120 : reds.Select((p, i) => (p.Bpm, Len: (i + 1 < reds.Count ? reds[i + 1].Time : length) - p.Time)).MaxBy(x => x.Len).Bpm;
+    }
+
+    void DrawMania(float u)
+    {
+        int keys = MKeys;
+        float colW = MColW(keys), h = MBottom - MTop, stageW = keys * colW;
+        Rectangle R(float x, float y, float w, float hh) => new(x * u, y * u, w * u, hh * u);
+
+        // the density strip
+        DrawRectangleRec(R(MStrip, MTop, 60, h), ColorAlpha(Color.Black, 0.95f));
+        var counts = new int[100];
+        double slice = Math.Ceiling(length / 100);
+        foreach (var o in objs)
+        {
+            int a = (int)(o.Time / slice), z = (int)(o.End / slice);
+            if (a < 0 || a >= 100) continue;
+            for (int k = a; k <= z && k < 100; k++) counts[k]++;
+        }
+        int dense = Math.Max(1, (int)(slice / (60000 / MainBpm() / 2) * keys * 0.6));
+        for (int k = 0; k < 100; k++)
+            if (counts[k] > 0)
+                DrawRectangleRec(R(MStrip, MBottom - h / 100 * (k + 1) + 1, 60f / dense * Math.Min(dense, counts[k]), h / 100 - 1), counts[k] > dense ? new Color(250, 170, 212, 255) : new Color(247, 236, 0, 255));
+        float y7 = Math.Min(MBottom, MBottom - (float)(MFrom / length) * h), y8 = Math.Max(MTop, MBottom - (float)(MTo / length) * h);
+        DrawRectangleRec(R(MStrip - 2, y8, 62, y7 - y8), ColorAlpha(Color.White, 0.5f));
+
+        // the stage, the beat snap's lines (the current timing section's; a bar's first 3 tall), the columns
+        DrawRectangleRec(R(MLeft - 1, MTop, stageW + 1, h), Color.Black);
+        var red = RedAt(time);
+        double step = red.Beat / divisor;
+        if (step > 1e-5)
+            for (long n = (long)Math.Ceiling((MFrom - red.Time) / step), last = (long)Math.Floor((MTo - red.Time) / step); n <= last; n++)
+            {
+                long inBeat = ((n % divisor) + divisor) % divisor, beat = (long)Math.Floor(n / (double)divisor);
+                bool bar = inBeat == 0 && ((beat % red.Meter) + red.Meter) % red.Meter == 0;
+                DrawRectangleRec(R(MLeft, MY(red.Time + n * step) - (bar ? 1 : 0), stageW, bar ? 3 : 1), TickColour(inBeat, divisor));
+            }
+        for (int i = 0; i <= keys; i++) DrawRectangleRec(R(MLeft + colW * i, MTop, 1, h), Color.White);
+        foreach (float x in new[] { MStrip, MStrip + 60 }) DrawRectangleRec(R(x, MTop, 1, h), Color.White);
+        DrawRectangleRec(R(MLeft, MBottom - h / 5, stageW, 4), new Color(173, 255, 47, 255));
+
+        // the notes
+        var note = skin.DefaultTex("mania-note1");
+        var body = skin.DefaultTex("mania-note1L-0") ?? skin.DefaultTex("mania-note1L");
+        void Note(Rectangle r, Color c) { if (note is { } s) DrawTexturePro(s.Tex, new Rectangle(0, 0, s.Tex.Width, s.Tex.Height), R(r.X, r.Y, r.Width, r.Height), Vector2.Zero, 0, c); }
+        foreach (var o in objs)
+        {
+            if (o.End < MFrom || o.Time > MTo) continue;
+            int c = MColumn(o, keys);
+            var tint = selected.Contains(o) ? new Color(135, 206, 250, 255) : Player.ManiaColumnKind(c, keys) switch { "2" => new Color(250, 170, 212, 255), "S" => new Color(247, 236, 0, 255), _ => Color.White };
+            bool hold = (o.Type & 128) != 0;
+            if (hold && body is { } bd)
+            {
+                float y0 = Math.Min(MBottom, MY(o.Time)), y1 = Math.Max(MTop, MY(o.End));
+                DrawTexturePro(bd.Tex, new Rectangle(0, 0, bd.Tex.Width, bd.Tex.Height), R(MLeft + colW * c, y1, bd.Width * 0.1875f / 1.6f * colW / 30, y0 - y1), Vector2.Zero, 0, tint);
+            }
+            if (o.Time >= MFrom && o.Time < MTo) Note(MNote(c, o.Time, colW), tint);
+            if (hold && o.End >= MFrom && o.End < MTo) Note(MNote(c, o.End, colW), tint);
+        }
+        // the note about to be placed, at the cursor
+        var m = Input.GetMousePosition() / u;
+        if (tool > 0 && holdDraft == null && m.X > MLeft && m.X < MLeft + stageW && m.Y > MTop && m.Y < MBottom)
+        {
+            var r = MNote(0, time, colW);
+            Note(new Rectangle(m.X - r.Width / 2, m.Y - r.Height, r.Width, r.Height), Color.White);
+        }
+        if (mBox is { } b)
+        {
+            var a = new Vector2(b.X, b.X > MStrip && b.X < MStrip + 60 ? b.Y : MY(b.Time)) * u;
+            var e = Input.GetMousePosition();
+            DrawRectangleLinesEx(new Rectangle(Math.Min(a.X, e.X), Math.Min(a.Y, e.Y), Math.Abs(e.X - a.X), Math.Abs(e.Y - a.Y)), 1, Color.White);
+        }
     }
 
     static Vector2 PathAt(Vector2[] path, double f)

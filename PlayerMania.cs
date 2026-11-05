@@ -452,9 +452,10 @@ sealed partial class Player
     }
 
     // stable's default column looks: from each edge 1, 2, 1, 2..., the middle of an odd count special
-    string ManiaColumnKind(int c)
+    string ManiaColumnKind(int c) => ManiaColumnKind(c, mKeys);
+    internal static string ManiaColumnKind(int c, int keys)
     {
-        if (mKeys % 2 == 1 && c == mKeys / 2) return "S";
-        return Math.Min(c, mKeys - 1 - c) % 2 == 0 ? "1" : "2";
+        if (keys % 2 == 1 && c == keys / 2) return "S";
+        return Math.Min(c, keys - 1 - c) % 2 == 0 ? "1" : "2";
     }
 }
