@@ -3073,6 +3073,19 @@ sealed partial class Player : Screen
     {
         UpdateHealthShown();
         float frac = (float)(hpShown / Health.Max);
+        // stable's osu!mania: the stage's own bar, standing up its right edge (the scorebar turned a quarter
+        // anticlockwise at 0.7, its back 1 unit past the stage, the fill 8 (6.6 new-style) past and 2 (5.2) above the
+        // bottom), plain white, no marker
+        if (mode == 3 && mLook is { } ml && skin.AnimFrame("scorebar-colour", Game.NowMs) is { } mc)
+        {
+            float u = Game.H / 480f, right = (ml.Start + ml.Width) * u, sc = 0.7f * s, ma = hudFade;
+            if (skin.Tex("scorebar-bg") is { } mb)
+                DrawTexturePro(mb.Tex, new Rectangle(0, 0, mb.Tex.Width, mb.Tex.Height), new Rectangle(right + u, Game.H, mb.Width * sc, mb.Height * sc), Vector2.Zero, -90, ColorAlpha(Color.White, ma));
+            bool newStyle = skin.Tex("scorebar-marker") != null;
+            float fx = right + (newStyle ? 6.6f : 8) * u, fy = (newStyle ? 474.8f : 478) * u;
+            DrawTexturePro(mc.Tex, new Rectangle(0, 0, mc.Tex.Width * frac, mc.Tex.Height), new Rectangle(fx, fy, mc.Width * sc * frac, mc.Height * sc), Vector2.Zero, -90, ColorAlpha(Color.White, ma));
+            return;
+        }
         if (skin.AnimFrame("scorebar-colour", Game.NowMs) is { } colour)
         {
             float bq = (float)Math.Clamp((Game.NowMs - hudBreakAt) / 500, 0, 1);

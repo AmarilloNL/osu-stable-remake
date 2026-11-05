@@ -88,6 +88,44 @@ sealed class Health
         DropRate = rate * (halfTime ? 0.75 : 1);
     }
 
+    // osu!mania: stable calibrates over the notes (from a preempt before the first; a hold drained over its length,
+    // breaks skipped), each a MAX worth mul x (1.1 - HP / 10). Its drain rate is never applied in mania; the gain
+    // multiplier it settles on is (MAX, 300 and 200 heal mul times their amount).
+    public void CalibrateMania(Beatmap map, IReadOnlyList<(double Time, double End)> notes, double hpValue)
+    {
+        mul = mulGeki = 1;
+        if (notes.Count == 0) return;
+        double rate = 0.05;
+        double lowestEver = Range(hpValue, 195, 160, 60), lowestEnd = Range(hpValue, 198, 180, 80), recoveryNeeded = Range(hpValue, 8, 4, 0);
+        for (int iteration = 0; iteration < 1000; iteration++)
+        {
+            bool retry = false;
+            double value = Max, uncapped = Max;
+            void Change(double d) { value = Math.Clamp(value + d, 0, Max); uncapped += d; }
+            double last = (int)notes[0].Time - (int)map.Preempt;
+            int breakIndex = 0;
+            foreach (var (t, end) in notes)
+            {
+                double breakTime = 0;
+                if (breakIndex < map.Breaks.Count && map.Breaks[breakIndex] is var b && b.Start >= last && b.End <= t)
+                {
+                    breakTime = b.End - b.Start;
+                    breakIndex++;
+                }
+                Change(-rate * (t - last - breakTime));
+                last = end;
+                if (value <= lowestEver) { retry = true; rate *= 0.96; break; }
+                double during = rate * (end - t), overshoot = Math.Max(0, during - value);
+                Change(-during);
+                if (overshoot > 0 && value - overshoot <= lowestEver) { retry = true; rate *= 0.96; break; }
+                Change(mul * (1.1 - hpValue * 0.1));
+            }
+            if (!retry && value < lowestEnd) { retry = true; rate *= 0.94; mulGeki *= 1.01; mul *= 1.01; }
+            if (!retry && (uncapped - Max) / notes.Count < recoveryNeeded) { retry = true; rate *= 0.96; mulGeki *= 1.02; mul *= 1.01; }
+            if (!retry) break;
+        }
+    }
+
     double Calibrate(Beatmap map)
     {
         var objs = map.Objects;
