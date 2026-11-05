@@ -565,7 +565,8 @@ sealed partial class Editor
         }
         // the cursor's storyboard position and the time; the hit objects aren't shown here
         var sm = SbFromScreen(mouse);
-        Game.Text(string.Format(CultureInfo.InvariantCulture, "x:{0:0} y:{1:0}\n{2:#,0}ms", sm.X, sm.Y, time), w - 200 * u, 70 * u, 10 * u, Color.White);
+        Game.Text(string.Format(CultureInfo.InvariantCulture, "x:{0:0} y:{1:0}", sm.X, sm.Y), w - 200 * u, 70 * u, 10 * u, Color.White);
+        Game.Text(string.Format(CultureInfo.InvariantCulture, "{0:#,0}ms", time), w - 200 * u, 81 * u, 10 * u, Color.White);
 
         // the panel
         DrawRectangle(0, (int)(66 * u), (int)(160 * u), (int)(396 * u), new Color(0, 0, 0, 130));
@@ -573,9 +574,12 @@ sealed partial class Editor
         void Check(string text, float y, bool on, bool enabled = true)
         {
             var r = SbRow(2, y);
+            // stable's checkbox (the options' pink circle) at 0.7 of its size
             var c = enabled ? Color.White : Color.Gray;
-            DrawRectangleLinesEx(new Rectangle(r.X + 1 * u, r.Y + 2 * u, 9 * u, 9 * u), 1, c);
-            if (on) DrawRectangleRec(new Rectangle(r.X + 3 * u, r.Y + 4 * u, 5 * u, 5 * u), new Color(255, 180, 60, 255));
+            var pink = enabled ? new Color(235, 117, 140, 255) : Color.Gray;
+            var at = new Vector2(r.X + 5 * u, r.Y + 6.5f * u);
+            if (on) DrawCircleV(at, 2.7f * u, pink);
+            else DrawRing(at, 2.1f * u, 2.7f * u, 0, 360, 24, pink);
             Game.Text(text, r.X + 14 * u, r.Y, 9 * u, c);
         }
         Header("Layer Toggles", 80);
