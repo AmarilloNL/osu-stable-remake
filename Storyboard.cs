@@ -94,13 +94,13 @@ sealed class Storyboard
 
     // The editor's Design view: the .osb with the difficulty's [Events] as they stand in the editor (not as saved);
     // textures an earlier view already loaded are taken over, so an edit only loads what's new. No sounds.
-    public static Storyboard? LoadLines(Beatmap map, IEnumerable<string> osuEvents, IEnumerable<string>? osbLines, bool widescreenOsu, Storyboard? reuse)
+    public static Storyboard? LoadLines(Beatmap map, IEnumerable<string> osuEvents, IEnumerable<string> osuVariables, IEnumerable<string>? osbLines, bool widescreenOsu, Storyboard? reuse)
     {
         var lines = new List<string>();
         bool widescreen = false;
         var vars = new List<(string Name, string Value)>();
         if (osbLines != null) ReadEvents(osbLines, lines, vars, ref widescreen);
-        lines.AddRange(osuEvents.Where(l => l.Trim().Length > 0 && !l.TrimStart().StartsWith("//")).Select(l => l.TrimEnd()));
+        ReadEvents(new[] { "[Variables]" }.Concat(osuVariables).Append("[Events]").Concat(osuEvents), lines, vars, ref widescreen);
         widescreen |= widescreenOsu;
         var sb = new Storyboard(map.Folder, widescreen);
         vars.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));

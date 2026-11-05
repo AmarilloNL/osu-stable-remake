@@ -1902,6 +1902,7 @@ sealed partial class Editor : Screen
         return string.Join('|', new[] { (2, "W"), (4, "F"), (8, "C") }.Where(s => (o.HitSound & s.Item1) != 0).Select(s => s.Item2));
     }
     Video? video;
+    static readonly bool[] AllLayers = [true, true, true, true, true];
     // the map's video (the storyboard itself is the Design tab's view, as its lines stand)
     void EnsureStoryboard()
     {
@@ -1923,7 +1924,7 @@ sealed partial class Editor : Screen
         SbRefresh();
         if (sbView is not { } sv) return;
         var layers = sv.ShowLayer;
-        sv.ShowLayer = [true, true, true, true, true]; // (all of it, the pass or fail layer as in play)
+        sv.ShowLayer = AllLayers; // (all of it, the pass or fail layer as in play)
         sv.BothStates = false;
         sv.Draw(time, w, h, alpha, overlay: false);
         sv.Draw(time, w, h, alpha, overlay: true);

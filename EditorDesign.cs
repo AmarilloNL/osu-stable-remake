@@ -44,8 +44,8 @@ sealed partial class Editor
     string sbTool = "M";
     readonly bool[] sbShow = [true, true, true, true, true];
     bool sbLanesAlt, sbLibrary, sbHitObjects;
-    float sbPanelAlpha;
-    SbSprite? sbCycleTo; // the panel's backing and second column: shown while the mouse is near the left edge, like stable's
+    float sbPanelAlpha; // the panel's backing and second column: shown while the mouse is near the left edge, like stable's
+    SbSprite? sbCycleTo; // (picked on letting go without a drag; dropped whenever the sprites are parsed again)
     (string Type, double Offset, bool Undo)? sbLaneDrag;
     Storyboard? sbView;
     bool sbDirty = true;
@@ -129,6 +129,7 @@ sealed partial class Editor
         int selLine = sbSel?.Line ?? -1;
         bool selOsb = sbSel?.Osb ?? false;
         sbSprites = [];
+        sbCycleTo = null;
         if (osbLines != null) { var (from, to) = OsbEvents(); SbParseLines(osbLines, from, to, osb: true); }
         SbParseLines(ev.Lines, 0, ev.Lines.Count, osb: false);
         sbSprites = [.. sbSprites.OrderBy(s => Math.Max(0, Array.IndexOf(SbLayerNames, s.Layer)))]; // (drawn, and so picked, layer by layer)
@@ -298,9 +299,9 @@ sealed partial class Editor
         int t = (int)Math.Round(time);
         SbChange(sp, () =>
         {
-            var flips = sp.Cmds.Where(c => IsFlip(c, axis)).OrderBy(c => c.Start).ToList();
-            if (flips.Count == 0) { sp.Cmds.Add(new SbCmd { Type = "P", Start = t, End = t, Raw = $" P,0,{t},,{axis}" }); return; }
-            sp.Cmds.Remove(flips.FirstOrDefault(c => c.Start <= t && t <= c.End) ?? flips.LastOrDefault(c => c.End <= t) ?? flips[0]);
+            var here = sp.Cmds.FirstOrDefault(c => IsFlip(c, axis) && c.Start <= t && t <= c.End);
+            if (here != null) sp.Cmds.Remove(here);
+            else sp.Cmds.Add(new SbCmd { Type = "P", Start = t, End = t, Raw = $" P,0,{t},,{axis}" });
         });
     }
 
@@ -320,6 +321,7 @@ sealed partial class Editor
     {
         if (sbSel is not { Editable: true } sp) return;
         int t = (int)Math.Round(time);
+        if (!sp.Cmds.Any(c => c.Type == sbTool && (c.Start == t || c.End == t))) return; // (no keyframe here)
         SbChange(sp, () =>
         {
             var list = sp.Cmds.Where(c => c.Type == sbTool).OrderBy(c => c.Start).ToList();
@@ -334,7 +336,7 @@ sealed partial class Editor
             {
                 sp.Cmds.Remove(ending);
                 sp.Cmds.Remove(starting);
-                sp.Cmds.Add(new SbCmd { Type = sbTool, Start = ending.Start, End = starting.End, From = ending.From, To = starting.To });
+                sp.Cmds.Add(new SbCmd { Type = sbTool, Start = ending.Start, End = starting.End, From = ending.From, To = starting.To, Easing = ending.Easing });
                 return;
             }
             if (ending != null) { ending.End = ending.Start; ending.To = [.. ending.From]; ending.Raw = null; }
@@ -345,9 +347,9 @@ sealed partial class Editor
     {
         if (sbSel == null) return;
         int t = (int)Math.Round(time);
-        var list = sbSel.Cmds.Where(c => c.Type == sbTool).OrderBy(c => c.Start).ToList();
-        if (!next && list.LastOrDefault(c => c.Start < t || c.End < t) is { } p) Seek(p.End < t ? p.End : p.Start);
-        if (next && list.FirstOrDefault(c => c.Start > t || c.End > t) is { } n) Seek(n.Start > t ? n.Start : n.End);
+        var keys = sbSel.Cmds.Where(c => c.Type == sbTool).SelectMany(c => new[] { c.Start, c.End }).ToList();
+        var to = next ? keys.Where(k => k > t).DefaultIfEmpty(int.MinValue).Min() : keys.Where(k => k < t).DefaultIfEmpty(int.MinValue).Max();
+        if (to != int.MinValue) Seek(to);
     }
     static Vector2 SbKeyButton(int i, float u) => new((250 + 15 * i) * u, 70 * u);
     Vector2 SbLaneButton(int i, float u) => new(TimelineRect().X + (5 + 15 * i) * u, 70 * u);
@@ -423,7 +425,8 @@ sealed partial class Editor
         if (!ReferenceEquals(ev, sbParsed) || ev.Lines.Count != sbParsedCount || !ReferenceEquals(osbLines, sbParsedOsb) || (osbLines?.Count ?? -1) != sbParsedOsbCount) SbParse();
         if (sbDirty && (sbDrag == null || Game.NowMs - sbBuiltAt > 150))
         {
-            try { sbView = Storyboard.LoadLines(info, ev.Lines, osbLines, Kv("General", "WidescreenStoryboard") == "1", sbView); }
+            var variables = sections.FirstOrDefault(s => s.Name == "Variables")?.Lines ?? [];
+            try { sbView = Storyboard.LoadLines(info, ev.Lines, variables, osbLines, Kv("General", "WidescreenStoryboard") == "1", sbView); }
             catch (IOException) { }
             if (sbView != null) { sbView.BothStates = true; Array.Copy(sbShow, sbView.ShowLayer, 5); }
             sbDirty = false;
@@ -521,8 +524,7 @@ sealed partial class Editor
                 return;
             }
         if (click && CheckCollisionPointRec(mouse, SbLibraryButton())) { SbOpenLibrary(); return; }
-        if (click && mouse.X < 160 * u && mouse.Y > 66 * u && mouse.Y < 462 * u) return; // (the panel's own space)
-        // the lanes' toggle (the arrows before them)
+        // the lanes' switches (the arrows before them) and Keyframe Control's buttons
         for (int i = 0; i < 2; i++)
             if (click && Vector2.Distance(mouse, SbLaneButton(i, u)) < 7 * u) { sbLanesAlt = i == 0; return; }
         for (int i = 0; i < 4; i++)
@@ -531,6 +533,7 @@ sealed partial class Editor
                 if (i == 0) SbAddKeyframe(); else if (i == 1) SbRemoveKeyframe(); else SbJump(next: i == 3);
                 return;
             }
+        if (click && mouse.X < 160 * u && mouse.Y > 66 * u && mouse.Y < 462 * u) return; // (the panel's own space)
 
         // a lane of the timeline dragged: the picked sprite's transformations of that kind moved in time (snapped to the
         // beat unless Shift is held), as long as they all stay inside the song
@@ -715,9 +718,10 @@ sealed partial class Editor
         if (sbPanelAlpha > 0)
         {
             bool canFlip = sbSel is { Editable: true };
+            int now = (int)Math.Round(time);
             Check("Vector Scale", 215, sbTool == "V", true, 72, sbPanelAlpha);
-            Check("Horizontal Flip", 230, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "H") && c.Start <= time && time <= c.End), canFlip, 72, sbPanelAlpha);
-            Check("Vertical Flip", 245, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "V") && c.Start <= time && time <= c.End), canFlip, 72, sbPanelAlpha);
+            Check("Horizontal Flip", 230, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "H") && c.Start <= now && now <= c.End), canFlip, 72, sbPanelAlpha);
+            Check("Vertical Flip", 245, sbSel != null && sbSel.Cmds.Any(c => IsFlip(c, "V") && c.Start <= now && now <= c.End), canFlip, 72, sbPanelAlpha);
         }
         var run = sbSel == null ? null : SbRunning(sbSel);
         bool can = sbSel is { Editable: true };
