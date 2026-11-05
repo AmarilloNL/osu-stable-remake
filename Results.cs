@@ -63,6 +63,15 @@ sealed partial class Player
                 Row("taiko-hit100k", 240, 220, p.nKatu);
                 Row("taiko-hit0", 240, 280, p.nMiss);
             }
+            else if (p.mode == 3) // mania: MAX, 300, 200 / 100, 50, miss
+            {
+                Row("mania-hit300g", 40, 160, p.nGeki);
+                Row("mania-hit300", 240, 160, p.n300);
+                Row("mania-hit200", 40, 220, p.nKatu);
+                Row("mania-hit100", 240, 220, p.n100);
+                Row("mania-hit50", 40, 280, p.n50);
+                Row("mania-hit0", 240, 280, p.nMiss);
+            }
             else if (p.mode == 2) // catch: fruits, droplets, tiny droplets, misses (and tiny droplets missed)
             {
                 Row("fruit-orange", 40, 160, p.n300);

@@ -106,7 +106,7 @@ sealed partial class Player : Screen
     readonly ReplayFrame[]? playback;
     readonly ReplayInfo? watching;
     readonly int mode; // 0 osu!, 1 taiko, 2 catch, 3 mania (map.PlayMode)
-    bool ModeDone => mode switch { 1 => TaikoDone, 2 => CatchDone, _ => firstActive >= objs.Count };
+    bool ModeDone => mode switch { 1 => TaikoDone, 2 => CatchDone, 3 => ManiaDone, _ => firstActive >= objs.Count };
     readonly List<ReplayFrame> recording = [];
     internal IReadOnlyList<ReplayFrame> Recording => recording;
     ReplayInfo? savedReplay;
@@ -255,6 +255,7 @@ sealed partial class Player : Screen
         SetupCountdown();
         if (mode == 1) TaikoSetup();
         else if (mode == 2) CatchSetup();
+        else if (mode == 3) ManiaSetup();
 
         // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
         clockOrigin = Math.Min(Math.Min(-map.AudioLeadIn, storyboard?.EarliestEvent ?? 0), objs[0].Time - Math.Max(1800, map.Preempt));
@@ -680,7 +681,7 @@ sealed partial class Player : Screen
 
     void Drain()
     {
-        if (mode == 1) return; // taiko: no drain (hits fill the bar from empty)
+        if (mode is 1 or 3) return; // taiko and mania: no drain (taiko's hits fill the bar from empty)
         double delta = double.IsNaN(lastTime) ? 0 : time - lastTime;
         lastTime = time;
         if (delta <= 0 || time < objs[0].Time - map.Preempt || time > objs[^1].EndTime || InBreak(time)) return;
@@ -1015,6 +1016,7 @@ sealed partial class Player : Screen
     {
         if (mode == 1) TaikoStep();
         else if (mode == 2) CatchStep();
+        else if (mode == 3) ManiaStep();
         StepEnd();
     }
 
@@ -1757,7 +1759,7 @@ sealed partial class Player : Screen
         float sbDim = 1 - bgDim / 100f;
         bool showStoryboard = storyboard != null && Toggles.Storyboard && Config.GetBool("ShowStoryboard", true);
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: false);
-        if (!cinema) { if (mode == 1) TaikoDraw(w, h); else if (mode == 2) CatchDraw(w, h); else DrawPlayfield(w, h); }
+        if (!cinema) { if (mode == 1) TaikoDraw(w, h); else if (mode == 2) CatchDraw(w, h); else if (mode == 3) ManiaDraw(w, h); else DrawPlayfield(w, h); }
         if (showStoryboard) storyboard!.Draw(time, w, h, sbDim, overlay: true);
         if (!cinema)
         {
@@ -2963,6 +2965,11 @@ sealed partial class Player : Screen
             int total = n300 + n100 + n50 + nMiss;
             if (mode == 1) return total == 0 ? 100 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half
             if (mode == 2) return total + nKatu == 0 ? 100 : (double)(n300 + n100 + n50) / (total + nKatu) * 100; // catch: anything caught (katu: tiny droplets missed)
+            if (mode == 3) // mania: MAX (geki) and 300 full, 200 (katu) two thirds, 100 a third, 50 a sixth
+            {
+                int all = total + nGeki + nKatu;
+                return all == 0 ? 100 : (50.0 * n50 + 100.0 * n100 + 200.0 * nKatu + 300.0 * (n300 + nGeki)) / (300.0 * all) * 100;
+            }
             return total == 0 ? 100 : (300.0 * n300 + 100.0 * n100 + 50.0 * n50) / (300.0 * total) * 100;
         }
     }
@@ -3067,6 +3074,12 @@ sealed partial class Player : Screen
     string Grade()
     {
         int total = n300 + n100 + n50 + nMiss;
+        if (mode == 3) // mania: by accuracy
+        {
+            double acc = Accuracy / 100;
+            bool silv = mods.HasFlag(Mods.Hidden) || mods.HasFlag(Mods.Flashlight);
+            return acc >= 1 ? silv ? "XH" : "X" : acc > 0.95 ? silv ? "SH" : "S" : acc > 0.9 ? "A" : acc > 0.8 ? "B" : acc > 0.7 ? "C" : "D";
+        }
         if (mode == 2) // catch: by accuracy
         {
             double acc = Accuracy / 100;
