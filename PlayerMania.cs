@@ -355,6 +355,7 @@ sealed partial class Player
         public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
         public readonly Dictionary<int, string> Hit = new() { [320] = "mania-hit300g", [300] = "mania-hit300", [200] = "mania-hit200", [100] = "mania-hit100", [50] = "mania-hit50", [0] = "mania-hit0" };
         public float Width => X.Length == 0 ? 0 : X[^1] + W[^1];
+        public (float X, float W)[] Stages = []; // stable splits 10 keys and more into two stages (the skin's SplitStages decides)
     }
     ManiaLook? mLook;
 
@@ -379,6 +380,12 @@ sealed partial class Player
         var spacing = List("ColumnSpacing", mKeys - 1, 0);
         look.X = new float[mKeys];
         for (int c = 1; c < mKeys; c++) look.X[c] = look.X[c - 1] + look.W[c - 1] + spacing[c - 1];
+        // two stages: the first has the (larger) half of the columns, the second starts StageSeparation after it
+        bool split = mKeys > 1 && (M("SplitStages") is { } ss ? ss.Trim() == "1" : mKeys >= 10);
+        int half = split ? (mKeys + 1) / 2 : mKeys;
+        float separation = Math.Max(5, F("StageSeparation", 40));
+        for (int c = half; c < mKeys; c++) look.X[c] += separation;
+        look.Stages = split ? [(0, look.X[half - 1] + look.W[half - 1]), (look.X[half], look.Width - look.X[half])] : [(0, look.Width)];
         string[] Per(Func<int, string> name, Func<int, string> def) => Enumerable.Range(0, mKeys).Select(c => M(name(c)) ?? def(c)).ToArray();
         look.Note = Per(c => $"NoteImage{c}", c => $"mania-note{ManiaColumnKind(c)}");
         look.NoteH = Per(c => $"NoteImage{c}H", c => $"mania-note{ManiaColumnKind(c)}H");
@@ -421,12 +428,17 @@ sealed partial class Player
 
         for (int c = 0; c < mKeys; c++)
             DrawRectangle((int)(left + look.X[c] * u), 0, (int)Math.Ceiling(look.W[c] * u), h, look.Colour[c] is { } cc ? ColorAlpha(cc, cc.A / 255f * alpha) : ColorAlpha(Color.Black, 0.8f * alpha));
-        if (skin.Tex(look.StageLeft) is { } sl) DrawTexturePro(sl.Tex, new Rectangle(0, 0, sl.Tex.Width, sl.Tex.Height), new Rectangle(left - sl.Width * sd, 0, sl.Width * sd, h), Vector2.Zero, 0, tint);
-        if (skin.Tex(look.StageRight) is { } sr) DrawTexturePro(sr.Tex, new Rectangle(0, 0, sr.Tex.Width, sr.Tex.Height), new Rectangle(left + stageW * u, 0, sr.Width * sd, h), Vector2.Zero, 0, tint);
-        for (int c = 1; c < mKeys; c++) DrawRectangle((int)(left + look.X[c] * u), 0, 1, (int)(hitY * u), ColorAlpha(Color.White, 0.15f * alpha));
-        if (skin.Tex(look.StageHint) is { } hint)
-            DrawTexturePro(hint.Tex, new Rectangle(0, 0, hint.Tex.Width, hint.Tex.Height), new Rectangle(left, hitY * u - hint.Height * sd / 2, stageW * u, hint.Height * sd), Vector2.Zero, 0, tint);
-        else DrawRectangle((int)left, (int)(hitY * u), (int)(stageW * u), 2, tint);
+        foreach (var (stX, stW) in look.Stages)
+        {
+            float sl0 = left + stX * u;
+            if (skin.Tex(look.StageLeft) is { } sl) DrawTexturePro(sl.Tex, new Rectangle(0, 0, sl.Tex.Width, sl.Tex.Height), new Rectangle(sl0 - sl.Width * sd, 0, sl.Width * sd, h), Vector2.Zero, 0, tint);
+            if (skin.Tex(look.StageRight) is { } sr) DrawTexturePro(sr.Tex, new Rectangle(0, 0, sr.Tex.Width, sr.Tex.Height), new Rectangle(sl0 + stW * u, 0, sr.Width * sd, h), Vector2.Zero, 0, tint);
+            if (skin.Tex(look.StageHint) is { } hint)
+                DrawTexturePro(hint.Tex, new Rectangle(0, 0, hint.Tex.Width, hint.Tex.Height), new Rectangle(sl0, hitY * u - hint.Height * sd / 2, stW * u, hint.Height * sd), Vector2.Zero, 0, tint);
+            else DrawRectangle((int)sl0, (int)(hitY * u), (int)(stW * u), 2, tint);
+        }
+        for (int c = 1; c < mKeys; c++)
+            if (look.Stages.All(s => Math.Abs(s.X - look.X[c]) > 0.01f)) DrawRectangle((int)(left + look.X[c] * u), 0, 1, (int)(hitY * u), ColorAlpha(Color.White, 0.15f * alpha));
 
         double now = ManiaDist(time);
         // stable's warning arrows: down the middle of the stage like notes, 1, 2 and 3 seconds before the first one (not
@@ -439,7 +451,7 @@ sealed partial class Player
             {
                 float y = hitY - (float)(ManiaDist(first - 1000 * k) - now);
                 if (y < -40 || y > 520) continue;
-                arrow.Draw(new(left + stageW * u / 2, y * u - arrow.Height * scale / 2), scale, tint);
+                foreach (var (stX, stW) in look.Stages) arrow.Draw(new(left + (stX + stW / 2) * u, y * u - arrow.Height * scale / 2), scale, tint);
             }
         }
         for (int c = 0; c < mKeys; c++)
@@ -495,12 +507,16 @@ sealed partial class Player
             float a = mHiddenA * alpha, height = mHiddenH / 1.6f * u;
             bool fadeIn = mods.HasFlag(Mods.FadeIn);
             float coverTop = fadeIn ? 0 : hitY * u - height;
-            DrawRectangle((int)left, (int)coverTop, (int)Math.Ceiling(stageW * u), (int)Math.Ceiling(height), ColorAlpha(Color.Black, a));
-            if (skin.Tex("mania-stage-hidden") is { } fade)
+            foreach (var (stX, stW) in look.Stages)
             {
-                float fh = fade.Height * 0.72f * sd;
-                var src = new Rectangle(0, 0, fade.Tex.Width, fadeIn ? -fade.Tex.Height : fade.Tex.Height);
-                DrawTexturePro(fade.Tex, src, new Rectangle(left, fadeIn ? coverTop + height : coverTop - fh, stageW * u, fh), Vector2.Zero, 0, ColorAlpha(Color.White, a));
+                float sl0 = left + stX * u;
+                DrawRectangle((int)sl0, (int)coverTop, (int)Math.Ceiling(stW * u), (int)Math.Ceiling(height), ColorAlpha(Color.Black, a));
+                if (skin.Tex("mania-stage-hidden") is { } fade)
+                {
+                    float fh = fade.Height * 0.72f * sd;
+                    var src = new Rectangle(0, 0, fade.Tex.Width, fadeIn ? -fade.Tex.Height : fade.Tex.Height);
+                    DrawTexturePro(fade.Tex, src, new Rectangle(sl0, fadeIn ? coverTop + height : coverTop - fh, stW * u, fh), Vector2.Zero, 0, ColorAlpha(Color.White, a));
+                }
             }
         }
 
@@ -521,13 +537,14 @@ sealed partial class Player
             }
             else scale = age < 80 ? 1 - 0.3f * (float)(age / 80) : age < 180 ? 0.7f : 0.7f - 0.3f * (float)Easing.Apply(2, (age - 180) / 40);
             float a = Math.Min(1, (float)(age / 20)) * (age > 180 ? 1 - (float)((age - 180) / 40) : 1);
-            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + stageW * u / 2, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
+            foreach (var (stX, stW) in look.Stages) // (each stage shows it)
+                (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + (stX + stW / 2) * u, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
         }
         if (combo > 0)
         {
             string text = combo.ToString();
             float size = 32 * u * (Game.NowMs - mComboAt < 80 ? 1.15f : 1);
-            Game.TextBold(text, left + stageW * u / 2 - Game.TextWidth(text, size) / 2, look.ComboY * u, size, tint);
+            foreach (var (stX, stW) in look.Stages) Game.TextBold(text, left + (stX + stW / 2) * u - Game.TextWidth(text, size) / 2, look.ComboY * u, size, tint);
         }
         DrawManiaStars(u, sd, alpha);
     }
