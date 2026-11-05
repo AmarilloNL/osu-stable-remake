@@ -33,7 +33,7 @@ sealed partial class Player
     readonly LegacyRandom cPlateRng = new(1337);
 
     // stable's random (seeded 1337): tiny droplets' jitter, bananas' spots
-    sealed class LegacyRandom(int seed)
+    internal sealed class LegacyRandom(int seed)
     {
         uint x = (uint)seed, y = 842502087, z = 3579807591, w = 273326509;
         uint NextUInt() { uint t = x ^ (x << 11); x = y; y = z; z = w; return w = w ^ (w >> 19) ^ t ^ (t >> 8); }

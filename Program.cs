@@ -702,6 +702,15 @@ static class Game
         if (args.Length >= 4 && args[0] == "--fuzz-osr") { FuzzOsr(args[1], int.Parse(args[2]), args[3], args.Length > 4 ? args[4] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-objects") { DumpObjects(args[1], args.Length > 2 ? args[2] : ""); return; }
         if (args.Length >= 2 && args[0] == "--dump-osr") { Console.WriteLine(string.Join("\n", Replays.OsrText(args[1]).Split(',').Take(args.Length > 2 ? int.Parse(args[2]) : 12))); return; }
+        // test hook: an osu! map's mania conversion, one "time end column" line a note
+        if (Arg("--mania-convert") is { } convertFile)
+        {
+            var m = Beatmap.Load(convertFile);
+            int keys = m.Mode == 3 ? (int)Math.Max(1, Math.Round(m.RawCS)) : Player.ManiaConvertKeys(m);
+            var notes = ManiaConvert.Convert(m, keys, native: m.Mode == 3);
+            foreach (var n in notes) Console.WriteLine($"{n.Time} {n.End} {n.Column}");
+            return;
+        }
         if (args.Contains("--auto-check")) { AutoCheck(args.SkipWhile(a => a != "--auto-check").Skip(1).FirstOrDefault() is { } fl && !fl.StartsWith("--") ? fl : "", ModInfo.Parse(args.SkipWhile(a => a != "--mods").Skip(1).FirstOrDefault() ?? "")); return; }
         if (args.Contains("--verify-osr")) { VerifyOsr(int.TryParse(args.SkipWhile(a => a != "--verify-osr").Skip(1).FirstOrDefault(), out var n) ? n : 100); return; }
         // Test hooks: --play <.osu> [--auto] [--shots 5,10] [--exit-after 20] (seconds since launch), --song-shots 12000 (song ms)

@@ -415,7 +415,7 @@ sealed partial class SongSelect : Screen
     static int ManiaKeys(DbBeatmap b)
     {
         if (b.Mode == 3) return (int)Math.Round(b.CS);
-        float ratio = (float)(b.Sliders + b.Spinners) / Math.Max(1, b.Circles + b.Sliders + b.Spinners);
+        double ratio = (double)(b.Sliders + b.Spinners) / Math.Max(1, b.Circles + b.Sliders + b.Spinners); // (stable divides in double)
         if (ratio < 0.2) return 7;
         if (ratio < 0.3 || Math.Round(b.CS) >= 5) return Math.Round(b.OD) > 5 ? 7 : 6;
         if (ratio > 0.6) return Math.Round(b.OD) > 4 ? 5 : 4;

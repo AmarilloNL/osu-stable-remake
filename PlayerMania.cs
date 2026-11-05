@@ -49,9 +49,9 @@ sealed partial class Player
     ];
 
     // stable's key count for an osu! map: by how much of it is sliders and spinners, and its (rounded) CS and OD
-    static int ManiaConvertKeys(Beatmap m)
+    internal static int ManiaConvertKeys(Beatmap m)
     {
-        float share = (float)m.Objects.Count(o => o.Type != ObjType.Circle) / Math.Max(1, m.Objects.Count);
+        double share = (double)m.Objects.Count(o => o.Type != ObjType.Circle) / Math.Max(1, m.Objects.Count); // (stable divides in double: 0.6 is not over 0.6)
         double cs = Math.Round(m.RawCS), od = Math.Round(m.RawOD);
         if (share < 0.2) return 7;
         if (share < 0.3 || cs >= 5) return od > 5 ? 7 : 6;
@@ -78,15 +78,13 @@ sealed partial class Player
         mW50 = (151 - 3 * od) * f;
         mWMiss = (188 - 3 * od) * f;
 
-        foreach (var o in objs)
+        // a mania map's notes go to the column under their x; an osu! map is converted (stable's patterns)
+        var notes = ManiaConvert.Convert(map, mKeys, native);
+        foreach (var (col, t, end) in notes.OrderBy(x => x.Time))
         {
-            int col = Math.Clamp((int)Math.Floor(o.Pos.X * mKeys / 512), 0, mKeys - 1);
-            double end = o.Type is ObjType.Hold or ObjType.Slider or ObjType.Spinner ? o.EndTime : o.Time;
-            if (!native && o.Type == ObjType.Spinner) col = mKeys / 2;
-            var list = mColumns[col];
-            // (a converted note landing on one still going in its column is dropped)
-            if (list.Count > 0 && list[^1].End + 1 > o.Time) continue;
-            var n = new MNote { Column = col, Time = o.Time, End = end };
+            var list = mColumns[Math.Clamp(col, 0, mKeys - 1)];
+            if (list.Count > 0 && list[^1].End + 1 > t) continue; // (one landing on a note still going in its column is dropped)
+            var n = new MNote { Column = Math.Clamp(col, 0, mKeys - 1), Time = t, End = end };
             list.Add(n);
             mNotes.Add(n);
         }

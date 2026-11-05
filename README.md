@@ -61,8 +61,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Switch modes like stable (`Ctrl+1`-`4` or the Mode button); every map is listed in every mode, taiko / catch / mania maps with their mode's icon, and play in their own mode; osu! maps convert to the chosen one
 - **osu!taiko**: stable's hit windows and scroll speed per timing point, osu! sliders converted to hits or drumrolls, swells, big notes for both hands, bar lines, health from empty (a pass needs it over half) and scoring, the drum and hit target from your skin. Keys: `Z` `X` `C` `V` (rim, centre, centre, rim)
 - **osu!catch**: fruits, droplets, tiny droplets and banana showers converted like stable (its seeded randomness included), the catcher's size from CS, walking and dashing, hyperdashes, fruit piling on the plate. Keys: `←` `→`, `Shift` to dash
-- **osu!mania**: 1-10 keys, notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring, mania health, stable's default stage and scroll speed; osu! maps get stable's key count (shown in song select) with notes in the column under their position (stable's pattern generator isn't reproduced yet). Default keys like stable's (4K: `D` `F` `J` `K`)
-- Ranking screens with each mode's judgements; replays are recorded for osu! plays only so far
+- **osu!mania**: 1-10 keys, notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring, mania health, stable's default stage and scroll speed (`F3` / `F4`); osu! maps convert with stable's key count (shown in song select) and its pattern generator, seeded the same way, so they get the same notes as in stable. Default keys like stable's (4K: `D` `F` `J` `K`)
+- Ranking screens with each mode's judgements, replays (stable's `.osr` of these modes too), per-mode leaderboards
 </details>
 
 <details>
@@ -125,7 +125,8 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Background videos (decoded by Windows Media Foundation, no extra libraries; the Video option turns them off)
 - [x] Other modes: osu!taiko, osu!catch, osu!mania (their own maps and osu! conversions)
 - [x] The beatmap editor (compose, timing, song setup, test play, saving)
-- [ ] Replays for taiko, catch and mania; stable's osu!mania conversion patterns; the editor's Design (storyboard) tab
+- [x] Replays for taiko, catch and mania; stable's osu!mania conversion patterns
+- [ ] The editor's Design (storyboard) tab
 - [ ] Linux / macOS (currently uses Windows fonts and Windows BASS builds)
 
 **Accuracy vs stable**
