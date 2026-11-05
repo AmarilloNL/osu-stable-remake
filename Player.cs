@@ -966,7 +966,7 @@ sealed partial class Player : Screen
         Drain();
         UpdateBreakSection();
         UpdateCountdown();
-        if (mode != 0) { StepMode(); return; }
+        if (mode != 0) { StepMode(dtMs); return; }
         if (playback == null) AdvanceSpinners(time); // live/auto: up to now on the previous frame's input
         cursor = auto || autopilot ? AutoCursor() : playback != null ? pbCursor : (Input.GetMousePosition() - origin) / scale;
 
@@ -1020,11 +1020,12 @@ sealed partial class Player : Screen
     }
 
     // the modes' step: their own input and judging, then the shared end
-    void StepMode()
+    void StepMode(double dtMs)
     {
         if (mode == 1) TaikoStep();
         else if (mode == 2) CatchStep();
         else if (mode == 3) ManiaStep();
+        if (mods.HasFlag(Mods.Flashlight)) UpdateFlashlight(dtMs);
         StepEnd();
     }
 
@@ -1772,7 +1773,7 @@ sealed partial class Player : Screen
         if (!cinema)
         {
             DrawBreakOverlays(w, h);
-            if (mods.HasFlag(Mods.Flashlight) && !finished && mode == 0) DrawFlashlight(w, h);
+            if (mods.HasFlag(Mods.Flashlight) && !finished) DrawFlashlight(w, h);
             DrawHud(w, h);
         }
         DrawOverlays(w, h);
@@ -2870,13 +2871,15 @@ sealed partial class Player : Screen
 
     void UpdateFlashlight(double dtMs)
     {
-        float target = InBreak(time) ? 8 : combo < 100 ? 3.2f : combo < 200 ? 2.6f : 2f;
+        // (catch's is wider: 5.2, 4.6, 4.0; mania's a fixed band)
+        float target = InBreak(time) ? 8 : mode == 2 ? (combo < 100 ? 5.2f : combo < 200 ? 4.6f : 4f) : combo < 100 ? 3.2f : combo < 200 ? 2.6f : 2f;
         float step = (float)(0.1 * dtMs / (1000 / 60.0));
         flScale = flScale > target ? Math.Max(flScale - step, target) : Math.Min(flScale + step, target);
     }
 
     void DrawFlashlight(int w, int h)
     {
+        if (mode != 0) { DrawModeFlashlight(w, h); return; }
         bool sliding = false;
         for (int i = firstActive; i < objs.Count && objs[i].Time <= time; i++)
             if (objs[i].Type == ObjType.Slider && st[i].Tracking && time <= objs[i].EndTime) sliding = true;
@@ -2891,6 +2894,25 @@ sealed partial class Player : Screen
         }
         // No mask available (osu!gameplay.dll missing): a plain circle of the same size.
         float r = 55 * flScale * h / 480f, far = MathF.Sqrt(w * w + h * h) * 2;
+        DrawRing(c, r, far, 0, 360, 96, Color.Black);
+    }
+
+    // stable's flashlight in the other modes: taiko's stays at (208, 208), catch's follows the catcher, both sized like
+    // osu!'s (catch's wider); mania's is its own flashlightv2_mania band, left-centred at y 220 at 1.4
+    void DrawModeFlashlight(int w, int h)
+    {
+        float u = h / 480f;
+        if (mode == 3)
+        {
+            if ((skin.DefaultTex("flashlightv2_mania") ?? skin.DefaultTex("flashlight2")) is not { } band) return;
+            float bs = 1.4f * u * (band.Scale == 1 ? 1 : 2), bw = band.Width * bs, bh = band.Height * bs;
+            DrawTexturePro(band.Tex, new Rectangle(0, 0, band.Tex.Width, band.Tex.Height), new Rectangle(0, 220 * u - bh / 2, bw, bh), Vector2.Zero, 0, Color.White);
+            if (bw < w) DrawRectangle((int)bw, 0, w - (int)bw, h, Color.Black); // (past the band's right end)
+            return;
+        }
+        var c = mode == 1 ? new Vector2(208 * u, 208 * u) : new Vector2((w - 512 * u) / 2 + cX * u, (72 + 340) * u);
+        if (skin.Tex("flashlightv2") is { } fl) { fl.Draw(c, flScale * u * (fl.Scale == 1 ? 1 : 2), Color.Black); return; }
+        float r = 55 * flScale * u, far = MathF.Sqrt(w * w + h * h) * 2;
         DrawRing(c, r, far, 0, 360, 96, Color.Black);
     }
 
