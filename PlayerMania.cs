@@ -63,7 +63,8 @@ sealed partial class Player
     void ManiaSetup()
     {
         bool native = map.Mode == 3;
-        mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : ManiaConvertKeys(map), 1, 10);
+        // stable's key mods set an osu! map's key count
+        mKeys = Math.Clamp(native ? (int)Math.Round(map.RawCS) : mods.Keys() > 0 ? mods.Keys() : ManiaConvertKeys(map), 1, 10);
         mBind = ManiaDefaultKeys[mKeys - 1];
         mDown = new bool[mKeys];
         mAutoRelease = Enumerable.Repeat(double.MinValue, mKeys).ToArray();
@@ -81,6 +82,11 @@ sealed partial class Player
 
         // a mania map's notes go to the column under their x; an osu! map is converted (stable's patterns)
         var notes = ManiaConvert.Convert(map, mKeys, native);
+        // Mirror: the columns the other way round; Random: shuffled (the play's seed, kept in its replay)
+        int[] order = Enumerable.Range(0, mKeys).ToArray();
+        if (mods.HasFlag(Mods.Random)) { var rng = new Random(seed); order = [.. order.OrderBy(_ => rng.Next())]; }
+        if (mods.HasFlag(Mods.Mirror)) order = [.. order.Reverse()];
+        notes = [.. notes.Select(n => n with { Column = order[Math.Clamp(n.Column, 0, mKeys - 1)] })];
         foreach (var (col, t, end) in notes.OrderBy(x => x.Time))
         {
             var list = mColumns[Math.Clamp(col, 0, mKeys - 1)];
@@ -391,18 +397,22 @@ sealed partial class Player
 
         // stable's Hidden: black up from the hit position, taller with combo (160 + combo / 2 sprite px, at most 400, giving
         // back 2 a frame after a break), under the skin's stage-hidden fade; it fades in over 37 frames
-        if (mods.HasFlag(Mods.Hidden))
+        // (Fade In: the same cover down from the top, the fade under it turned over)
+        if (mods.HasFlag(Mods.Hidden) || mods.HasFlag(Mods.FadeIn))
         {
             double frames = GetFrameTime() * 60;
             float target = Math.Min(400, 160 + combo / 2);
             mHiddenH = mHiddenH > target ? Math.Max(target, mHiddenH - 2 * (float)frames) : target;
             mHiddenA = Math.Min(1, mHiddenA + 0.026667f * (float)frames);
-            float coverTop = (hitY - mHiddenH / 1.6f) * u, a = mHiddenA * alpha;
-            DrawRectangle((int)left, (int)coverTop, (int)Math.Ceiling(stageW * u), (int)Math.Ceiling(hitY * u - coverTop), ColorAlpha(Color.Black, a));
+            float a = mHiddenA * alpha, height = mHiddenH / 1.6f * u;
+            bool fadeIn = mods.HasFlag(Mods.FadeIn);
+            float coverTop = fadeIn ? 0 : hitY * u - height;
+            DrawRectangle((int)left, (int)coverTop, (int)Math.Ceiling(stageW * u), (int)Math.Ceiling(height), ColorAlpha(Color.Black, a));
             if (skin.Tex("mania-stage-hidden") is { } fade)
             {
                 float fh = fade.Height * 0.72f * sd;
-                DrawTexturePro(fade.Tex, new Rectangle(0, 0, fade.Tex.Width, fade.Tex.Height), new Rectangle(left, coverTop - fh, stageW * u, fh), Vector2.Zero, 0, ColorAlpha(Color.White, a));
+                var src = new Rectangle(0, 0, fade.Tex.Width, fadeIn ? -fade.Tex.Height : fade.Tex.Height);
+                DrawTexturePro(fade.Tex, src, new Rectangle(left, fadeIn ? coverTop + height : coverTop - fh, stageW * u, fh), Vector2.Zero, 0, ColorAlpha(Color.White, a));
             }
         }
 

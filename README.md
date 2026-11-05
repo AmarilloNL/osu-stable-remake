@@ -62,6 +62,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - **osu!taiko**: stable's hit windows and scroll speed per timing point, osu! sliders converted to hits or drumrolls, swells, big notes for both hands, bar lines, health from empty (a pass needs it over half) and scoring, the drum and hit target from your skin. Keys: `Z` `X` `C` `V` (rim, centre, centre, rim)
 - **osu!catch**: fruits, droplets, tiny droplets and banana showers converted like stable (its seeded randomness included), the catcher's size from CS, walking and dashing, hyperdashes, fruit piling on the plate. Keys: `←` `→`, `Shift` to dash
 - **osu!mania**: 1-10 keys, notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring, mania health, stable's default stage and scroll speed (`F3` / `F4`); osu! maps convert with stable's key count (shown in song select) and its pattern generator, seeded the same way, so they get the same notes as in stable. Default keys like stable's (4K: `D` `F` `J` `K`)
+- Each mode's mod select like stable's: mania's key mods (1K-9K for osu! maps), Fade In, Mirror and Random (Key Coop isn't in); no Autopilot or Spun Out in taiko and catch; Relax in taiko (either colour, swells in any order) and catch (the mouse moves the catcher); Hidden in every mode
 - Ranking screens with each mode's judgements, replays (stable's `.osr` of these modes too), per-mode leaderboards
 </details>
 

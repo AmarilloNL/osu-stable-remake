@@ -238,7 +238,7 @@ sealed partial class Player
             {
                 case TKind.Swell when !n.Done && at >= n.Time && at <= n.End:
                     // stable: centre and rim in turn (the first either)
-                    if (n.LastSwellRim == (rim ? 1 : 0)) return;
+                    if (n.LastSwellRim == (rim ? 1 : 0) && !relax) return; // (Relax: any order)
                     n.LastSwellRim = rim ? 1 : 0;
                     n.Hits++;
                     score += 300;
@@ -264,7 +264,7 @@ sealed partial class Player
                 case TKind.Don or TKind.Kat when !n.Done:
                     double err = at - n.Time;
                     if (Math.Abs(err) > tMiss) return;
-                    bool right = rim == (n.Kind == TKind.Kat);
+                    bool right = relax || rim == (n.Kind == TKind.Kat); // (Relax: either colour)
                     int result = !right ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
                     TaikoJudge(n, result, at);
                     if (result > 0) hitErrors.Add(err);

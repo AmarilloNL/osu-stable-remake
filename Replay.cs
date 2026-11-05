@@ -14,6 +14,7 @@ sealed class ReplayInfo
     public long Score;
     public int MaxCombo, N300, N100, N50, NMiss, NGeki, NKatu;
     public int Mode; // 0 osu!, 1 taiko, 2 catch, 3 mania
+    public int Seed; // the play's random seed (mania's Random mod)
     public bool Perfect; // full combo (the .osr flag)
     public double Accuracy;
     public DateTime Date;
@@ -23,7 +24,7 @@ sealed class ReplayInfo
 static class Replays
 {
     const int Magic = 0x50525253; // "SRRP"
-    const int Version = 4; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu
+    const int Version = 5; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
@@ -48,7 +49,7 @@ static class Replays
         w.Write((int)info.Mods); w.Write(info.Score); w.Write(info.MaxCombo);
         w.Write(info.N300); w.Write(info.N100); w.Write(info.N50); w.Write(info.NMiss);
         w.Write(info.Accuracy); w.Write(info.Date.ToBinary());
-        w.Write(info.Mode); w.Write(info.NGeki); w.Write(info.NKatu);
+        w.Write(info.Mode); w.Write(info.NGeki); w.Write(info.NKatu); w.Write(info.Seed);
         w.Write(frames.Count);
         using var z = new BinaryWriter(new DeflateStream(w.BaseStream, CompressionLevel.SmallestSize, leaveOpen: true));
         long prev = 0;
@@ -69,7 +70,7 @@ static class Replays
     static ReplayInfo ReadHeader(BinaryReader r, string path)
     {
         int version;
-        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or Version)) throw new InvalidDataException($"not a replay: {path}");
+        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or Version)) throw new InvalidDataException($"not a replay: {path}");
         var info = new ReplayInfo
         {
             Path = path, BeatmapMd5 = r.ReadString(), Artist = r.ReadString(), Title = r.ReadString(), Version = r.ReadString(),
@@ -78,6 +79,7 @@ static class Replays
             Accuracy = r.ReadDouble(), Date = DateTime.FromBinary(r.ReadInt64()),
         };
         if (version >= 4) { info.Mode = r.ReadInt32(); info.NGeki = r.ReadInt32(); info.NKatu = r.ReadInt32(); }
+        if (version >= 5) info.Seed = r.ReadInt32();
         return info;
     }
 

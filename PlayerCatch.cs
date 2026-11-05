@@ -207,7 +207,14 @@ sealed partial class Player
             bool dash = Down(cDash);
             float speed = (dash ? 1f : 0.5f) * (cHyperDir != 0 ? cHyperSpeed : 1);
             int move = (Down(cRight) ? 1 : 0) - (Down(cLeft) ? 1 : 0);
-            if (move != 0) { cX += move * speed * (float)dt; cDir = move; }
+            if (relax)
+            {
+                // Relax: the catcher follows the mouse
+                float s = Game.H / 480f, mx = (Input.GetMousePosition().X - (Game.W - 512 * s) / 2) / s;
+                if (Math.Abs(mx - cX) > 0.01f) cDir = mx > cX ? 1 : -1;
+                cX = mx;
+            }
+            else if (move != 0) { cX += move * speed * (float)dt; cDir = move; }
             // a hyperdash ends on reaching its fruit's spot
             if (cHyperDir != 0 && cHyperTarget != null && (cHyperDir > 0 ? cX >= cHyperTarget.X : cX <= cHyperTarget.X)) { cX = cHyperTarget.X; cHyperDir = 0; }
             cX = MathF.Round(Math.Clamp(cX, 0, 512) * Replays.PosScale) / Replays.PosScale; // (on the replay's grid, so playback is exact)

@@ -2286,6 +2286,8 @@ sealed partial class SongSelect : Screen
         (Mods.SuddenDeath, "suddendeath"), (Mods.Perfect, "perfect"), (Mods.DoubleTime, "doubletime"), (Mods.Nightcore, "nightcore"),
         (Mods.Hidden, "hidden"), (Mods.Flashlight, "flashlight"), (Mods.Relax, "relax"), (Mods.Autopilot, "relax2"),
         (Mods.SpunOut, "spunout"), (Mods.Autoplay, "autoplay"), (Mods.ScoreV2, "scorev2"),
+        (Mods.FadeIn, "fadein"), (Mods.Random, "random"), (Mods.Mirror, "mirror"), (Mods.Key1, "key1"), (Mods.Key2, "key2"), (Mods.Key3, "key3"),
+        (Mods.Key4, "key4"), (Mods.Key5, "key5"), (Mods.Key6, "key6"), (Mods.Key7, "key7"), (Mods.Key8, "key8"), (Mods.Key9, "key9"),
     ];
 
     // ---- stable's mode menu (the Mode button): osu!, osu!taiko, osu!catch, osu!mania upward from y 344 at x 140 (units),
@@ -2305,6 +2307,7 @@ sealed partial class SongSelect : Screen
         if (mode == PlayMode) return;
         PlayMode = DbBeatmap.ViewMode = mode;
         Config.SetOwn("LastPlayMode", ModeKeys[mode]);
+        mods = ModInfo.ForMode(mods, mode); // (the mods the new mode doesn't have go)
         rankedFor = null;
         ApplyFilter(Selected);
     }
@@ -2714,14 +2717,39 @@ sealed partial class SongSelect : Screen
     // labelled rows (size 24 at x 20; green, orange-red, white) of icons 66 units apart from x 240, rows 60 apart from 35
     // units under the content start, then Reset All Mods / Close. A selected icon springs to 1.2x and 0.1 rad (elastic,
     // 400ms) over a sky-blue glow. 1 / 2 press the buttons; stable's letter hotkeys toggle mods.
-    static readonly (string Label, Color Colour, (KeyboardKey Key, Mods Flag, Mods Alt, string Icon, string AltIcon)[] Mods)[] ModRows =
-    [
-        ("Difficulty Reduction", new Color(50, 205, 50, 255), [(KeyboardKey.Q, Mods.Easy, Mods.None, "easy", ""), (KeyboardKey.W, Mods.NoFail, Mods.None, "nofail", ""), (KeyboardKey.E, Mods.HalfTime, Mods.None, "halftime", "")]),
-        ("Difficulty Increase", new Color(255, 69, 0, 255), [(KeyboardKey.A, Mods.HardRock, Mods.None, "hardrock", ""), (KeyboardKey.S, Mods.SuddenDeath, Mods.Perfect, "suddendeath", "perfect"),
-            (KeyboardKey.D, Mods.DoubleTime, Mods.Nightcore, "doubletime", "nightcore"), (KeyboardKey.F, Mods.Hidden, Mods.None, "hidden", ""), (KeyboardKey.G, Mods.Flashlight, Mods.None, "flashlight", "")]),
-        ("Special", Color.White, [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.X, Mods.Autopilot, Mods.None, "relax2", ""), (KeyboardKey.C, Mods.SpunOut, Mods.None, "spunout", ""), (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"),
-            (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")]),
-    ];
+    // (per mode, like stable's: mania has Fade In / Hidden, the key mods, Mirror and Random; taiko and catch no Autopilot or
+    // Spun Out. Mania's Key Coop isn't here.)
+    static (string Label, Color Colour, (KeyboardKey Key, Mods Flag, Mods Alt, string Icon, string AltIcon)[] Mods)[] ModRows => modRows[PlayMode];
+    static readonly (string Label, Color Colour, (KeyboardKey Key, Mods Flag, Mods Alt, string Icon, string AltIcon)[] Mods)[][] modRows =
+        [.. Enumerable.Range(0, 4).Select(mode => new (string, Color, (KeyboardKey, Mods, Mods, string, string)[])[]
+        {
+            ("Difficulty Reduction", new Color(50, 205, 50, 255), [(KeyboardKey.Q, Mods.Easy, Mods.None, "easy", ""), (KeyboardKey.W, Mods.NoFail, Mods.None, "nofail", ""), (KeyboardKey.E, Mods.HalfTime, Mods.None, "halftime", "")]),
+            ("Difficulty Increase", new Color(255, 69, 0, 255), [(KeyboardKey.A, Mods.HardRock, Mods.None, "hardrock", ""), (KeyboardKey.S, Mods.SuddenDeath, Mods.Perfect, "suddendeath", "perfect"),
+                (KeyboardKey.D, Mods.DoubleTime, Mods.Nightcore, "doubletime", "nightcore"),
+                mode == 3 ? (KeyboardKey.F, Mods.FadeIn, Mods.Hidden, "fadein", "hidden") : (KeyboardKey.F, Mods.Hidden, Mods.None, "hidden", ""),
+                (KeyboardKey.G, Mods.Flashlight, Mods.None, "flashlight", "")]),
+            ("Special", Color.White, mode switch
+            {
+                0 => [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.X, Mods.Autopilot, Mods.None, "relax2", ""), (KeyboardKey.C, Mods.SpunOut, Mods.None, "spunout", ""),
+                    (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"), (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")],
+                3 => [(KeyboardKey.Z, ModInfo.KeyMods, Mods.None, "key4", ""), (KeyboardKey.Null, Mods.Mirror, Mods.None, "mirror", ""), (KeyboardKey.X, Mods.Random, Mods.None, "random", ""),
+                    (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"), (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")],
+                _ => [(KeyboardKey.Z, Mods.Relax, Mods.None, "relax", ""), (KeyboardKey.V, Mods.Autoplay, Mods.Cinema, "autoplay", "cinema"), (KeyboardKey.B, Mods.ScoreV2, Mods.None, "scorev2", "")],
+            }),
+        })];
+
+    // stable's mode-specific texts over some mods
+    static string? ModTip(Mods m) => (PlayMode, m) switch
+    {
+        (3, Mods.Easy) => "Reduces overall difficulty - more forgiving HP drain, less accuracy required.",
+        (1, Mods.Easy) => "Reduces overall difficulty - notes move slower, less accuracy required.",
+        (3 or 1, Mods.Hidden) => "The notes fade out before you hit them!",
+        (3, Mods.FadeIn) => "The notes appear lower from the top!",
+        (3, Mods.Random) => "Shuffle around the notes!",
+        (2, Mods.Relax) => "Use the mouse to control the catcher.\n** UNRANKED **",
+        (1, Mods.Relax) => "Relax! You will no longer get dizzyfied by ninja-like spinners, demanding drumrolls or unexpected katu's.\n** UNRANKED **",
+        _ => ModTips.TryGetValue(m, out var t) ? t : null,
+    };
     const string ModBlurb = "Mods provide different ways to enjoy gameplay. Some have an effect on the score you can achieve during ranked play. Others are just for fun.";
     // stable's tooltips over the mod icons (its English texts); a two-state icon describes the state it shows
     static readonly Dictionary<Mods, string> ModTips = new()
@@ -2800,7 +2828,7 @@ sealed partial class SongSelect : Screen
             for (int c = 0; c < list.Length; c++)
             {
                 var (_, flag, alt, icon, altIcon) = list[c];
-                bool on = mods.HasFlag(flag);
+                bool on = (mods & flag) != 0 || alt != Mods.None && mods.HasFlag(alt);
                 if (!modAnim.TryGetValue(flag, out var an) || an.On != on) modAnim[flag] = an = (on, now);
                 float e = (float)Easing.Apply(25, (now - an.At) / 400);
                 float scale = on ? 1 + 0.2f * e : 1.2f - 0.2f * e, rot = on ? 0.1f * e : 0.1f * (1 - e);
@@ -2811,7 +2839,7 @@ sealed partial class SongSelect : Screen
                     glow.Draw(pos, s, ColorAlpha(Xna.SkyBlue, 0.2f * fade));
                     EndBlendMode();
                 }
-                string name = alt != Mods.None && mods.HasFlag(alt) ? altIcon : icon;
+                string name = flag == ModInfo.KeyMods ? $"key{(mods.Keys() is > 0 and var k ? k : 4)}" : alt != Mods.None && mods.HasFlag(alt) ? altIcon : icon;
                 Game.Skin.Tex("selection-mod-" + name)?.Draw(pos, scale * s, ColorAlpha(Color.White, fade), rot * 180 / MathF.PI);
             }
         }
@@ -2824,7 +2852,7 @@ sealed partial class SongSelect : Screen
                 if (Vector2.Distance(mouse, ModIconPos(r, c)) < 21 * u)
                 {
                     var (_, flag, alt, _, _) = ModRows[r].Mods[c];
-                    if (ModTips.TryGetValue(alt != Mods.None && mods.HasFlag(alt) ? alt : flag, out var tip)) Options.DrawScreenTooltip(tip, mouse); // (stable has no text for Cinema)
+                    if (ModTip(alt != Mods.None && mods.HasFlag(alt) ? alt : flag) is { } tip) Options.DrawScreenTooltip(tip, mouse); // (stable has no text for Cinema)
                 }
     }
 

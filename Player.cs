@@ -106,6 +106,7 @@ sealed partial class Player : Screen
     readonly ReplayFrame[]? playback;
     readonly ReplayInfo? watching;
     readonly int mode; // 0 osu!, 1 taiko, 2 catch, 3 mania (map.PlayMode)
+    int seed = Environment.TickCount; // (a replay: its own, set in the constructor)
     bool ModeDone => mode switch { 1 => TaikoDone, 2 => CatchDone, 3 => ManiaDone, _ => firstActive >= objs.Count };
     readonly List<ReplayFrame> recording = [];
     internal IReadOnlyList<ReplayFrame> Recording => recording;
@@ -166,6 +167,7 @@ sealed partial class Player : Screen
         health = new Health(map, mods.HasFlag(Mods.HalfTime));
         objs = map.Objects;
         mode = watching?.Mode ?? map.PlayMode; // (a replay: the mode it was played in)
+        if (watching != null) seed = watching.Seed;
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
         skin.PreloadGameplay();
@@ -1159,7 +1161,7 @@ sealed partial class Player : Screen
     {
         BeatmapMd5 = Replays.Md5Of(map.File), Artist = map.Artist, Title = map.Title, Version = map.Version,
         Mods = mods, Score = score, MaxCombo = maxCombo, N300 = n300, N100 = n100, N50 = n50, NMiss = nMiss,
-        NGeki = nGeki, NKatu = nKatu, Mode = mode, Accuracy = Accuracy, Date = DateTime.Now,
+        NGeki = nGeki, NKatu = nKatu, Mode = mode, Seed = seed, Accuracy = Accuracy, Date = DateTime.Now,
     };
 
     void SaveReplay()

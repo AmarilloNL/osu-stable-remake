@@ -21,13 +21,30 @@ enum Mods
     SpunOut = 4096,
     Autopilot = 8192,
     Perfect = 16384, // always set together with SuddenDeath
+    Key4 = 1 << 15, Key5 = 1 << 16, Key6 = 1 << 17, Key7 = 1 << 18, Key8 = 1 << 19, // osu!mania
+    FadeIn = 1 << 20, Random = 1 << 21,
     Cinema = 1 << 22, // always set together with Autoplay
+    Key9 = 1 << 24, KeyCoop = 1 << 25, Key1 = 1 << 26, Key3 = 1 << 27, Key2 = 1 << 28,
     ScoreV2 = 1 << 29,
+    Mirror = 1 << 30,
 }
 
 static class ModInfo
 {
-    public const Mods Supported = (Mods)0x7FFF | Mods.ScoreV2; // NF..PF and Score V2; other stable mods (TD, cinema, keys...) are dropped
+    public const Mods Supported = (Mods)0x7FFF | Mods.ScoreV2 | ManiaOnly; // NF..PF, Score V2 and mania's; other stable mods (TD, key coop...) are dropped
+    public const Mods KeyMods = Mods.Key1 | Mods.Key2 | Mods.Key3 | Mods.Key4 | Mods.Key5 | Mods.Key6 | Mods.Key7 | Mods.Key8 | Mods.Key9;
+    public const Mods ManiaOnly = KeyMods | Mods.FadeIn | Mods.Random | Mods.Mirror;
+    // stable's key mod button: 4K .. 9K, then 1K .. 3K
+    static readonly Mods[] KeyCycle = [Mods.Key4, Mods.Key5, Mods.Key6, Mods.Key7, Mods.Key8, Mods.Key9, Mods.Key1, Mods.Key2, Mods.Key3];
+    public static int Keys(this Mods m) { int i = Array.FindIndex(KeyCycle, k => (m & k) != 0); return i < 0 ? 0 : i < 6 ? i + 4 : i - 5; }
+    static Mods CycleKeys(Mods m, int dir)
+    {
+        int i = Array.FindIndex(KeyCycle, k => (m & k) != 0), next = i < 0 ? (dir > 0 ? 0 : KeyCycle.Length - 1) : i + dir;
+        m &= ~KeyMods;
+        return next >= 0 && next < KeyCycle.Length ? m | KeyCycle[next] : m;
+    }
+    // the mods a mode offers (stable's mod select): mania's own, Autopilot and Spun Out only in osu!
+    public static Mods ForMode(Mods m, int mode) => mode == 3 ? m & ~(Mods.Relax | Mods.Autopilot | Mods.SpunOut) : (m & ~ManiaOnly) & (mode == 0 ? ~Mods.None : ~(Mods.Autopilot | Mods.SpunOut));
 
     public static double Rate(this Mods m) => m.HasFlag(Mods.DoubleTime) ? 1.5 : m.HasFlag(Mods.HalfTime) ? 0.75 : 1;
 
@@ -38,7 +55,7 @@ static class ModInfo
         if (m.HasFlag(Mods.NoFail)) x *= 0.5;
         if (m.HasFlag(Mods.Easy)) x *= 0.5;
         if (m.HasFlag(Mods.HalfTime)) x *= 0.3;
-        if (m.HasFlag(Mods.Hidden)) x *= 1.06;
+        if (m.HasFlag(Mods.Hidden) || m.HasFlag(Mods.FadeIn)) x *= 1.06;
         if (m.HasFlag(Mods.HardRock)) x *= 1.06;
         if (m.HasFlag(Mods.DoubleTime)) x *= 1.12;
         if (m.HasFlag(Mods.Flashlight)) x *= 1.12;
@@ -71,6 +88,8 @@ static class ModInfo
         if (m.HasFlag(Mods.Relax)) parts.Add("RX"); else Add(Mods.Autopilot, "AP");
         if (m.HasFlag(Mods.Perfect)) parts.Add("PF"); else Add(Mods.SuddenDeath, "SD");
         Add(Mods.Flashlight, "FL");
+        Add(Mods.FadeIn, "FI"); Add(Mods.Random, "RD"); Add(Mods.Mirror, "MR");
+        if (m.Keys() is > 0 and var k) parts.Add($"{k}K");
         return parts.Count == 0 ? "No mods" : string.Join(" ", parts);
     }
 
@@ -87,6 +106,12 @@ static class ModInfo
         KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~(Mods.DoubleTime | Mods.Nightcore)
                    : m.HasFlag(Mods.DoubleTime) ? m | Mods.Nightcore
                    : Flip(m, Mods.DoubleTime, Mods.HalfTime),
+        // mania: Hidden's button goes Fade In -> Hidden -> off, Relax's cycles the key mods, Autopilot's is Random
+        KeyboardKey.F when Mania => m.HasFlag(Mods.FadeIn) ? m & ~Mods.FadeIn | Mods.Hidden : m.HasFlag(Mods.Hidden) ? m & ~Mods.Hidden : m | Mods.FadeIn,
+        KeyboardKey.Z when Mania => CycleKeys(m, 1),
+        KeyboardKey.X when Mania => Flip(m, Mods.Random, Mods.None),
+        KeyboardKey.Null => Mania ? Flip(m, Mods.Mirror, Mods.None) : m, // (Mirror has no key)
+        KeyboardKey.X or KeyboardKey.C when SongSelect.PlayMode != 0 => m, // (taiko and catch have no Autopilot or Spun Out)
         KeyboardKey.F => Flip(m, Mods.Hidden, Mods.None),
         KeyboardKey.G => Flip(m, Mods.Flashlight, Mods.None),
         KeyboardKey.Z => Flip(m, Mods.Relax, Mods.Autopilot | Mods.Autoplay),
@@ -99,9 +124,13 @@ static class ModInfo
         _ => m,
     };
 
+    static bool Mania => SongSelect.PlayMode == 3;
+
     // stable's Shift+S / D / V: straight to the second state (PF, NC, Cinema), or off from it; other keys as without Shift
+    // (mania's Shift+F: Hidden)
     public static Mods ShiftToggle(Mods m, KeyboardKey key) => key switch
     {
+        KeyboardKey.F when Mania => m.HasFlag(Mods.Hidden) ? m & ~Mods.Hidden : m & ~Mods.FadeIn | Mods.Hidden,
         KeyboardKey.S => m.HasFlag(Mods.Perfect) ? m & ~(Mods.SuddenDeath | Mods.Perfect) : m & ~Mods.NoFail | Mods.SuddenDeath | Mods.Perfect,
         KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~(Mods.DoubleTime | Mods.Nightcore) : m & ~Mods.HalfTime | Mods.DoubleTime | Mods.Nightcore,
         KeyboardKey.V => m.HasFlag(Mods.Cinema) ? m & ~(Mods.Autoplay | Mods.Cinema) : m & ~(Mods.Relax | Mods.Autopilot) | Mods.Autoplay | Mods.Cinema,
@@ -114,6 +143,8 @@ static class ModInfo
         KeyboardKey.S => m.HasFlag(Mods.Perfect) ? m & ~Mods.Perfect : m.HasFlag(Mods.SuddenDeath) ? m & ~Mods.SuddenDeath : ShiftToggle(m, key),
         KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~Mods.Nightcore : m.HasFlag(Mods.DoubleTime) ? m & ~Mods.DoubleTime : ShiftToggle(m, key),
         KeyboardKey.V => m.HasFlag(Mods.Cinema) ? m & ~Mods.Cinema : m.HasFlag(Mods.Autoplay) ? m & ~Mods.Autoplay : ShiftToggle(m, key),
+        KeyboardKey.F when Mania => m.HasFlag(Mods.Hidden) ? m & ~Mods.Hidden | Mods.FadeIn : m.HasFlag(Mods.FadeIn) ? m & ~Mods.FadeIn : m | Mods.Hidden,
+        KeyboardKey.Z when Mania => CycleKeys(m, -1),
         _ => Toggle(m, key),
     };
 
@@ -129,6 +160,8 @@ static class ModInfo
                 "SD" => Mods.SuddenDeath, "PF" => Mods.SuddenDeath | Mods.Perfect, "DT" => Mods.DoubleTime,
                 "NC" => Mods.DoubleTime | Mods.Nightcore, "HD" => Mods.Hidden, "FL" => Mods.Flashlight,
                 "RX" => Mods.Relax, "AP" => Mods.Autopilot, "SO" => Mods.SpunOut, "AT" => Mods.Autoplay, "CN" => Mods.Autoplay | Mods.Cinema, "V2" => Mods.ScoreV2,
+                "FI" => Mods.FadeIn, "RD" => Mods.Random, "MR" => Mods.Mirror, "1K" => Mods.Key1, "2K" => Mods.Key2, "3K" => Mods.Key3, "4K" => Mods.Key4,
+                "5K" => Mods.Key5, "6K" => Mods.Key6, "7K" => Mods.Key7, "8K" => Mods.Key8, "9K" => Mods.Key9,
                 _ => Mods.None,
             };
         return m;
