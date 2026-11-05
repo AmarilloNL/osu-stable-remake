@@ -14,8 +14,9 @@ sealed partial class Player
     {
         public int Column;
         public double Time, End; // End > Time: a hold note
-        public bool Done, Held, HeadHit, Broken;
-        public double HeadErr;
+        public bool Done, Holding, Broken;
+        public double PressAt = double.NaN, ReleaseAt = double.NaN; // a hold note's first press and last release
+        public bool HeadHit => !double.IsNaN(PressAt);
         public int Result = -1;
         public bool Hold => End > Time;
     }
@@ -181,9 +182,12 @@ sealed partial class Player
             while (mNext[c] < list.Count && list[mNext[c]].Done) mNext[c]++;
             if (mNext[c] >= list.Count) continue;
             var n = list[mNext[c]];
-            if (!n.HeadHit && time > n.Time + mW50) { ManiaJudge(n, 0); continue; } // never pressed
-            if (n.HeadHit && n.Hold && time >= n.End) // held to the end
-                ManiaJudge(n, ManiaHoldResult(n.HeadErr, 0, n.Broken));
+            if (!n.Hold) { if (time > n.Time + mW50) ManiaJudge(n, 0); continue; } // never pressed
+            // stable's hold: not pressed by its 50 window breaks the combo (once); it's judged once let go within the
+            // tail's 50 window (or never pressed by then), or when still held 50 past the end
+            if (!n.HeadHit && time <= n.Time + mW50) continue; // (not pressed yet: nothing before the head's window closes)
+            if (!n.HeadHit && !n.Broken) { n.Broken = true; BreakCombo(); }
+            if (!n.Holding && time >= n.End - mW50 || n.Holding && time >= n.End + mW50) ManiaJudge(n, ManiaHoldResult(n, time));
         }
     }
 
@@ -192,17 +196,19 @@ sealed partial class Player
         var list = mColumns[c];
         if (mNext[c] >= list.Count) return;
         var n = list[mNext[c]];
-        if (n.HeadHit) return;
         double err = at - n.Time, a = Math.Abs(err);
-        if (a > mWMiss) return;
-        hitErrors.Add(err);
         if (n.Hold)
         {
-            if (a > mW50) { ManiaJudge(n, 0); return; }
-            n.HeadHit = true;
-            n.HeadErr = err;
+            // the first press counts for the judgement (an early one mirrored); pressing again just holds on
+            if (n.HeadHit) { n.Holding = true; return; }
+            if (err < -mWMiss) return;
+            n.PressAt = at;
+            n.Holding = true;
+            if (a <= mW50) hitErrors.Add(err);
             return;
         }
+        if (a > mWMiss) return;
+        hitErrors.Add(err);
         ManiaJudge(n, a <= mW300g ? 320 : a <= mW300 ? 300 : a <= mW200 ? 200 : a <= mW100 ? 100 : a <= mW50 ? 50 : 0);
     }
 
@@ -211,22 +217,28 @@ sealed partial class Player
         var list = mColumns[c];
         if (mNext[c] >= list.Count) return;
         var n = list[mNext[c]];
-        if (!n.Hold || !n.HeadHit || n.Done) return;
-        double tail = n.End - at;
-        if (tail > mW100) { n.Broken = true; BreakCombo(); } // let go too early: the combo breaks and a 50 is the best left
-        ManiaJudge(n, ManiaHoldResult(n.HeadErr, tail, n.Broken));
+        if (!n.Hold || !n.Holding || n.Done) return;
+        n.Holding = false;
+        n.ReleaseAt = at;
+        // let go before the tail's 50 window: the combo breaks (once) and the hold carries on; within it, it's judged
+        if (at < n.End - mW50) { if (!n.Broken) { n.Broken = true; BreakCombo(); } }
+        else ManiaJudge(n, ManiaHoldResult(n, at));
     }
 
-    // stable's hold judgement from the press and the release together
-    int ManiaHoldResult(double head, double tail, bool broken)
+    // stable's hold judgement: the press's error (an early press mirrored late; none, or one too early, counts as the
+    // end) and the release's (a late one mirrored early; still held: now) together; let go too early is a miss, and a
+    // broken hold gets 200 at best
+    int ManiaHoldResult(MNote n, double now)
     {
-        double h = Math.Abs(head), sum = h + Math.Abs(tail);
-        if (broken) return 50;
-        if (h <= mW300g * 1.2 && sum <= mW300g * 2.4) return 320;
-        if (h <= mW300 * 1.1 && sum <= mW300 * 2.2) return 300;
-        if (h <= mW200 && sum <= mW200 * 2) return 200;
-        if (h <= mW100 && sum <= mW100 * 2) return 100;
-        return 50;
+        double press = !n.HeadHit || n.PressAt < n.Time - mW50 ? n.End - 1 : n.PressAt >= n.Time ? n.PressAt : n.Time + (n.Time - n.PressAt);
+        double release = n.Holding ? now : double.IsNaN(n.ReleaseAt) ? 0 : n.ReleaseAt <= n.End ? n.ReleaseAt : n.End - (n.ReleaseAt - n.End);
+        double h = Math.Abs(press - n.Time), sum = h + Math.Abs(release - n.End);
+        int r = release < n.End - mW50 ? 0
+            : h <= mW300g * 1.2 && sum <= mW300g * 2.4 ? 320
+            : h <= mW300 * 1.1 && sum <= mW300 * 2.2 ? 300
+            : h <= mW200 && sum <= mW200 * 2 ? 200
+            : h <= mW100 && sum <= mW100 * 2 ? 100 : 50;
+        return r > 200 && n.Broken ? 200 : r;
     }
 
     void ManiaJudge(MNote n, int result)
@@ -247,7 +259,7 @@ sealed partial class Player
         }
         if (result > 0)
         {
-            if (!n.Broken) { combo++; maxCombo = Math.Max(maxCombo, combo); mComboAt = Game.NowMs; }
+            combo++; maxCombo = Math.Max(maxCombo, combo); mComboAt = Game.NowMs;
         }
         else BreakCombo();
 
@@ -357,7 +369,7 @@ sealed partial class Player
                 if (n.Hold)
                 {
                     float yEnd = hitY - (float)(ManiaDist(n.End) - now);
-                    float yHead = n.HeadHit && !n.Done ? hitY : y;
+                    float yHead = n.Holding && !n.Done ? hitY : y;
                     var bodyTint = ColorAlpha(n.Broken || n.Done ? Color.Gray : Color.White, alpha);
                     if ((skin.AnimFrame(look.NoteL[c], Game.NowMs) ?? skin.Tex(look.NoteL[c])) is { } body)
                         DrawTexturePro(body.Tex, new Rectangle(0, 0, body.Tex.Width, body.Tex.Height), new Rectangle(x, yEnd * u, cw, Math.Max(0, (yHead - yEnd) * u)), Vector2.Zero, 0, bodyTint);
