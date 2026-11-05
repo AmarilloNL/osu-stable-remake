@@ -1268,12 +1268,33 @@ sealed partial class Editor : Screen
     Action? Sel(Action a) => selected.Count > 0 ? a : null;
     Action? NotMania(Action? a) => mode == 3 ? null : a;
 
+    // Compose → Auto Volume Balance (mania): notes struck together share out 4/3 of their timing point's volume as their
+    // own sample volume; stable leaves the last group as it was
+    void AutoVolumeBalance() => Change(() =>
+    {
+        var points = timing.OrderBy(p => p.Time).ToList();
+        for (int i = 0, first = 0; i < objs.Count; i++)
+        {
+            if (objs[i].Time == objs[first].Time) continue;
+            int volume = (points.LastOrDefault(p => p.Time <= objs[first].Time) ?? points.FirstOrDefault())?.Volume ?? 100;
+            for (int j = first; j < i; j++)
+            {
+                var f = objs[j].Sample.Split(':').ToList();
+                while (f.Count < 5) f.Add(f.Count < 4 ? "0" : "");
+                f[3] = (volume * 4 / 3 / Math.Max(1, i - first)).ToString(Inv);
+                objs[j].Sample = string.Join(':', f);
+                objs[j].Raw = null;
+            }
+            first = i;
+        }
+    });
+
     MenuItem[] MenuItems(int i) => i switch
     {
         0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
             new("Open Difficulty...", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), Sep,
             new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod", "Ctrl+Shift+A", OpenAiMod), Sep,
-            new("Upload Beatmap..."), new("Extract Map Package"), new("Export Package", "", ExportPackage), new("Import from..."), Sep,
+            new("Upload Beatmap..."), new("Extract Map Package", "", () => Notification.Show("Your beatmap is already extracted!", 3000)), new("Export Package", "", ExportPackage), new("Import from..."), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),
             new("Open .osb in Notepad", "", Directory.EnumerateFiles(info.Folder, "*.osb").FirstOrDefault() is { } osb ? () => System.Diagnostics.Process.Start("notepad.exe", osb) : null), Sep,
@@ -1295,7 +1316,7 @@ sealed partial class Editor : Screen
             new("Audio Rate", Sub: [.. Rates.Select(r => new MenuItem($"{r * 100:0}%", "", () => { rate = r; music?.SetTempo(rate, false); }, rate == r))]),
             new("Grid Snapping", "T", () => gridSnap = !gridSnap, gridSnap), Sep,
             new("Create Polygon Circles...", "Ctrl+Shift+D", NotMania(OpenPoly)), new("Convert slider to stream...", "Ctrl+Shift+F", NotMania(AnySliderSelected ? SliderToStream : null)),
-            new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance")],
+            new("Enable live mapping mode", "Ctrl+Tab", ToggleLiveMapping, liveMapping), new("Sample Import", "Ctrl+Shift+I"), new("Auto Volume Balance", "", mode == 3 ? AutoVolumeBalance : null)],
         4 => [new("Move all elements in time...")],
         5 => [new("Time Signature", Sub: [new("4/4 (Common Time)", "", () => Change(() => RedAt(time).Meter = 4), RedAt(time).Meter == 4), new("3/4 (Waltz/Triple)", "", () => Change(() => RedAt(time).Meter = 3), RedAt(time).Meter == 3)]),
             new("Metronome Clicks", "", () => metronome = !metronome, metronome), Sep,
