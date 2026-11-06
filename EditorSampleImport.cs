@@ -61,13 +61,13 @@ sealed partial class Editor
         var w = sampleImport!;
         float s = AiS;
         w.Mouse = mouse;
-        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - SiW * s) / 2, (Game.H - (SiH + AiCaption) * s) / 2);
+        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - SiW * s) / 2, (EH - (SiH + AiCaption) * s) / 2);
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { sampleImport = null; Input.Muted = true; return true; }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (w.Drag is { } d)
         {
             if (!Input.IsMouseButtonDown(MouseButton.Left)) w.Drag = null;
-            else w.Pos = new(Math.Clamp(mouse.X - d.X, -SiW * s / 2, Game.W - SiW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, Game.H - AiCaption * s));
+            else w.Pos = new(Math.Clamp(mouse.X - d.X, -SiW * s / 2, Game.W - SiW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, EH - AiCaption * s));
             return true;
         }
         var whole = new Rectangle(w.Pos.X, w.Pos.Y, SiW * s, (SiH + AiCaption) * s);

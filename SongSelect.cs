@@ -921,6 +921,7 @@ sealed partial class SongSelect : Screen
         catch (Exception e) when (e is not OutOfMemoryException) // a malformed map mustn't take the game down
         {
             message = $"Failed to load: {e.Message}";
+            Game.UseSkin(null); // (a play that never started gives its skin back)
         }
     }
 

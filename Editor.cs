@@ -106,6 +106,14 @@ sealed partial class Editor : Screen
     static Vector2 RawMouse => Input.GetMousePosition();
     static Vector2 EMouse => RawMouse - new Vector2(0, Strip);
     static float U => EH / 480f;
+    // a tooltip at the cursor, placed on the screen (kept inside it) from within the game area's drawing
+    static void Tip(string text)
+    {
+        Rlgl.PopMatrix();
+        Options.DrawScreenTooltip(text, RawMouse);
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(0, Strip, 0);
+    }
     static KeyboardKey Bound(string key, KeyboardKey def) => Config.Key(key, def); // stable's editor bindings (Options)
     float FieldScale => fieldAsPlay ? U : 0.9f * U;
     Vector2 FieldOrigin => fieldAsPlay ? new((Game.W - 512 * U) / 2, (EH - 384 * U) / 2 + 8 * U) : new((Game.W - 512 * FieldScale) / 2, 78 * U);
@@ -500,6 +508,7 @@ sealed partial class Editor : Screen
         if (bmsWindow != null) { UpdateBmsImport(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
         if (field < 0 && UpdateMenu(raw)) return;
+        if (raw.Y < Strip && (Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right))) return; // (the strip's empty part takes its clicks)
         // (the AiMod and Sample import windows: the editor below keeps its keys while they have the mouse)
         // (not during a drag begun in the editor: that keeps the mouse until it's let go)
         bool press = Input.IsMouseButtonPressed(MouseButton.Left);
@@ -735,7 +744,7 @@ sealed partial class Editor : Screen
     EObj? ComboPickable => selected.Count == 1 && selected.First() is { NewCombo: true, Spinner: false } o ? o : null;
     Rectangle ComboExpandRect() { var r = ToggleRect(0); return new Rectangle(r.X, r.Y, 7.5f * U, r.Height); }
     static Rectangle ComboItemRect(int i) { float u = U; return new Rectangle(Game.W - 70 * u, (80 + 20 * i) * u, 20 * u, 20 * u); }
-    int ComboItems(EObj o) => objs.FirstOrDefault(x => !x.Spinner) == o ? Colours.Length : Colours.Length - 1;
+    int ComboItems(EObj o) => Math.Min(8, objs.FirstOrDefault(x => !x.Spinner) == o ? Colours.Length : Colours.Length - 1); // (the skip has 3 bits)
     Rectangle Picture(string name, float x, float y)
     {
         float u = U, sd = u / 1.6f;
@@ -820,10 +829,10 @@ sealed partial class Editor : Screen
         if (Pressed(Bound("keyGridChange", KeyboardKey.G)) && !Input.CtrlHeld) gridSize = gridSize == 32 ? 4 : gridSize * 2;
         // Nudge Left / Right (J / K): the selection a beat snap earlier / later
         int nudge = Input.CtrlHeld ? 0 : Pressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Pressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
-        if (nudge != 0 && selected.Count > 0) Nudge(nudge);
+        if (nudge != 0 && selected.Count > 0 && !noteLock) Nudge(nudge);
         if (Input.IsKeyPressed(KeyboardKey.Delete) && selected.Count > 0) DeleteSel();
         // stable's Edit menu keys (see the menu below)
-        if (Input.CtrlHeld && selected.Count > 0)
+        if (Input.CtrlHeld && selected.Count > 0 && !noteLock) // (note lock: no time or place changes)
         {
             if (Input.IsKeyPressed(KeyboardKey.H)) FlipH();
             if (Input.IsKeyPressed(KeyboardKey.J)) FlipV();
@@ -856,7 +865,7 @@ sealed partial class Editor : Screen
                 comboList = false; // (any click closes it)
                 if (ComboPickable is { } co)
                     for (int i = 0; i < ComboItems(co); i++)
-                        if (CheckCollisionPointRec(mouse, ComboItemRect(i))) { int skip = i; Change(() => { co.Type = co.Type & ~0x70 | skip << 4; co.Raw = null; }); break; }
+                        if (CheckCollisionPointRec(mouse, ComboItemRect(i))) { int skip = i; Change(() => { co.Type = co.Type & ~0x70 | (skip & 7) << 4; co.Raw = null; }); break; }
                 return;
             }
             if (ComboPickable != null && CheckCollisionPointRec(mouse, ComboExpandRect())) { comboList = true; return; }
@@ -1852,7 +1861,7 @@ sealed partial class Editor : Screen
             if (!held) pointDrag = null;
             return;
         }
-        if (click && inField && PointAt(fieldPos) is { } pt)
+        if (click && inField && !noteLock && PointAt(fieldPos) is { } pt)
         {
             var a = pt.Slider.Anchors;
             Vector2 before = pt.Index == 0 ? new((float)pt.Slider.X, (float)pt.Slider.Y) : a[pt.Index - 1];
@@ -1868,7 +1877,7 @@ sealed partial class Editor : Screen
         }
         // Ctrl+click with only a slider selected, not on another object (stable's): a new point there, in the part of
         // its outline nearest, dragged on
-        if (click && inField && Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } body
+        if (click && inField && !noteLock && Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } body
             && Vector2.Distance(StackedPos(body), fieldPos) > Radius
             && !Visible().Any(o => o != body && !o.Spinner && Vector2.Distance(StackedPos(o), fieldPos) <= Radius))
         {
@@ -2251,7 +2260,7 @@ sealed partial class Editor : Screen
             {
                 var r = ZoomRect(i);
                 DrawTexturePro(zs.Tex, new Rectangle(0, 0, zs.Tex.Width, zs.Tex.Height), r, Vector2.Zero, 0, Color.White);
-                if (CheckCollisionPointRec(zm, r)) Options.DrawScreenTooltip(i == 0 ? "Increase timeline zoom" : "Decrease timeline zoom", zm);
+                if (CheckCollisionPointRec(zm, r)) Tip(i == 0 ? "Increase timeline zoom" : "Decrease timeline zoom");
             }
         DrawTopBar(u);
         DrawBottomBar(u);
@@ -2314,8 +2323,8 @@ sealed partial class Editor : Screen
         var layers = sv.ShowLayer;
         sv.ShowLayer = AllLayers; // (all of it, the pass or fail layer as in play)
         sv.BothStates = false;
-        sv.Draw(time, w, h, alpha, overlay: false);
-        sv.Draw(time, w, h, alpha, overlay: true);
+        sv.Draw(time, w, h, alpha, overlay: false, (int)Strip);
+        sv.Draw(time, w, h, alpha, overlay: true, (int)Strip);
         sv.ShowLayer = layers;
         sv.BothStates = true;
     }
@@ -2633,7 +2642,7 @@ sealed partial class Editor : Screen
             }
         }
         Game.Text($"Grid {gridSize} (G)", Game.W - 92 * u, 438 * u, 10 * u, Color.LightGray);
-        if (tip != null && setDrop < 0) Options.DrawScreenTooltip(tip, mouse);
+        if (tip != null && setDrop < 0) Tip(tip);
         // the distance snap's ring for an object placed now
         if (distSnap && tool is 1 or 2 && sliderDraft == null && SnapRing(Snap(time)) is { } ring && ring.Radius > 0)
         {
@@ -2643,6 +2652,48 @@ sealed partial class Editor : Screen
         }
         Game.Text($"{selected.Count} selected", 4 * u, 380 * u, 10 * u, Color.LightGray);
         DrawSnapWarning(u);
+        if (mode != 3) DrawPositionReadout(u);
+    }
+
+    // stable's readout under the snap slider (W-50,36): x and y of the cursor (white), of the selection's first object
+    // (yellow) or of the slider point being dragged (salmon), with the spacing to the previous / next object as a
+    // multiple of the slider velocity's travel (within 3 seconds; catch counts across only)
+    void DrawPositionReadout(float u)
+    {
+        string Spacing(double t, Vector2 at, bool prev)
+        {
+            var o = prev ? objs.LastOrDefault(x => x.End < t) : objs.FirstOrDefault(x => x.Time > t + 1);
+            if (o == null || o.Spinner) return "";
+            double dt = prev ? t - o.End : o.Time - t;
+            if (dt > 3000 || dt <= 0) return "";
+            var other = prev ? EndPosOf(o) : PosOf(o);
+            float d = mode == 2 ? Math.Abs(at.X - other.X) : Vector2.Distance(at, other);
+            double perMs = 100 * SliderMultiplier * SvAt(prev ? t : o.Time) / RedAt(prev ? t : o.Time).Beat;
+            return $"\n{(prev ? "Prev" : "Next")}: {(d / (perMs * dt)).ToString("f2", Inv)}x";
+        }
+        string text; Color colour;
+        if (pointDrag is { } pd && pd.Index < pd.Slider.Anchors.Count)
+        {
+            var p = pd.Slider.Anchors[pd.Index];
+            text = $"x:{p.X:0} y:{p.Y:0}" + Spacing(pd.Slider.Time, PosOf(pd.Slider), true) + Spacing(pd.Slider.End, EndPosOf(pd.Slider), false);
+            colour = new Color(255, 160, 122, 255);
+        }
+        else if (selected.Count > 0)
+        {
+            var first = selected.MinBy(o => o.Time)!; var last = selected.MaxBy(o => o.End)!;
+            text = $"x:{first.X:0} y:{first.Y:0}";
+            if (!first.Spinner) text += (objs.IndexOf(first) > 0 ? Spacing(first.Time, PosOf(first), true) : "") + (objs.IndexOf(last) < objs.Count - 1 ? Spacing(last.End, EndPosOf(last), false) : "");
+            colour = Color.Yellow;
+        }
+        else
+        {
+            var c = ToField(EMouse);
+            if (gridSnap) c = GridSnap(c);
+            text = $"x:{c.X:0} y:{c.Y:0}" + (tool is 1 or 2 && sliderDraft == null ? Spacing(time, c, true) + Spacing(time, c, false) : "");
+            colour = Color.White;
+        }
+        float y = 36 * u;
+        foreach (var line in text.Split('\n')) { Game.Text(line, Game.W - 50 * u, y, 10 * u, colour); y += 11 * u; }
     }
 
     // stable's word on an unusual beat snap divisor, over the playfield's top left (70,120, wrapped to 140 short of the
@@ -2784,7 +2835,7 @@ sealed partial class Editor : Screen
         undo.Add(Snapshot()); redo.Clear();
         if (tool == 0)
         {
-            if (hit != null && (tail || Input.ShiftHeld))
+            if (hit != null && (tail || Input.ShiftHeld) && !noteLock)
             {
                 // a hold's tail drags its end; Shift on a note makes it a hold from there
                 if (!tail) { hit.Type = (hit.Type & ~1) | 128; hit.End = hit.Time; hit.Raw = null; }
@@ -3158,6 +3209,6 @@ sealed partial class Editor : Screen
         for (int i = 0; i < RateSprites.Length; i++) Picture(RateSprites[i], RateRect(i), Hovered(ref rateHover[i], CheckCollisionPointRec(mouse, RateRect(i)), 0.5f, 1));
         // (stable: the arrow 73 units from the right at 25%, 7 at 100%)
         Picture("editor-rate-arrow", Centred("editor-rate-arrow", Game.W / u - (73 - (float)(rate * 100 - 25) / 75 * 66), 473));
-        if (tip != null) Options.DrawScreenTooltip(tip, mouse);
+        if (tip != null) Tip(tip);
     }
 }

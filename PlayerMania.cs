@@ -447,8 +447,9 @@ sealed partial class Player
         float separation = Math.Max(5, F("StageSeparation", 40));
         // stable's fit: a stage too wide for the screen (from ColumnStart, keeping ColumnRight free) is narrowed
         float screenW = Game.W / (Game.H / 480f), right = F("ColumnRight", 19);
+        float keepRight = Math.Min(right, screenW - look.Start); // (stable's: from where the stage would have started)
         look.Start = Math.Min(look.Start, screenW - right);
-        float total = look.W.Sum() + spacing.Sum() + (split ? separation : 0), over = Math.Max(0, look.Start + total + Math.Min(right, screenW - look.Start) - screenW);
+        float total = look.W.Sum() + spacing.Sum() + (split ? separation : 0), over = Math.Max(0, look.Start + total + keepRight - screenW);
         float fit = total > 0 ? (total - over) / total : 1;
         if (fit < 1) { for (int c = 0; c < mKeys; c++) look.W[c] *= fit; for (int c = 0; c < spacing.Length; c++) spacing[c] *= fit; separation *= fit; }
         look.X = new float[mKeys];
@@ -734,7 +735,7 @@ sealed partial class Player
             if (combo != 0) mComboShown = combo;
             else if (mComboBreakArmed) { mComboBreakArmed = false; mComboBreaks.Add((mComboShown.ToString(), now)); }
         }
-        if (mComboShown > 0 && !mComboVisible) { mComboVisible = true; mComboVisibleAt = now; }
+        if (combo > 0 && !mComboVisible) { mComboVisible = true; mComboVisibleAt = now; }
         else if (mComboVisible && combo == 0) { mComboVisible = false; mComboVisibleAt = now; }
         bool holding = mHoldLit.Any(x => x);
         if (holding != mComboHolding) { mComboHolding = holding; mComboHoldAt = now; }

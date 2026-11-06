@@ -172,7 +172,7 @@ sealed partial class Editor
         Button(MetronomeReset(), "Reset", new Color(255, 165, 0, 255), 12);
         Button(TapButton(), "Tap Here!", new Color(135, 206, 235, 255), 12);
         if (CheckCollisionPointRec(mouse, TapButton()))
-            Options.DrawScreenTooltip("The more you tap, the more \"precise\" the timing algorithm will become. \nYou can click this button or use the 'T' key.", mouse);
+            Tip("The more you tap, the more \"precise\" the timing algorithm will become. \nYou can click this button or use the 'T' key.");
     }
 
     // ---- stable's Timing tab: osu!ui's panel (at 120,85) with the section's BPM and offset and the map's slider velocity
@@ -198,7 +198,8 @@ sealed partial class Editor
     Rectangle RowButton(int row, int dir, float scale = 1) => TimingPic(dir < 0 ? "editor-beat-selector-buttonleft" : "editor-beat-selector-buttonright", dir < 0 ? 270 : 382, RowY[row] + 10, scale);
     static Rectangle RowValue(int row) { float u = U; return new Rectangle(296 * u, RowY[row] * u, 56 * u, 20 * u); }
     static Rectangle MoveNotesBox() { float u = U; return new Rectangle(145 * u, 216 * u, 360 * u, 16 * u); }
-    ETiming? TimedSection => timing.Any(p => p.Red && p.Beat > 0) ? RedAt(time) : null;
+    // (the timing point in effect - a reset, untimed one too - and null when that one isn't timed)
+    ETiming? TimedSection => (timing.Where(p => p.Red).OrderBy(p => p.Time).LastOrDefault(p => p.Time <= time) ?? timing.Where(p => p.Red).OrderBy(p => p.Time).FirstOrDefault()) is { Beat: > 0 } r ? r : null;
 
     void UpdateTimingView(Vector2 mouse)
     {
@@ -227,15 +228,17 @@ sealed partial class Editor
         if (row == 3)
         {
             double rate = double.TryParse(Kv("Difficulty", "SliderTickRate"), NumberStyles.Float, Inv, out double r) ? r : 1;
-            if (dir < 0 ? rate > 1 : rate < 4) Change(() => SetKv("Difficulty", "SliderTickRate", Num((int)rate + dir)));
+            if (dir < 0 ? rate > 1 : rate < 4) Change(() => SetKv("Difficulty", "SliderTickRate", Num(Math.Max(1, (int)rate + dir)))); // (whole steps; never below 1)
             return;
         }
         if (TimedSection is not { } red) return;
-        double end = timing.Where(p => p.Red && p.Beat > 0 && p.Time > red.Time).Select(p => p.Time).DefaultIfEmpty(length).Min();
+        double bpm = 60000 / red.Beat + dir * (shift ? 5 : ctrl ? 0.25 : 1);
+        if (row == 0 && bpm <= 0) return;
+        double end = timing.Where(p => p.Red && p.Time > red.Time).Select(p => p.Time).DefaultIfEmpty(length).Min();
         Change(() =>
         {
             double beat0 = red.Beat, offset0 = red.Time;
-            if (row == 0) red.Beat = 60000 / (60000 / red.Beat + dir * (shift ? 5 : ctrl ? 0.25 : 1));
+            if (row == 0) red.Beat = 60000 / bpm;
             else red.Time += dir * (shift ? 10 : ctrl ? 1 : 2);
             if (!moveNotes) return;
             foreach (var o in objs.Where(o => o.Time >= offset0 && o.Time < end))
@@ -296,7 +299,7 @@ sealed partial class Editor
         bool manualOver = CheckCollisionPointRec(mouse, TimingPic("editor-timing-manual", 455, 146));
         Picture("editor-timing-manual", TimingPic("editor-timing-manual", 455, 146, Hovered(ref manualHover, manualOver, 1, 1.1f)), Color.White);
         if (manualOver) tip = "Fine-tune multiple specific timing sections (F6)";
-        if (tip != null) Options.DrawScreenTooltip(tip, mouse);
+        if (tip != null) Tip(tip);
     }
 
     // top right (over the timeline): the metronome's bar:beat (from 0), or the untimed section's note

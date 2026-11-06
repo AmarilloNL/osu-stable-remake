@@ -45,7 +45,7 @@ sealed partial class Editor
         var w = bmsWindow!;
         float s = AiS;
         w.Mouse = mouse;
-        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - BmsW * s) / 2, (Game.H - (BmsH + AiCaption) * s) / 2);
+        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - BmsW * s) / 2, (EH - (BmsH + AiCaption) * s) / 2);
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { bmsWindow = null; return; }
         // the file's path can be typed or pasted too
         for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32 && w.Typing) w.File += char.ConvertFromUtf32(c);
@@ -55,7 +55,7 @@ sealed partial class Editor
         if (w.Drag is { } d)
         {
             if (!Input.IsMouseButtonDown(MouseButton.Left)) w.Drag = null;
-            else w.Pos = new(Math.Clamp(mouse.X - d.X, -BmsW * s / 2, Game.W - BmsW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, Game.H - AiCaption * s));
+            else w.Pos = new(Math.Clamp(mouse.X - d.X, -BmsW * s / 2, Game.W - BmsW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, EH - AiCaption * s));
             return;
         }
         if (!click) return;

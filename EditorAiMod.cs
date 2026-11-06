@@ -473,14 +473,14 @@ sealed partial class Editor
         var w = aimod!;
         float s = AiS;
         w.Mouse = mouse;
-        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - AiW * s) / 2, (Game.H - (AiH + AiCaption) * s) / 2);
+        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - AiW * s) / 2, (EH - (AiH + AiCaption) * s) / 2);
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { aimod = null; Input.Muted = true; return true; }
         var whole = new Rectangle(w.Pos.X, w.Pos.Y, AiW * s, (AiH + AiCaption) * s);
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (w.Drag is { } d)
         {
             if (!Input.IsMouseButtonDown(MouseButton.Left)) w.Drag = null;
-            else w.Pos = new(Math.Clamp(mouse.X - d.X, -AiW * s / 2, Game.W - AiW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, Game.H - AiCaption * s));
+            else w.Pos = new(Math.Clamp(mouse.X - d.X, -AiW * s / 2, Game.W - AiW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, EH - AiCaption * s));
             return true;
         }
         if (!CheckCollisionPointRec(mouse, whole)) return false;

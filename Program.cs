@@ -212,7 +212,7 @@ static class Game
     {
         foreach (var s in skins.Values) s.Unload();
         skins.Clear();
-        UseSkin(null);
+        UseSkin(null, Screen is Editor);
     }
 
     // stable's skin for what's on screen: the configured one (each change of screen goes back to it), or the one a play

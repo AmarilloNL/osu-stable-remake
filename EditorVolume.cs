@@ -27,13 +27,13 @@ sealed partial class Editor
         var w = volumeWindow!;
         float s = AiS;
         w.Mouse = mouse;
-        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - VolW * s) / 2, (Game.H - (VolH + AiCaption) * s) / 2);
+        if (float.IsNaN(w.Pos.X)) w.Pos = new((Game.W - VolW * s) / 2, (EH - (VolH + AiCaption) * s) / 2);
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { volumeWindow = null; Input.Muted = true; return true; } // (like the other windows)
         bool click = Input.IsMouseButtonPressed(MouseButton.Left), held = Input.IsMouseButtonDown(MouseButton.Left);
         if (w.Drag is { } d)
         {
             if (!held) w.Drag = null;
-            else w.Pos = new(Math.Clamp(mouse.X - d.X, -VolW * s / 2, Game.W - VolW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, Game.H - AiCaption * s));
+            else w.Pos = new(Math.Clamp(mouse.X - d.X, -VolW * s / 2, Game.W - VolW * s / 2), Math.Clamp(mouse.Y - d.Y, 0, EH - AiCaption * s));
             return true;
         }
         if (w.Dragging >= 0)

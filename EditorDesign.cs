@@ -736,9 +736,9 @@ sealed partial class Editor
     void DrawDesign(float u)
     {
         int w = Game.W, h = (int)EH;
-        sbView?.Draw(time, w, h, 1, overlay: false);
+        sbView?.Draw(time, w, h, 1, overlay: false, (int)Strip);
         if (sbHitObjects && mode != 3) { fieldAsPlay = true; DrawPlayfield(u, objectsOnly: true); fieldAsPlay = false; }
-        sbView?.Draw(time, w, h, 1, overlay: true);
+        sbView?.Draw(time, w, h, 1, overlay: true, (int)Strip);
         var mouse = EMouse;
         // the picked and the hovered sprite
         void Outline(SbSprite sp, Color c) { if (SbCorners(sp) is { } q) for (int i = 0; i < 4; i++) DrawLineEx(q[i], q[(i + 1) % 4], 2, c); }

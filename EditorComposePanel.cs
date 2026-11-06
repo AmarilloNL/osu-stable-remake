@@ -11,8 +11,8 @@ sealed partial class Editor
 {
     bool snapDragging;
 
-    static Rectangle SnapSlider() { float u = U; return new Rectangle(Game.W - 190 * u, 46 * u, 140 * u, 10 * u); }
-    static Rectangle BreakButton() { float u = U; return new Rectangle(Game.W - 190 * u, 61 * u, 130 * u, 17 * u); }
+    static Rectangle SnapSlider() { float u = U; return new Rectangle(Game.W - 190 * u, 25 * u, 140 * u, 10 * u); }
+    static Rectangle BreakButton() { float u = U; return new Rectangle(Game.W - 190 * u, 40 * u, 130 * u, 22.5f * u); } // (stable's places, the menu being above the game area)
 
     // true when it took the mouse
     bool UpdateSnapPanel(Vector2 mouse)
@@ -44,8 +44,8 @@ sealed partial class Editor
     {
         bool spacing = Input.AltHeld;
         float x = Game.W - 200 * u;
-        Game.TextBold(spacing ? "Distance Spacing:" : "Beat Snap Divisor:", x, 20 * u, 12 * u, Color.White);
-        Game.TextBold(spacing ? $"{DistanceSpacing.ToString("0.0#", CultureInfo.InvariantCulture)}x" : $"1/{divisor}", Game.W - 40 * u, 35 * u, 12 * u, Color.White);
+        Game.TextBold(spacing ? "Distance Spacing:" : "Beat Snap Divisor:", x, 0, 12 * u, Color.White);
+        Game.TextBold(spacing ? $"{DistanceSpacing.ToString("0.0#", CultureInfo.InvariantCulture)}x" : $"1/{divisor}", Game.W - 40 * u, 15 * u, 12 * u, Color.White);
         var s = SnapSlider();
         float f = spacing ? (float)Math.Clamp((DistanceSpacing - 0.1) / 5.9, 0, 1) : (divisor - 1) / 15f;
         DrawRectangle((int)s.X, (int)(s.Y + s.Height / 2 - u), (int)s.Width, (int)Math.Max(2, 2 * u), ColorAlpha(Color.White, 0.6f));

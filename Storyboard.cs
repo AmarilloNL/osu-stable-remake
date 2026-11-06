@@ -437,12 +437,13 @@ sealed class Storyboard
     public void SeekSamples(double time) => nextSample = samples.FindIndex(s => s.Time > time) is int i and >= 0 ? i : samples.Count;
 
     // overlay: false draws background..foreground (under the hit objects), true draws the overlay layer.
-    public void Draw(double t, int w, int h, float dim, bool overlay)
+    // (screenY: where its area starts on the screen, for the cut - the editor draws it under its menu strip)
+    public void Draw(double t, int w, int h, float dim, bool overlay, int screenY = 0)
     {
         if (dim <= 0) return;
         float s = h / 480f;
         float ox = (w - 640 * s) / 2;
-        if (!Widescreen) BeginScissorMode((int)ox, 0, (int)(640 * s), h); // 4:3 storyboards are cut to 4:3, like stable
+        if (!Widescreen) BeginScissorMode((int)ox, screenY, (int)(640 * s), h); // 4:3 storyboards are cut to 4:3, like stable
         foreach (var e in elements)
         {
             if (t < e.Start || t > e.End || (e.Layer == 4) != overlay || !ShowLayer[Math.Clamp(e.Layer, 0, 4)]) continue;
