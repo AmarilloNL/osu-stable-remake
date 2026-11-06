@@ -238,7 +238,7 @@ sealed partial class Editor : Screen
         if (o.Slider)
         {
             string pts = string.Join("|", o.Anchors.Select(a => $"{Num(Math.Round(a.X))}:{Num(Math.Round(a.Y))}"));
-            string edges = o.Edges.Length > 0 ? o.Edges : string.Join("|", Enumerable.Repeat("0", o.Slides + 1));
+            string edges = o.Edges.Length > 0 ? o.Edges : string.Join("|", Enumerable.Repeat(o.HitSound.ToString(Inv), o.Slides + 1)); // (stable's: the slider's sound on each edge)
             string sets = o.EdgeSets.Length > 0 ? o.EdgeSets : string.Join("|", Enumerable.Repeat("0:0", o.Slides + 1));
             return $"{head},{o.Curve}|{pts},{o.Slides},{Num(o.Length)},{edges},{sets},{sample}";
         }
@@ -521,6 +521,7 @@ sealed partial class Editor : Screen
         var mouse = EMouse;
         float u = U;
         KeepBreaksAfterDrag();
+        if (edgeSlider != null && !(selected.Count == 1 && selected.Contains(edgeSlider))) edgeSlider = null;
         // the clock (also under a window or the menu: the song plays on, and Use Current Time takes where it is)
         if (music != null && playing)
         {
@@ -712,9 +713,19 @@ sealed partial class Editor : Screen
         if (!double.IsNaN(lastSoundTime))
             foreach (var o in objs)
             {
+                if (o.Slider)
+                {
+                    if (o.End <= lastSoundTime || o.Time > time) continue;
+                    var e = EdgeSounds(o);
+                    for (int k = 0; k <= o.Slides; k++)
+                    {
+                        double t = o.Time + (o.End - o.Time) * k / o.Slides;
+                        if (t > lastSoundTime && t <= time) Hitsound(e[k], t);
+                    }
+                    continue;
+                }
                 if (o.Time > lastSoundTime && o.Time <= time) Hitsound(o.HitSound, o.Time);
-                if (o.Slider || o.Spinner)
-                    if (o.End > lastSoundTime && o.End <= time) Hitsound(o.HitSound, o.End);
+                if (o.Spinner && o.End > lastSoundTime && o.End <= time) Hitsound(o.HitSound, o.End);
             }
         lastSoundTime = time;
     }
@@ -912,12 +923,18 @@ sealed partial class Editor : Screen
                 return;
             }
             var hit = objs.LastOrDefault(o => Math.Abs(TimelineX(o.Time) - mouse.X) < 10 * u);
+            if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && EdgeAtTimeline(only, mouse.X) is var at && (at >= 0 || hit == only))
+            {
+                PickEdge(only, at);
+                hit = only;
+            }
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 if (noteLock) return;
                 undo.Add(Snapshot()); redo.Clear();
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
+                timeMoved = false;
                 breakDragFit = true;
             }
             else if (!PickBreakEdge(mouse.X)) { scrubFrom = mouse.X; scrubTime = time; }
@@ -935,7 +952,8 @@ sealed partial class Editor : Screen
         }
         if (timeDrag is { } td)
         {
-            if (held)
+            timeMoved |= Math.Abs(TimelineX(td.From) - mouse.X) >= 1; // (a click that doesn't move leaves them where they are)
+            if (held && timeMoved)
             {
                 double shift = Snap(td.Start.Keys.Min(o => td.Start[o]) + TimeAtX(mouse.X) - td.From) - td.Start.Keys.Min(o => td.Start[o]);
                 foreach (var (o, t0) in td.Start)
@@ -944,7 +962,7 @@ sealed partial class Editor : Screen
                     if (Math.Abs(o.Time - (t0 + shift)) > 0.5) { o.Time = t0 + shift; o.End = o.Time + d; o.Raw = null; modified = true; }
                 }
             }
-            else { timeDrag = null; Rebuild(); }
+            else if (!held) { timeDrag = null; Rebuild(); }
             return;
         }
         if (breakDrag != null)
@@ -1850,14 +1868,16 @@ sealed partial class Editor : Screen
     }
 
     (EObj Slider, int Index)? pointDrag;
+    Vector2 pointFrom; bool pointMoved, timeMoved; // (a click on a point that doesn't move leaves it where it is)
 
     void UpdateSelect(Vector2 mouse, Vector2 fieldPos, bool click, bool held, bool inField)
     {
         // a slider's point being dragged (on the grid with grid snap); the slider refits as it goes
         if (pointDrag is { } pd)
         {
+            pointMoved |= Vector2.Distance(fieldPos, pointFrom) >= 1;
             var p = GridSnap(fieldPos - StackShift(pd.Slider));
-            if (held && pd.Slider.Anchors[pd.Index] != p) { pd.Slider.Anchors[pd.Index] = p; FitLength(pd.Slider); modified = true; Rebuild(); }
+            if (held && pointMoved && pd.Slider.Anchors[pd.Index] != p) { pd.Slider.Anchors[pd.Index] = p; FitLength(pd.Slider); modified = true; Rebuild(); }
             if (!held) pointDrag = null;
             return;
         }
@@ -1873,6 +1893,7 @@ sealed partial class Editor : Screen
             }
             undo.Add(Snapshot()); redo.Clear();
             pointDrag = pt;
+            (pointFrom, pointMoved) = (fieldPos, false);
             return;
         }
         // Ctrl+click with only a slider selected, not on another object (stable's): a new point there, in the part of
@@ -1891,12 +1912,18 @@ sealed partial class Editor : Screen
             modified = true;
             Rebuild();
             pointDrag = (body, seg);
+            pointMoved = true;
             return;
         }
         if (click && inField)
         {
             // the topmost visible object under the cursor (its head)
             var hit = ObjectAt(fieldPos);
+            if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && (hit == only || hit == null && EdgeAt(only, fieldPos) >= 0))
+            {
+                PickEdge(only, EdgeAt(only, fieldPos));
+                hit = only;
+            }
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
@@ -1954,12 +1981,69 @@ sealed partial class Editor : Screen
         Change(() => { foreach (var o in selected) { o.NewCombo = on; o.Raw = null; } });
     }
 
+    // stable's sound toggles: a selected slider edge (a click on a selected slider's head, end or repeat) gets its own;
+    // a slider whose body was clicked changes only its sliding sound; any other slider with sounds of its own on its
+    // edges changes them all too (switching one off flips it, stable's quirk); a slider without changes as a whole
     void ToggleSound(int bit)
     {
         if (selected.Count == 0) { soundNext ^= bit; return; }
-        bool on = !selected.All(o => (o.HitSound & bit) != 0);
-        Change(() => { foreach (var o in selected) { o.HitSound = on ? o.HitSound | bit : o.HitSound & ~bit; o.Raw = null; } });
+        int edge = SelEdge;
+        bool on = edge >= 0 ? (EdgeSounds(edgeSlider!)[edge] & bit) == 0 : !selected.All(o => (o.HitSound & bit) != 0);
+        bool body = BodySel;
+        Change(() =>
+        {
+            foreach (var o in selected)
+            {
+                if (o.Slider && (edge >= 0 || body)) OwnEdges(o);
+                if (o.Slider && edge >= 0) { var e = EdgeSounds(o); e[edge] = on ? e[edge] | bit : e[edge] ^ bit; o.Edges = string.Join("|", e); o.Raw = null; continue; }
+                if (o.Slider && !body && o.Edges.Length > 0) { var e = EdgeSounds(o); for (int i = 0; i < e.Length; i++) e[i] = on ? e[i] | bit : e[i] ^ bit; o.Edges = string.Join("|", e); }
+                o.HitSound = on ? o.HitSound | bit : o.HitSound & ~bit;
+                o.Raw = null;
+            }
+        });
     }
+
+    // a slider's edge sounds: head, each repeat, end (the slider's own sound where it has none)
+    static int[] EdgeSounds(EObj o)
+    {
+        var e = new int[o.Slides + 1];
+        var given = o.Edges.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < e.Length; i++) e[i] = i < given.Length && int.TryParse(given[i], out int v) ? v : o.HitSound;
+        return e;
+    }
+    // (stable's: edges given their own sounds and sets, from the slider's, before one of them changes)
+    static void OwnEdges(EObj o)
+    {
+        if (o.Edges.Length > 0) return;
+        var smp = o.Sample.Split(':');
+        string set = $"{(smp.Length > 0 && int.TryParse(smp[0], out int a) ? a : 0)}:{(smp.Length > 1 && int.TryParse(smp[1], out int b) ? b : 0)}";
+        o.Edges = string.Join("|", EdgeSounds(o));
+        o.EdgeSets = string.Join("|", Enumerable.Repeat(set, o.Slides + 1));
+        o.Raw = null;
+    }
+
+    // a selected slider's clicked edge (0 its head .. Slides its end) or its body, while it's the only one selected
+    EObj? edgeSlider;
+    int edgeSel = -1;
+    bool bodySel;
+    int SelEdge => edgeSlider != null && selected.Count == 1 && selected.Contains(edgeSlider) ? edgeSel : -1;
+    bool BodySel => edgeSlider != null && selected.Count == 1 && selected.Contains(edgeSlider) && bodySel;
+    // the edge under a playfield point (stable's: the first within a radius, so the head before a repeat on it)
+    int EdgeAt(EObj o, Vector2 fieldPos)
+    {
+        if (!o.Slider || o.Path.Length == 0) return -1;
+        for (int j = 0; j <= o.Slides; j++)
+            if (Vector2.Distance((j % 2 == 0 ? PosOf(o) : o.Path[^1]) + StackShift(o), fieldPos) <= Radius) return j;
+        return -1;
+    }
+    // the edge under a timeline x (stable's: within half a circle radius in pixels)
+    int EdgeAtTimeline(EObj o, float x)
+    {
+        for (int j = 0; j <= o.Slides; j++)
+            if (Math.Abs(TimelineX(o.Time + (o.End - o.Time) * j / o.Slides) - x) < Radius * 0.5f) return j;
+        return -1;
+    }
+    void PickEdge(EObj o, int edge) { edgeSlider = o; edgeSel = edge; bodySel = edge < 0; }
 
     IEnumerable<EObj> Visible()
     {
@@ -2306,7 +2390,8 @@ sealed partial class Editor : Screen
         var arrow = skin.Tex("reversearrow");
         bool defaultCircle = !skin.Own("hitcircle");
         float s = 0.4f * 0.625f * u;
-        void Circle(EObj o, double t, int n, Color col, bool sel, bool number, bool repeat)
+        int selEdge = SelEdge;
+        void Circle(EObj o, double t, int n, Color col, bool sel, bool number, bool repeat, bool red = false)
         {
             if (t < from || t > to) return;
             float x = TimelineX(t), y = (45 - 2 * n) * u;
@@ -2317,7 +2402,7 @@ sealed partial class Editor : Screen
             overlay?.Draw(c, s, new Color(255, 255, 255, (int)a));
             if (number) DrawComboNumber(o.Combo, new Vector2(x, (45 - 3 * n) * u), 0.32f * 0.625f * u, new Color(255, 255, 255, (int)a));
             if (repeat) arrow?.Draw(c, s, defaultCircle && col.R + col.G + col.B > 600 ? new Color(0, 0, 0, (int)a) : new Color(255, 255, 255, (int)a));
-            if (sel) select?.Draw(c, s, new Color(255, 255, 255, (int)a));
+            if (sel || red) select?.Draw(c, s, red ? new Color(255, 0, 0, (int)a) : new Color(255, 255, 255, (int)a));
         }
         // stacked indices (objects sharing a start time), then back to front
         Span<int> stack = hi - lo < 4096 ? stackalloc int[hi - lo + 1] : new int[hi - lo + 1];
@@ -2328,10 +2413,11 @@ sealed partial class Editor : Screen
             var col = o.Spinner ? Color.Gray : ObjColour(o, colours);
             bool sel = selected.Contains(o);
             int n = stack[i - lo];
-            if (o.End != o.Time) Circle(o, o.End, n, col, sel, false, false);
+            int edge = o == edgeSlider ? selEdge : -1;
+            if (o.End != o.Time) Circle(o, o.End, n, col, sel, false, false, o.Slider && edge == o.Slides);
             if (o.Slider)
-                for (int k = o.Slides - 1; k >= 1; k--) Circle(o, (int)(o.Time + (o.End - o.Time) * k / o.Slides), n, col, false, false, true);
-            Circle(o, o.Time, n, col, sel, !o.Spinner, false);
+                for (int k = o.Slides - 1; k >= 1; k--) Circle(o, (int)(o.Time + (o.End - o.Time) * k / o.Slides), n, col, false, false, true, edge == k);
+            Circle(o, o.Time, n, col, sel, !o.Spinner, false, edge == 0);
         }
     }
 
@@ -2475,6 +2561,12 @@ sealed partial class Editor : Screen
                 }
             }
             DrawHitCircle(new((float)o.X, (float)o.Y), o.Combo, col, alpha, cs * hitScale, selected.Contains(o), number: true);
+            // a selected slider edge: its circle's select ring red (stable's)
+            if (o == edgeSlider && SelEdge is var se and >= 0 && o.Path.Length > 0 && skin.Tex("hitcircleselect") is { } ring)
+            {
+                var ep = se % 2 == 0 ? new Vector2((float)o.X, (float)o.Y) : o.Path[^1];
+                ring.Draw(ToScreen(ep.X, ep.Y), cs, ColorAlpha(Color.Red, alpha));
+            }
             if (time < o.Time)
             {
                 float a = (float)((o.Time - time) / pre);
@@ -2536,12 +2628,12 @@ sealed partial class Editor : Screen
             if (CheckCollisionPointRec(mouse, r)) tip = mode == 3 && i == 2 ? HoldTip : ToolTips[i];
         }
         bool anySel = selected.Count > 0;
+        int selEdge = SelEdge;
+        bool SoundOn(int bit) => selEdge >= 0 ? (EdgeSounds(edgeSlider!)[selEdge] & bit) != 0 : anySel ? selected.All(o => (o.HitSound & bit) != 0) : (soundNext & bit) != 0;
         bool[] on =
         [
             anySel ? selected.All(o => o.NewCombo) : newComboNext,
-            anySel ? selected.All(o => (o.HitSound & 2) != 0) : (soundNext & 2) != 0,
-            anySel ? selected.All(o => (o.HitSound & 4) != 0) : (soundNext & 4) != 0,
-            anySel ? selected.All(o => (o.HitSound & 8) != 0) : (soundNext & 8) != 0,
+            SoundOn(2), SoundOn(4), SoundOn(8),
             gridSnap, distSnap, noteLock,
         ];
         var pickable = ComboPickable;
