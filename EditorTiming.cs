@@ -15,7 +15,11 @@ sealed partial class Editor
     ETiming? tapRed; // the section a run of taps times (the picked red point, else the one in effect at the first tap)
     double tapUndoAt = double.NegativeInfinity;
 
-    Rectangle TapButton() { float u = U; return new Rectangle(Game.W - 360 * u, 82 * u, 136 * u, 15 * u); }
+    // stable's metronome (top right; ours just under the tabs): osu!ui's panel 200 units from the right edge, Reset on
+    // its left, four beat lights, Tap Here! under them
+    const float MetronomeY = 17;
+    static Rectangle TapButton() { float u = U; return new Rectangle(Game.W - 140 * u, (MetronomeY + 34) * u, 136 * u, 25 * u); }
+    static Rectangle MetronomeReset() { float u = U; return new Rectangle(Game.W - 197 * u, (MetronomeY + 4) * u, 58 * u, 58 * u); }
 
     void TimingTap()
     {
@@ -104,7 +108,8 @@ sealed partial class Editor
 
     // Timing → Reset Current Section (stable's): after asking, the current section is untimed - its beat length 0, its
     // offset 0 for the first section, else a second after the one before - and the editor goes there, to tap it again
-    void ResetCurrentSectionPrompt() => prompt = new("Are you sure you wish to reset the current section's timing?", null, _ =>
+    void ResetCurrentSectionPrompt() => prompt = new("Are you sure you wish to reset the current section's timing?", null, _ => ResetCurrentSection(), "Yes", "No");
+    void ResetCurrentSection() // (the metronome's Reset: no asking)
     {
         var reds = timing.Where(p => p.Red).OrderBy(p => p.Time).ToList();
         var cur = reds.LastOrDefault(p => p.Time <= time) ?? reds.FirstOrDefault();
@@ -115,7 +120,7 @@ sealed partial class Editor
         timingSel = timing.IndexOf(cur); // (the section the taps will time)
         Seek(cur.Time);
         Notification.Show("This timing section is not yet timed.\nTo begin, tap from the first beat.", 5000);
-    }, "Yes", "No");
+    }
 
     // stable's: the tap after gap k taken out, and the next if there is one, the later taps moved back by the gap
     void DropTaps(int k)
@@ -126,13 +131,48 @@ sealed partial class Editor
         for (int i = k + 1; i < taps.Count; i++) taps[i] -= gap;
     }
 
-    void DrawTapButton(float u)
+    void DrawMetronome(float u)
     {
-        var r = TapButton();
-        bool hover = CheckCollisionPointRec(Input.GetMousePosition(), r);
-        DrawRectangleRounded(r, 0.2f, 6, hover ? new Color(135, 206, 250, 255) : new Color(100, 170, 230, 230));
-        string text = taps.Count >= 8 ? $"Tap Here! ({taps.Count})" : "Tap Here! (T)";
-        Game.Text(text, r.X + r.Width / 2 - Game.TextWidth(text, 11 * u) / 2, r.Y + 2 * u, 11 * u, Color.White);
+        var mouse = Input.GetMousePosition();
+        float x = Game.W - 200 * u, y = MetronomeY * u;
+        if (skin.DefaultTex("editor-metronome-bg") is { } bg)
+            DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height), new Rectangle(x, y, bg.Width * u / 1.6f, bg.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
+        // the lights: the bar's first beat yellow-green, the others white in turn (3 of them, whatever the meter), each
+        // fading over its beat
+        var lit = new Color[4];
+        if (TimedSection is { } red && time >= red.Time)
+        {
+            double beat = (time - red.Time) % (red.Beat * Math.Max(1, red.Meter)) / red.Beat;
+            if (beat < 1) lit[0] = new Color((int)(187 * (1 - beat)), (int)(255 * (1 - beat)), (int)(51 * (1 - beat)), 255);
+            else
+            {
+                beat %= 3;
+                int i = beat < 1 ? 3 : beat < 2 ? 1 : 2;
+                int v = (int)(255 * ((beat < 1 ? 1 : beat < 2 ? 2 : 3) - beat));
+                lit[i] = new Color(v, v, v, 255);
+            }
+        }
+        if (skin.DefaultTex("editor-metronome-beat-lighting") is { } light)
+        {
+            BeginBlendMode(BlendMode.Additive);
+            for (int i = 0; i < 4; i++)
+            {
+                float w = light.Width * u / 1.6f, h = light.Height * u / 1.6f, cx = Game.W - (123 - 34 * i) * u, cy = (MetronomeY + 18) * u;
+                DrawTexturePro(light.Tex, new Rectangle(0, 0, light.Tex.Width, light.Tex.Height), new Rectangle(cx - w / 2, cy - h / 2, w, h), Vector2.Zero, 0, lit[i]);
+            }
+            EndBlendMode();
+        }
+        // stable's buttons: Reset (orange) and Tap Here! (sky blue), lighter under the cursor
+        void Button(Rectangle r, string text, Color c, float size)
+        {
+            bool over = CheckCollisionPointRec(mouse, r);
+            DrawRectangleRounded(r, 0.2f, 6, over ? new Color(Math.Min(255, c.R + 30), Math.Min(255, c.G + 30), Math.Min(255, c.B + 30), 255) : c);
+            Game.Text(text, r.X + r.Width / 2 - Game.TextWidth(text, size * u) / 2, r.Y + r.Height / 2 - size * u / 2, size * u, Color.White);
+        }
+        Button(MetronomeReset(), "Reset", new Color(255, 165, 0, 255), 12);
+        Button(TapButton(), "Tap Here!", new Color(135, 206, 235, 255), 12);
+        if (CheckCollisionPointRec(mouse, TapButton()))
+            Options.DrawScreenTooltip("The more you tap, the more \"precise\" the timing algorithm will become. \nYou can click this button or use the 'T' key.", mouse);
     }
 
     // ---- stable's Timing tab: osu!ui's panel (at 120,85) with the section's BPM and offset and the map's slider velocity

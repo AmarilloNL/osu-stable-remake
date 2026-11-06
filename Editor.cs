@@ -1906,6 +1906,7 @@ sealed partial class Editor : Screen
         if (Input.GetMouseWheelMove() != 0 && mouse.X < Game.W - 220 * u) { }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (Input.IsKeyPressed(KeyboardKey.T) && !Input.CtrlHeld || click && CheckCollisionPointRec(mouse, TapButton())) { TimingTap(); return; } // (stable's Tap Here!)
+        if (click && CheckCollisionPointRec(mouse, MetronomeReset())) { ResetCurrentSection(); return; }
         if (!click) return;
         if (TimingFlags(TimelineRect()).LastOrDefault(x => CheckCollisionPointRec(mouse, x.Flag)) is { Point: { } flagged }) { Seek(flagged.Time); return; }
         if (!timingPanel) { UpdateTimingView(mouse); return; }
@@ -2077,7 +2078,7 @@ sealed partial class Editor : Screen
     // ---- drawing
     Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }
     static readonly int[] TabOrder = [0, 3, 1, 2]; // Compose, Design, Timing, Song Setup (tab numbers)
-    Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab == 0 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right)
+    Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab is 0 or 1 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right, Timing: the metronome)
     float PxPerMs() => TimelineRect().Width / (int)(6000 / (tab == 1 ? zoom * 0.4f : zoom)); // (stable: Timing shows 2.5x as much)
     void Zoom(float by) { zoom = Math.Clamp(zoom + by, 0.1f, 8); zoomChanged = true; }
 
@@ -2138,7 +2139,7 @@ sealed partial class Editor : Screen
             DrawTexturePro(top.Tex, new Rectangle(0, 0, top.Tex.Width, top.Tex.Height), new Rectangle(0, 0, Game.W, top.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
         DrawTimeline(u);
         DrawKiaiTag(u);
-        if (tab == 1 && !timingPanel) DrawTimingStatus(u);
+        if (tab == 1) { if (!timingPanel) DrawTimingStatus(u); DrawMetronome(u); }
         var zm = Input.GetMousePosition();
         for (int i = 0; i < 2; i++)
             if (skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus") is { } zs)
@@ -2818,7 +2819,7 @@ sealed partial class Editor : Screen
 
     void DrawTiming(float u)
     {
-        if (!timingPanel) { DrawTimingView(u); DrawTapButton(u); return; }
+        if (!timingPanel) { DrawTimingView(u); return; }
         DrawButton(TimingButton(-1), "Close (F6)", false);
         var list = timing.OrderBy(t => t.Time).ToList();
         DrawRectangle((int)(76 * u), (int)(80 * u), (int)(Game.W - 290 * u), (int)(360 * u), new Color(0, 0, 0, 200));
@@ -2837,7 +2838,6 @@ sealed partial class Editor : Screen
         }
         if (list.Count > 18) Game.Text($"{timingScroll + 1}-{Math.Min(list.Count, timingScroll + 18)} of {list.Count} (click above / below to scroll)", 82 * u, 428 * u, 10 * u, Color.LightGray);
         for (int i = 0; i < TimingButtons.Length; i++) DrawButton(TimingButton(i), TimingButtons[i], false);
-        DrawTapButton(u);
         if (timingSel >= 0 && timingSel < timing.Count)
         {
             var t = timing[timingSel];
