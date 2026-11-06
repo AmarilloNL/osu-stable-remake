@@ -2576,7 +2576,9 @@ sealed partial class Editor : Screen
         if (boxFrom is { } bf)
         {
             var a = ToScreen(bf.X, bf.Y); var b = EMouse;
-            DrawRectangleLinesEx(new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y)), 1, Color.White);
+            var box = new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y));
+            DrawRectangleRec(box, new Color(255, 255, 255, 20)); // (stable's: a faint fill in a 180-alpha frame)
+            DrawRectangleLinesEx(box, 1, new Color(255, 255, 255, 180));
         }
     }
 
@@ -2982,7 +2984,9 @@ sealed partial class Editor : Screen
         {
             var a = new Vector2(b.X, b.X > MStrip && b.X < MStrip + 60 ? b.Y : MY(b.Time)) * u;
             var e = EMouse;
-            DrawRectangleLinesEx(new Rectangle(Math.Min(a.X, e.X), Math.Min(a.Y, e.Y), Math.Abs(e.X - a.X), Math.Abs(e.Y - a.Y)), 1, Color.White);
+            var box = new Rectangle(Math.Min(a.X, e.X), Math.Min(a.Y, e.Y), Math.Abs(e.X - a.X), Math.Abs(e.Y - a.Y));
+            DrawRectangleRec(box, new Color(255, 255, 255, 20));
+            DrawRectangleLinesEx(box, 1, new Color(255, 255, 255, 180));
         }
     }
 
