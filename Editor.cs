@@ -1907,6 +1907,7 @@ sealed partial class Editor : Screen
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (Input.IsKeyPressed(KeyboardKey.T) && !Input.CtrlHeld || click && CheckCollisionPointRec(mouse, TapButton())) { TimingTap(); return; } // (stable's Tap Here!)
         if (!click) return;
+        if (TimingFlags(TimelineRect()).LastOrDefault(x => CheckCollisionPointRec(mouse, x.Flag)) is { Point: { } flagged }) { Seek(flagged.Time); return; }
         for (int i = 0; i < 18 && i + timingScroll < list.Count; i++)
             if (CheckCollisionPointRec(mouse, TimingRow(i))) { timingSel = timing.IndexOf(list[i + timingScroll]); Seek(list[i + timingScroll].Time); return; }
         if (mouse.Y < 100 * u && mouse.X > 80 * u && mouse.X < Game.W - 220 * u) { timingScroll = Math.Max(0, timingScroll - 5); return; }
@@ -2284,11 +2285,41 @@ sealed partial class Editor : Screen
             if (!o.Spinner) Game.Text(o.Combo.ToString(), x0 - Game.TextWidth(o.Combo.ToString(), 11 * u) / 2, cy - 6 * u, 11 * u, Color.White);
         }
         if (tab == 3) DrawDesignLanes(r, u);
+        if (tab == 1) DrawTimingFlags(r, u);
         EndScissorMode();
         if (tab == 3) DrawDesignLaneLabels(r, u);
         // the current time
         DrawRectangle((int)(r.X + r.Width / 2), (int)r.Y, Math.Max(2, (int)(2 * u)), (int)r.Height, new Color(255, 255, 255, 230));
         if (tab == 0) DrawSnapPanel(u);
+    }
+
+    // stable's Timing tab: each timing point flagged along the timeline's bottom (osu!ui's tab, 37 units tall, from 4
+    // left of it): "N bpm" white on a timing point, "N.Nx" light blue on an inherited one, fading within 40 units of
+    // the ends; a click on one goes to it
+    IEnumerable<(ETiming Point, Rectangle Flag)> TimingFlags(Rectangle r)
+    {
+        float u = U;
+        var flag = skin.DefaultTex("editor-timeline-timinginfo");
+        float w = (flag?.Width ?? 96) * u / 1.6f, h = (flag?.Height ?? 59) * u / 1.6f;
+        foreach (var t in timing.OrderBy(t => t.Time))
+        {
+            float x = TimelineX(t.Time) - 4 * u;
+            if (x < r.X - w || x > r.X + r.Width) continue;
+            yield return (t, new Rectangle(x, r.Y + r.Height - 37 * u, w, h));
+        }
+    }
+    void DrawTimingFlags(Rectangle r, float u)
+    {
+        if (skin.DefaultTex("editor-timeline-timinginfo") is not { } flag) return;
+        foreach (var (t, f) in TimingFlags(r))
+        {
+            float a = Math.Clamp(Math.Min(f.X - r.X, r.Width - (f.X - r.X)) / (40 * u), 0, 1);
+            DrawTexturePro(flag.Tex, new Rectangle(0, 0, flag.Tex.Width, flag.Tex.Height), f, Vector2.Zero, 0, t.Red ? ColorAlpha(Color.White, a) : new Color(180, 210, 254, (int)(255 * a)));
+            string text = t.Red ? (t.Beat != 0 ? $"{60000 / t.Beat:0}bpm" : "-") : $"{(t.Beat < 0 ? Math.Round(-100 / t.Beat, 1) : 1.0).ToString(Inv)}x";
+            float tx = f.X + 6 * u, ty = r.Y + r.Height - 27 * u, size = 14 * u;
+            foreach (var (dx, dy) in new[] { (-1, 0), (1, 0), (0, -1), (0, 1) }) Game.Text(text, tx + dx * u * 0.6f, ty + dy * u * 0.6f, size, Color.Black);
+            Game.Text(text, tx, ty, size, Color.White);
+        }
     }
 
     static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
