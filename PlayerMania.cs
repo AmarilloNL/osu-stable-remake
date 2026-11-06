@@ -401,6 +401,8 @@ sealed partial class Player
         public float[] X = [], W = [];
         public string[] Note = [], NoteH = [], NoteL = [], NoteT = [], Key = [], KeyD = [];
         public int[] BodyStyle = []; // NoteBodyStyle{n}: 0 stretched, 2 repeated from the head end, 3 from the tail end, 4 centred
+        public bool UpsideDown; // the stage turned over (notes rising to the hit position near the top), and what's flipped then:
+        public bool[] KeyFlip = [], NoteFlip = [], HeadFlip = [], BodyFlip = [], TailFlip = [];
         public string LightingN = "lightingN", LightingL = "lightingL", WarningArrow = "mania-warningarrow";
         public Color KeyWarning = Color.Black; // ColourKeyWarning: the keys' names on them at the start
         public float[] LightingNW = [], LightingLW = []; // (0: the column's width)
@@ -461,6 +463,19 @@ sealed partial class Player
         // stable's NoteBodyStyle{n}, else NoteBodyStyle, else repeated from the tail end; skins before 2.5 stretch
         static int Style(string? v) => v?.Trim() switch { null => -1, var s when int.TryParse(s, out int i) => i, "Stretch" => 0, "RepeatTop" => 2, "RepeatBottom" => 3, "RepeatTopAndBottom" => 4, _ => -1 };
         look.BodyStyle = [.. Enumerable.Range(0, mKeys).Select(c => skin.Version < 2.5 ? 0 : Style(M($"NoteBodyStyle{c}")) is >= 0 and var s ? s : Style(M("NoteBodyStyle")) is >= 0 and var all ? all : 3)];
+        // stable's UpsideDown: everything placed from the other end. Turned over are the hint, the stage lights, the warning
+        // arrows, the keys (KeyFlipWhenUpsideDown{n}, else KeyFlipWhenUpsideDown: on) and, in skins from 2.5, the notes
+        // (NoteFlipWhenUpsideDown{n}, else for all: on; heads, bodies and tails by their own H, L and T keys) - the tail
+        // then the other way to the head, as it is standing up
+        look.UpsideDown = B("UpsideDown", false);
+        bool? Flip(string k) => M(k) is { } fv ? fv.Trim() is "1" or "true" or "True" : null;
+        bool NoteFlip(int c, string part, bool def) => skin.Version >= 2.5 && (Flip($"NoteFlipWhenUpsideDown{c}{part}") ?? Flip($"NoteFlipWhenUpsideDown{part}") ?? def);
+        var columns = Enumerable.Range(0, mKeys).ToArray();
+        look.KeyFlip = [.. columns.Select(c => Flip($"KeyFlipWhenUpsideDown{c}") ?? Flip("KeyFlipWhenUpsideDown") ?? true)];
+        look.NoteFlip = [.. columns.Select(c => NoteFlip(c, "", true))];
+        look.HeadFlip = [.. columns.Select(c => NoteFlip(c, "H", look.NoteFlip[c]))];
+        look.BodyFlip = [.. columns.Select(c => NoteFlip(c, "L", true))];
+        look.TailFlip = [.. columns.Select(c => !NoteFlip(c, "T", true))];
         look.Key = Per(c => $"KeyImage{c}", c => $"mania-key{ManiaColumnKind(c)}");
         look.KeyD = Per(c => $"KeyImage{c}D", c => $"mania-key{ManiaColumnKind(c)}D");
         Color Colour(string k, Color def) => M(k) is { } v && Skin.ParseColour(v, alpha: true) is { } cv ? cv : def;
@@ -510,7 +525,12 @@ sealed partial class Player
         for (int c = 0; c < mKeys; c++)
             if (mDown[c] != mShownDown[c]) { mShownDown[c] = mDown[c]; if (mDown[c]) mPressedAt[c] = time; else mReleasedAt[c] = time; }
         Color A(Color c, float a = 1) => ColorAlpha(c, c.A / 255f * a * alpha);
-        static Rectangle Src(Sprite sp) => new(0, 0, sp.Tex.Width, sp.Tex.Height);
+        static Rectangle Src(Sprite sp, bool flip = false) => new(0, 0, sp.Tex.Width, flip ? -sp.Tex.Height : sp.Tex.Height);
+        // (UpsideDown: places and spans measured from the bottom instead)
+        bool up = look.UpsideDown;
+        float mirror = up ? h : 0;
+        Rectangle V(Rectangle r) => up ? new(r.X, h - r.Y - r.Height, r.Width, r.Height) : r;
+        float Y(float y) => up ? h - y : y;
 
         // stable's stage, back to front. The columns (Colour{n}: black) and their lines (ColumnLineWidth, 0.74 of it wide;
         // ColourColumnLine) down to the hit position: left of each column, right of the last and (skins from 2.4) right of
@@ -520,9 +540,9 @@ sealed partial class Player
         for (int c = 0; c < mKeys; c++)
         {
             float x = left + look.X[c] * u, cw = look.W[c] * u;
-            if (look.LineW[c] > 0) DrawRectangleRec(new Rectangle(x, 0, 0.74f * look.LineW[c] * sd, hitY * u), A(look.ColumnLine));
+            if (look.LineW[c] > 0) DrawRectangleRec(V(new Rectangle(x, 0, 0.74f * look.LineW[c] * sd, hitY * u)), A(look.ColumnLine));
             if (look.LineW[c + 1] > 0 && skin.Version >= 2.4 || c == mKeys - 1)
-                DrawRectangleRec(new Rectangle(x + cw - (c == mKeys - 1 ? 0.1f * u : 0), 0, 0.74f * look.LineW[c + 1] * sd, hitY * u), A(look.ColumnLine));
+                DrawRectangleRec(V(new Rectangle(x + cw - (c == mKeys - 1 ? 0.1f * u : 0), 0, 0.74f * look.LineW[c + 1] * sd, hitY * u)), A(look.ColumnLine));
         }
         // the hint across the hit position (0.9 alpha, 1.6026 x 0.9 its height) and the judgement line just under it
         foreach (var (stX, stW) in look.Stages)
@@ -531,9 +551,9 @@ sealed partial class Player
             if (skin.Tex(look.StageHint) is { } hint)
             {
                 float hh = hint.Height * 0.9f * 1.6026f * sd;
-                DrawTexturePro(hint.Tex, Src(hint), new Rectangle(sl0, hitY * u - hh / 2, sw, hh), Vector2.Zero, 0, ColorAlpha(Color.White, 0.9f * alpha));
+                DrawTexturePro(hint.Tex, Src(hint, up), V(new Rectangle(sl0, hitY * u - hh / 2, sw, hh)), Vector2.Zero, 0, ColorAlpha(Color.White, 0.9f * alpha));
             }
-            if (look.Judgement) DrawRectangleRec(new Rectangle(sl0, hitY * u, sw, 0.7f * 1.6026f * sd), A(look.JudgementLine, 0.9f));
+            if (look.Judgement) DrawRectangleRec(V(new Rectangle(sl0, hitY * u, sw, 0.7f * 1.6026f * sd)), A(look.JudgementLine, 0.9f));
         }
         // the stage lights (StageLight, ColourLight{n}): on a press, standing on LightPosition at the image's height; let
         // go, they fade and sink to nothing over 400ms
@@ -544,7 +564,7 @@ sealed partial class Player
             if (la <= 0) continue;
             var fr = lights[(int)(Math.Max(0, time - mPressedAt[c]) / (1000.0 / look.LightFps)) % lights.Length];
             float lh = fr.Height * sd * la;
-            DrawTexturePro(fr.Tex, Src(fr), new Rectangle(left + look.X[c] * u, look.LightY * u - lh, look.W[c] * u, lh), Vector2.Zero, 0, A(look.Light[c], la));
+            DrawTexturePro(fr.Tex, Src(fr, up), V(new Rectangle(left + look.X[c] * u, look.LightY * u - lh, look.W[c] * u, lh)), Vector2.Zero, 0, A(look.Light[c], la));
         }
         // the keys (KeyImage{n}, as wide as the column at their own height), pressed for 80ms after a release too; under
         // the notes with KeysUnderNotes, else over them
@@ -556,14 +576,14 @@ sealed partial class Player
                 bool lit = mShownDown[c] || time - mReleasedAt[c] < 80;
                 if (((lit ? skin.Tex(look.KeyD[c]) : null) ?? skin.Tex(look.Key[c])) is not { } k) continue;
                 float kh = k.Height * sd;
-                DrawTexturePro(k.Tex, Src(k), new Rectangle(x, h - kh, cw, kh), Vector2.Zero, 0, tint);
+                DrawTexturePro(k.Tex, Src(k, up && look.KeyFlip[c]), V(new Rectangle(x, h - kh, cw, kh)), Vector2.Zero, 0, tint);
                 // stable: the column's key on it as the play starts, fading out from 0.5 to 3.5 seconds (not watching)
                 double shown = Game.NowMs - mStartAt;
                 if (playback == null && !auto && shown < 3500 && c < mBind.Length && mBind[c] != KeyboardKey.Null)
                 {
                     string name = KeyName(mBind[c]);
                     float size = look.W[c] / 2 * u, ka = shown < 500 ? 1 : 1 - (float)((shown - 500) / 3000);
-                    Game.TextBold(name, x + cw / 2 - Game.TextWidth(name, size) / 2, h - kh / 2 - size / 2, size, ColorAlpha(look.KeyWarning, look.KeyWarning.A / 255f * ka * alpha));
+                    Game.TextBold(name, x + cw / 2 - Game.TextWidth(name, size) / 2, Y(h - kh / 2) - size / 2, size, ColorAlpha(look.KeyWarning, look.KeyWarning.A / 255f * ka * alpha));
                 }
             }
         }
@@ -586,7 +606,7 @@ sealed partial class Player
                 float y = hitY - (float)(ManiaDist(bt) - now);
                 if (y > 490) continue;
                 if (y < -10) break;
-                foreach (var (stX, stW) in look.Stages) DrawRectangleRec(new Rectangle(left + stX * u, y * u - bh / 2, stW * u, bh), A(look.Barline));
+                foreach (var (stX, stW) in look.Stages) DrawRectangleRec(V(new Rectangle(left + stX * u, y * u - bh / 2, stW * u, bh)), A(look.Barline));
             }
         }
         // stable's warning arrows: down the middle of the stage like notes, 1, 2 and 3 seconds before the first one (not
@@ -599,7 +619,7 @@ sealed partial class Player
             {
                 float y = hitY - (float)(ManiaDist(first - 1000 * k) - now);
                 if (y < -40 || y > 520) continue;
-                foreach (var (stX, stW) in look.Stages) arrow.Draw(new(left + (stX + stW / 2) * u, y * u - arrow.Height * scale / 2), scale, tint);
+                foreach (var (stX, stW) in look.Stages) arrow.Draw(new(left + (stX + stW / 2) * u, Y(y * u - arrow.Height * scale / 2)), scale, tint, flipY: up);
             }
         }
         float noteScale = look.NoteScaleW * u; // (the width notes take their height from)
@@ -626,12 +646,12 @@ sealed partial class Player
                     if (skin.Animation(look.NoteL[c], true) is { Length: > 0 } frames)
                     {
                         double held = n.HeldMs + (n.Holding && !n.Done ? time - n.HoldFrom : 0);
-                        ManiaBody(frames[(int)(Math.Max(0, held) / 30) % frames.Length], x, cw, yEnd * u - half, y * u - half, cut, look.BodyStyle[c], sd, bodyTint);
+                        ManiaBody(frames[(int)(Math.Max(0, held) / 30) % frames.Length], x, cw, yEnd * u - half, y * u - half, cut, look.BodyStyle[c], sd, up && look.BodyFlip[c], mirror, bodyTint);
                     }
-                    ManiaNote(skin.Tex(look.NoteT[c]) ?? head, x, yEnd * u, cw, noteScale, bodyTint, flipY: true, clip: cut);
-                    ManiaNote(head, x, yHead * u, cw, noteScale, bodyTint);
+                    ManiaNote(skin.Tex(look.NoteT[c]) ?? head, x, yEnd * u, cw, noteScale, bodyTint, up ? look.TailFlip[c] : true, mirror, clip: cut);
+                    ManiaNote(head, x, yHead * u, cw, noteScale, bodyTint, up && look.HeadFlip[c], mirror);
                 }
-                else ManiaNote(skin.AnimFrame(look.Note[c], Game.NowMs) ?? skin.Tex(look.Note[c]), x, y * u, cw, noteScale, tint);
+                else ManiaNote(skin.AnimFrame(look.Note[c], Game.NowMs) ?? skin.Tex(look.Note[c]), x, y * u, cw, noteScale, tint, up && look.NoteFlip[c], mirror);
             }
         }
         if (!look.KeysUnderNotes) Keys();
@@ -641,7 +661,7 @@ sealed partial class Player
             var bf = bottom[(int)(Game.NowMs / 16.666666) % bottom.Length];
             float bw = bf.Width * 1.6f * sd, bh2 = bf.Height * 1.6f * sd;
             foreach (var (stX, stW) in look.Stages)
-                DrawTexturePro(bf.Tex, Src(bf), new Rectangle(left + (stX + stW / 2) * u - bw / 2, h - bh2, bw, bh2), Vector2.Zero, 0, tint);
+                DrawTexturePro(bf.Tex, Src(bf), V(new Rectangle(left + (stX + stW / 2) * u - bw / 2, h - bh2, bw, bh2)), Vector2.Zero, 0, tint);
         }
 
         DrawManiaLighting(look, left, u, sd, alpha);
@@ -661,12 +681,12 @@ sealed partial class Player
             foreach (var (stX, stW) in look.Stages)
             {
                 float sl0 = left + stX * u;
-                DrawRectangle((int)sl0, (int)coverTop, (int)Math.Ceiling(stW * u), (int)Math.Ceiling(height), ColorAlpha(Color.Black, a));
+                DrawRectangleRec(V(new Rectangle((int)sl0, (int)coverTop, (int)Math.Ceiling(stW * u), (int)Math.Ceiling(height))), ColorAlpha(Color.Black, a));
                 if (skin.Tex("mania-stage-hidden") is { } fade)
                 {
                     float fh = fade.Height * 0.72f * sd;
-                    var src = new Rectangle(0, 0, fade.Tex.Width, fadeIn ? -fade.Tex.Height : fade.Tex.Height);
-                    DrawTexturePro(fade.Tex, src, new Rectangle(sl0, fadeIn ? coverTop + height : coverTop - fh, stW * u, fh), Vector2.Zero, 0, ColorAlpha(Color.White, a));
+                    var src = new Rectangle(0, 0, fade.Tex.Width, fadeIn != up ? -fade.Tex.Height : fade.Tex.Height);
+                    DrawTexturePro(fade.Tex, src, V(new Rectangle(sl0, fadeIn ? coverTop + height : coverTop - fh, stW * u, fh)), Vector2.Zero, 0, ColorAlpha(Color.White, a));
                 }
             }
         }
@@ -690,7 +710,7 @@ sealed partial class Player
             else scale = age < 80 ? 1 - 0.3f * (float)(age / 80) : age < 180 ? 0.7f : 0.7f - 0.3f * (float)Easing.Apply(2, (age - 180) / 40);
             float a = Math.Min(1, (float)(age / 20)) * (age > 180 ? 1 - (float)((age - 180) / 40) : 1);
             var (stX, stW) = look.Stages[s];
-            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + (stX + stW / 2) * u, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
+            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + (stX + stW / 2) * u, Y(look.ScoreY * u)), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
         }
         ManiaCombo(look, left, u, sd, alpha);
         DrawManiaStars(u, sd, alpha);
@@ -729,7 +749,7 @@ sealed partial class Player
         {
             foreach (var (stX, stW) in look.Stages)
             {
-                float cx = left + (stX + stW / 2) * u, cy = look.ComboY * u;
+                float cx = left + (stX + stW / 2) * u, cy = (look.UpsideDown ? 480 - look.ComboY : look.ComboY) * u;
                 if (!skin.DrawFont(skin.ComboPrefix, skin.ComboOverlap, text, cx, cy - glyph * s * sd * sy / 2, s * sd, 0.5f, c, scaleY: sy))
                 {
                     float size = 32 * u * s;
@@ -841,7 +861,7 @@ sealed partial class Player
         BeginBlendMode(BlendMode.Additive);
         for (int c = 0; c < mKeys; c++)
         {
-            var centre = new Vector2(left + (look.X[c] + look.W[c] / 2) * u, look.HitY * u);
+            var centre = new Vector2(left + (look.X[c] + look.W[c] / 2) * u, (look.UpsideDown ? 480 - look.HitY : look.HitY) * u);
             // (skins older than 2.5 keep the sprites' own size)
             float Scale(float[] widths) => (skin.Version < 2.5 ? 1 : (widths[c] > 0 ? widths[c] : look.W[c]) / 30) * sd;
             double age = now - mLitAt[c];
@@ -866,32 +886,39 @@ sealed partial class Player
 
     // a note: as wide as its column, as tall as the image is at scaleW wide (stable: the narrowest column's width, or
     // WidthForNoteHeightScale); nothing of it below clip
-    void ManiaNote(Sprite? s, float x, float bottomY, float cw, float scaleW, Color tint, bool flipY = false, float clip = float.MaxValue)
+    // (placed as on a standing stage; mirror: the screen's height, turning it over)
+    void ManiaNote(Sprite? s, float x, float bottomY, float cw, float scaleW, Color tint, bool flip = false, float mirror = 0, float clip = float.MaxValue)
     {
         if (s is not { } n) return;
-        float nh = n.Height * (scaleW / n.Width), top = bottomY - nh, shown = Math.Min(nh, clip - top);
-        if (shown <= 0) return;
-        float th = n.Tex.Height * shown / nh; // (flipped, the image's bottom part shows at the top)
-        DrawTexturePro(n.Tex, new Rectangle(0, flipY ? n.Tex.Height - th : 0, n.Tex.Width, flipY ? -th : th), new Rectangle(x, top, cw, shown), Vector2.Zero, 0, tint);
+        float nh = n.Height * (scaleW / n.Width), top = bottomY - nh;
+        ManiaPart(n.Tex, 0, n.Tex.Height, new Rectangle(x, top, cw, nh), top, Math.Min(bottomY, clip), flip, mirror, tint);
+    }
+
+    // part of a sprite: full is where all of it goes on a standing stage, from..to the rows of that shown; srcY/srcH the
+    // image rows it spans, top down (bottom up when flipped). mirror (the screen's height) turns the stage over.
+    static void ManiaPart(Texture2D tex, float srcY, float srcH, Rectangle full, float from, float to, bool flip, float mirror, Color tint)
+    {
+        if (to <= from || full.Height <= 0) return;
+        if (mirror > 0) { (from, to) = (mirror - to, mirror - from); full.Y = mirror - full.Y - full.Height; }
+        float t0 = (from - full.Y) / full.Height, t1 = (to - full.Y) / full.Height;
+        float a = flip ? 1 - t1 : t0, b = flip ? 1 - t0 : t1;
+        DrawTexturePro(tex, new Rectangle(0, srcY + a * srcH, tex.Width, (flip ? -1 : 1) * (b - a) * srcH), new Rectangle(full.X, from, full.Width, to - from), Vector2.Zero, 0, tint);
     }
 
     // a hold's body from top (the tail's centre) to bottom (the head's), nothing of it below clip. Stable's NoteBodyStyle 0
     // stretches the image over it; the others repeat it at its own height, starting at the tail end (3, or any other),
     // the head end (2) or centred (4).
     readonly HashSet<uint> mRepeating = []; // (textures set to repeat downwards)
-    void ManiaBody(Sprite b, float x, float cw, float top, float bottom, float clip, int style, float sd, Color tint)
+    void ManiaBody(Sprite b, float x, float cw, float top, float bottom, float clip, int style, float sd, bool flip, float mirror, Color tint)
     {
-        float len = bottom - top, shown = Math.Min(bottom, clip) - top;
-        if (len <= 0 || shown <= 0) return;
-        if (style == 0)
-        {
-            DrawTexturePro(b.Tex, new Rectangle(0, 0, b.Tex.Width, b.Tex.Height * shown / len), new Rectangle(x, top, cw, shown), Vector2.Zero, 0, tint);
-            return;
-        }
+        float len = bottom - top;
+        if (len <= 0) return;
+        var full = new Rectangle(x, top, cw, len);
+        if (style == 0) { ManiaPart(b.Tex, 0, b.Tex.Height, full, top, Math.Min(bottom, clip), flip, mirror, tint); return; }
         if (mRepeating.Add(b.Tex.Id)) Rlgl.TextureParameters(b.Tex.Id, 0x2803, 0x2901); // GL_TEXTURE_WRAP_T: GL_REPEAT
         float k = b.Tex.Height / b.Height, imageLen = len / sd; // (texture pixels per image pixel; the length in image pixels)
         float from = style switch { 2 => (int)(b.Height - imageLen), 4 => (int)((b.Height - imageLen) / 2), _ => 0 };
-        DrawTexturePro(b.Tex, new Rectangle(0, from * k, b.Tex.Width, shown / sd * k), new Rectangle(x, top, cw, shown), Vector2.Zero, 0, tint);
+        ManiaPart(b.Tex, from * k, imageLen * k, full, top, Math.Min(bottom, clip), flip, mirror, tint);
     }
 
     // stable's default column looks: from each edge 1, 2, 1, 2..., the middle of an odd count special
