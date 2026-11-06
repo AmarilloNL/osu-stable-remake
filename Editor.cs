@@ -530,7 +530,7 @@ sealed partial class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F2)) SetTab(3);
         if (Input.IsKeyPressed(KeyboardKey.F3)) SetTab(1);
         if (Input.IsKeyPressed(KeyboardKey.F4)) SetTab(2);
-        if (Input.IsKeyPressed(KeyboardKey.F6)) SetTab(1); // (stable's Timing Setup: this editor's Timing tab)
+        if (Input.IsKeyPressed(KeyboardKey.F6)) { if (tab == 1) timingPanel = !timingPanel; else { SetTab(1); timingPanel = tab == 1; } } // (stable's Timing Setup Panel)
         if (tab != 2) setupColourPick = -1; // (the palette closes with the tab)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
@@ -1908,6 +1908,8 @@ sealed partial class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.T) && !Input.CtrlHeld || click && CheckCollisionPointRec(mouse, TapButton())) { TimingTap(); return; } // (stable's Tap Here!)
         if (!click) return;
         if (TimingFlags(TimelineRect()).LastOrDefault(x => CheckCollisionPointRec(mouse, x.Flag)) is { Point: { } flagged }) { Seek(flagged.Time); return; }
+        if (!timingPanel) { UpdateTimingView(mouse); return; }
+        if (CheckCollisionPointRec(mouse, TimingButton(-1))) { timingPanel = false; return; }
         for (int i = 0; i < 18 && i + timingScroll < list.Count; i++)
             if (CheckCollisionPointRec(mouse, TimingRow(i))) { timingSel = timing.IndexOf(list[i + timingScroll]); Seek(list[i + timingScroll].Time); return; }
         if (mouse.Y < 100 * u && mouse.X > 80 * u && mouse.X < Game.W - 220 * u) { timingScroll = Math.Max(0, timingScroll - 5); return; }
@@ -2068,6 +2070,7 @@ sealed partial class Editor : Screen
             return;
         }
         tab = t;
+        timingPanel = false;
         breakDrag = null;
     }
 
@@ -2075,7 +2078,7 @@ sealed partial class Editor : Screen
     Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }
     static readonly int[] TabOrder = [0, 3, 1, 2]; // Compose, Design, Timing, Song Setup (tab numbers)
     Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab == 0 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right)
-    float PxPerMs() => TimelineRect().Width / (int)(6000 / zoom);
+    float PxPerMs() => TimelineRect().Width / (int)(6000 / (tab == 1 ? zoom * 0.4f : zoom)); // (stable: Timing shows 2.5x as much)
     void Zoom(float by) { zoom = Math.Clamp(zoom + by, 0.1f, 8); zoomChanged = true; }
 
     // stable's kiai tag (osu!ui's) under the timeline's left end while the time is in kiai: it slides in from 40 units
@@ -2135,6 +2138,7 @@ sealed partial class Editor : Screen
             DrawTexturePro(top.Tex, new Rectangle(0, 0, top.Tex.Width, top.Tex.Height), new Rectangle(0, 0, Game.W, top.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
         DrawTimeline(u);
         DrawKiaiTag(u);
+        if (tab == 1 && !timingPanel) DrawTimingStatus(u);
         var zm = Input.GetMousePosition();
         for (int i = 0; i < 2; i++)
             if (skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus") is { } zs)
@@ -2814,6 +2818,8 @@ sealed partial class Editor : Screen
 
     void DrawTiming(float u)
     {
+        if (!timingPanel) { DrawTimingView(u); DrawTapButton(u); return; }
+        DrawButton(TimingButton(-1), "Close (F6)", false);
         var list = timing.OrderBy(t => t.Time).ToList();
         DrawRectangle((int)(76 * u), (int)(80 * u), (int)(Game.W - 290 * u), (int)(360 * u), new Color(0, 0, 0, 200));
         Game.TextBold("Time          BPM / SV      Meter   Set     Vol   Kiai", 82 * u, 84 * u, 11 * u, Color.LightGray);

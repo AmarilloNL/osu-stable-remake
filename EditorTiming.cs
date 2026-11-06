@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Numerics;
 using Raylib_cs;
 using static Raylib_cs.Raylib;
 
@@ -132,4 +134,147 @@ sealed partial class Editor
         string text = taps.Count >= 8 ? $"Tap Here! ({taps.Count})" : "Tap Here! (T)";
         Game.Text(text, r.X + r.Width / 2 - Game.TextWidth(text, 11 * u) / 2, r.Y + 2 * u, 11 * u, Color.White);
     }
+
+    // ---- stable's Timing tab: osu!ui's panel (at 120,85) with the section's BPM and offset and the map's slider velocity
+    // and tick rate, each on a blue bar between - and + (BPM 1, Shift 5, Ctrl 0.25; offset 2ms, Shift 10, Ctrl 1;
+    // velocity 0.1, Ctrl 0.01, 0.4 - 3.6; tick rate 1 to 4 in whole steps). "Move already placed notes" (on) takes the
+    // section's objects along: an offset change shifts them, a BPM change stretches them from the offset. Its button on
+    // the right, a click on the BPM or offset, or F6 open the timing setup panel (the table) instead.
+    bool timingPanel;
+    bool moveNotes = true;
+    static readonly float[] RowY = [120, 186, 276, 306];
+    static readonly string[] RowLabels = ["BPM:", "Offset:", "Slider Velocity:", "Slider Tick Rate:"];
+    readonly double[] rowClickAt = [.. Enumerable.Repeat(double.NegativeInfinity, 8)];
+    readonly (bool On, double At)[] rowHover = new (bool, double)[8], valueHover = new (bool, double)[2];
+    (bool On, double At) manualHover;
+
+    Rectangle TimingPic(string name, float cx, float cy, float scale = 1)
+    {
+        float u = U, sd = u / 1.6f * scale;
+        var s = skin.DefaultTex(name);
+        float w = (s?.Width ?? 26) * sd, h = (s?.Height ?? 24) * sd;
+        return new Rectangle(cx * u - w / 2, cy * u - h / 2, w, h);
+    }
+    Rectangle RowButton(int row, int dir, float scale = 1) => TimingPic(dir < 0 ? "editor-beat-selector-buttonleft" : "editor-beat-selector-buttonright", dir < 0 ? 270 : 382, RowY[row] + 10, scale);
+    static Rectangle RowValue(int row) { float u = U; return new Rectangle(296 * u, RowY[row] * u, 56 * u, 20 * u); }
+    static Rectangle MoveNotesBox() { float u = U; return new Rectangle(145 * u, 216 * u, 360 * u, 16 * u); }
+    ETiming? TimedSection => timing.Any(p => p.Red && p.Beat > 0) ? RedAt(time) : null;
+
+    void UpdateTimingView(Vector2 mouse)
+    {
+        if (CheckCollisionPointRec(mouse, TimingPic("editor-timing-manual", 455, 146))) { timingPanel = true; return; }
+        for (int v = 0; v < 2; v++) if (TimedSection != null && CheckCollisionPointRec(mouse, RowValue(v))) { timingSel = timing.IndexOf(TimedSection); timingPanel = true; return; }
+        if (CheckCollisionPointRec(mouse, MoveNotesBox()))
+        {
+            moveNotes = !moveNotes;
+            skin.Sound(moveNotes ? "check-on" : "check-off")?.Play(BeatmapSamples.EffectVolume);
+            return;
+        }
+        for (int row = 0; row < RowY.Length; row++)
+            for (int dir = -1; dir <= 1; dir += 2)
+                if (CheckCollisionPointRec(mouse, RowButton(row, dir))) { rowClickAt[row * 2 + (dir + 1) / 2] = Game.NowMs; StepTiming(row, dir); return; }
+    }
+
+    void StepTiming(int row, int dir)
+    {
+        bool shift = Input.ShiftHeld, ctrl = Input.CtrlHeld;
+        if (row == 2)
+        {
+            double sv = Math.Clamp(SliderMultiplier + dir * (ctrl ? 0.01 : 0.1), 0.4, 3.6);
+            if (sv != SliderMultiplier) Change(() => SetKv("Difficulty", "SliderMultiplier", Num(Math.Round(sv, 2))));
+            return;
+        }
+        if (row == 3)
+        {
+            double rate = double.TryParse(Kv("Difficulty", "SliderTickRate"), NumberStyles.Float, Inv, out double r) ? r : 1;
+            if (dir < 0 ? rate > 1 : rate < 4) Change(() => SetKv("Difficulty", "SliderTickRate", Num((int)rate + dir)));
+            return;
+        }
+        if (TimedSection is not { } red) return;
+        double end = timing.Where(p => p.Red && p.Beat > 0 && p.Time > red.Time).Select(p => p.Time).DefaultIfEmpty(length).Min();
+        Change(() =>
+        {
+            double beat0 = red.Beat, offset0 = red.Time;
+            if (row == 0) red.Beat = 60000 / (60000 / red.Beat + dir * (shift ? 5 : ctrl ? 0.25 : 1));
+            else red.Time += dir * (shift ? 10 : ctrl ? 1 : 2);
+            if (!moveNotes) return;
+            foreach (var o in objs.Where(o => o.Time >= offset0 && o.Time < end))
+            {
+                double to = row == 0 ? (int)((o.Time - offset0) * (red.Beat / beat0) + offset0) : o.Time + (int)(red.Time - offset0), d = o.End - o.Time;
+                o.Time = to; o.End = to + d; o.Raw = null;
+            }
+        });
+    }
+
+    void DrawTimingView(float u)
+    {
+        var mouse = Input.GetMousePosition();
+        void Picture(string name, Rectangle at, Color tint)
+        {
+            if (skin.DefaultTex(name) is { } s) DrawTexturePro(s.Tex, new Rectangle(0, 0, s.Tex.Width, s.Tex.Height), at, Vector2.Zero, 0, tint);
+        }
+        if (skin.DefaultTex("editor-timing-window-bg") is { } bg)
+            Picture("editor-timing-window-bg", new Rectangle(120 * u, 85 * u, bg.Width * u / 1.6f, bg.Height * u / 1.6f), Color.White);
+        var red = TimedSection;
+        double tick = double.TryParse(Kv("Difficulty", "SliderTickRate"), NumberStyles.Float, Inv, out double tr) ? tr : 1;
+        string[] values = [red != null ? (60000 / red.Beat).ToString("0.###", Inv) : "-", red != null ? red.Time.ToString("#,0", Inv) : "-", SliderMultiplier.ToString("N2", Inv), tick.ToString(Inv)];
+        string? tip = null;
+        for (int row = 0; row < RowY.Length; row++)
+        {
+            float y = RowY[row];
+            Game.Text(RowLabels[row], 255 * u - Game.TextWidth(RowLabels[row], 14 * u), (y + 3) * u, 14 * u, Color.White);
+            if (skin.DefaultTex("editor-beat-selector-back") is { } back) Picture("editor-beat-selector-back", new Rectangle(258 * u, y * u, back.Width * u / 1.6f, back.Height * u / 1.6f), Color.White);
+            for (int dir = -1; dir <= 1; dir += 2)
+            {
+                int k = row * 2 + (dir + 1) / 2;
+                double since = Game.NowMs - rowClickAt[k];
+                float scale = since < 200 ? 1.2f - 0.2f * (float)(since / 200) : 1;
+                bool over = CheckCollisionPointRec(mouse, RowButton(row, dir));
+                var tint = Lerp(Color.White, new Color(255, 165, 0, 255), Hovered(ref rowHover[k], over, 0, 1)); // (orange hovered)
+                Picture(dir < 0 ? "editor-beat-selector-buttonleft" : "editor-beat-selector-buttonright", RowButton(row, dir, scale), tint);
+                if (over) tip = row switch
+                {
+                    0 => (dir < 0 ? "Decrease BPM" : "Increase BPM") + "\nHold 'Shift' while clicking for larger changes\nHold 'Ctrl' while clicking for smaller changes",
+                    1 => (dir < 0 ? "Decrease Offset" : "Increase Offset") + "\nHold 'Shift' while clicking for larger changes\nHold 'Ctrl' while clicking for smaller changes",
+                    _ => null,
+                };
+            }
+            // (the BPM and offset brighten to yellow-green under the cursor: a click fine-tunes them)
+            bool valueOver = row < 2 && CheckCollisionPointRec(mouse, RowValue(row));
+            var vc = row < 2 ? Lerp(Color.White, new Color(154, 205, 50, 255), Hovered(ref valueHover[row], valueOver, 0, 1)) : Color.White;
+            Game.Text(values[row], 324 * u - Game.TextWidth(values[row], 14 * u) / 2, (y + 10) * u - 7 * u, 14 * u, vc);
+            if (valueOver) tip = "Click to fine-tune using the Timing Setup Panel.";
+        }
+        Game.Text("Note: you should resnap all notes from the", 145 * u, 150 * u, 14 * u, Color.White);
+        Game.Text("timing menu after changing the BPM.", 145 * u, 150 * u + 14 * u, 14 * u, Color.White);
+        // the checkbox: osu!ui's circle (full when on) and its text
+        var box = MoveNotesBox();
+        skin.DefaultTex(moveNotes ? "circle-full" : "circle-empty")?.Draw(new Vector2(153 * u, 224 * u), u / 1.6f, Color.White);
+        Game.Text("Move already placed notes when changing the offset/BPM", 165 * u, 224 * u - 7.5f * u, 15 * u, Color.White);
+        if (CheckCollisionPointRec(mouse, box)) tip = "Use this when making minor adjustments to an ALREADY SNAPPED beatmap.\nIf your beatmap is not snapped, you will want to disable this before adjusting above.";
+        // the timing setup panel's button (1.1x hovered, over 200ms)
+        bool manualOver = CheckCollisionPointRec(mouse, TimingPic("editor-timing-manual", 455, 146));
+        Picture("editor-timing-manual", TimingPic("editor-timing-manual", 455, 146, Hovered(ref manualHover, manualOver, 1, 1.1f)), Color.White);
+        if (manualOver) tip = "Fine-tune multiple specific timing sections (F6)";
+        if (tip != null) Options.DrawScreenTooltip(tip, mouse);
+    }
+
+    // top right (over the timeline): the metronome's bar:beat (from 0), or the untimed section's note
+    void DrawTimingStatus(float u)
+    {
+        var red = TimedSection;
+        string status;
+        if (red == null) status = "This timing section is not yet timed.\nTo begin, tap from the first beat.";
+        else
+        {
+            double beats = (time - red.Time) / red.Beat;
+            int meter = Math.Max(1, red.Meter), at = (int)Math.Floor(beats), beat = (int)beats % meter, bar = at / meter;
+            if (time - red.Time < 0) { beat += 3; bar--; }
+            status = $"{bar}:{beat}";
+        }
+        float sy = 20 * u;
+        foreach (var line in status.Split('\n')) { Game.Text(line, Game.W - 200 * u - Game.TextWidth(line, 13 * u), sy, 13 * u, Color.White); sy += 14 * u; }
+    }
+
+    static Color Lerp(Color a, Color b, float t) => new((int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t), 255);
 }
