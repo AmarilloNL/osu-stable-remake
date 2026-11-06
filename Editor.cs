@@ -278,7 +278,8 @@ sealed partial class Editor : Screen
         return [.. sb];
     }
 
-    void Save()
+    void Save() => TrySave();
+    bool TrySave()
     {
         SetKv("Editor", "BeatDivisor", divisor.ToString(Inv));
         SetKv("Editor", "GridSize", gridSize.ToString(Inv));
@@ -292,8 +293,9 @@ sealed partial class Editor : Screen
             osbModified = false;
             modified = false;
             Notification.Show("Saved!", 1500);
+            return true;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notification.Show($"Couldn't save: {e.Message}", 3000); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException) { Notification.Show($"Couldn't save: {e.Message}", 3000); return false; }
     }
 
     // ---- derived data: slider paths and ends, combo numbers and colours
@@ -404,12 +406,15 @@ sealed partial class Editor : Screen
     }
 
     // A change: the state before it goes on the undo stack.
-    void Change(Action edit)
+    void Change(Action edit, bool undoable = true)
     {
         string before = Snapshot();
-        undo.Add(before);
-        if (undo.Count > 100) undo.RemoveAt(0);
-        redo.Clear();
+        if (undoable)
+        {
+            undo.Add(before);
+            if (undo.Count > 100) undo.RemoveAt(0);
+            redo.Clear();
+        }
         edit();
         Rebuild();
         KeepBreaks();
@@ -430,6 +435,11 @@ sealed partial class Editor : Screen
         to.Add(now);
         string state = from[^1];
         from.RemoveAt(from.Count - 1);
+        Load(now, state);
+    }
+
+    void Load(string now, string state)
+    {
         int osb = state.IndexOf(OsbMark, StringComparison.Ordinal); // (which .osb, after the .osu's lines)
         RestoreOsb(osb < 0 ? "-1" : state[(osb + OsbMark.Length)..]);
         Read((osb < 0 ? state : state[..osb]).Split('\n'));
@@ -511,6 +521,13 @@ sealed partial class Editor : Screen
         var mouse = EMouse;
         float u = U;
         KeepBreaksAfterDrag();
+        // the clock (also under a window or the menu: the song plays on, and Use Current Time takes where it is)
+        if (music != null && playing)
+        {
+            if (music.Stopped) { playing = false; time = length; }
+            else time = music.PositionMs;
+        }
+        else if (music == null && playing) time = Math.Min(length, time + dtMs * rate);
         if (exitPrompt != null || xform != null || prompt != null || bmsWindow != null || poly != null || setupDlg != null || timingDlg != null) lastSoundTime = double.NaN; // (the clock stops under a window: its hitsounds aren't all played after)
         if (exitPrompt != null) { UpdateExitPrompt(raw); return; }
         if (xform != null) { UpdateXform(mouse); return; }
@@ -533,13 +550,6 @@ sealed partial class Editor : Screen
             mouse = EMouse;
         }
 
-        // the clock
-        if (music != null && playing)
-        {
-            if (music.Stopped) { playing = false; time = length; }
-            else time = music.PositionMs;
-        }
-        else if (music == null && playing) time = Math.Min(length, time + dtMs * rate);
         PlayHitsounds();
 
         if (Input.IsKeyPressed(KeyboardKey.Escape))

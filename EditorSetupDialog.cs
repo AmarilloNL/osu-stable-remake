@@ -56,8 +56,9 @@ sealed partial class Editor
         d.Set = Math.Max(0, Array.IndexOf(SampleSets, General("SampleSet", "Normal")));
         d.Overrides = timing.Count > 0 && timing[0].Index == 1;
         d.Volume = timing.Count > 0 ? Math.Max(5, timing[0].Volume) : 100;
-        (d.OpenSet, d.OpenOverrides, d.OpenVolume) = (d.Set, d.Overrides, d.Volume);
         d.SetsDiffer = timing.Any(p => p.Set != timing[0].Set || p.Index != timing[0].Index || p.Index >= 2);
+        if (!d.SetsDiffer && timing.Count > 0 && timing[0].Set is >= 1 and <= 3) d.Set = timing[0].Set - 1; // (the set the points have)
+        (d.OpenSet, d.OpenOverrides, d.OpenVolume) = (d.Set, d.Overrides, d.Volume);
         d.VolumesDiffer = timing.Any(p => p.Volume != timing[0].Volume);
         d.MatchRate = General("SamplesMatchPlaybackRate", "0") == "1";
         // the colour buttons start from the first combo's (stable's Combo2, Combo1 last), at least two
@@ -139,7 +140,7 @@ sealed partial class Editor
             Set("Metadata", "Artist", d.Text[1]);
             Set("Metadata", "ArtistUnicode", d.Text[0], Kv("Metadata", "Artist") ?? "");
             Set("Metadata", "Creator", d.Text[4]);
-            Set("Metadata", "Version", d.Text[5]);
+            Set("Metadata", "Version", d.NewDifficulty ? d.Text[5].Trim() : d.Text[5]);
             Set("Metadata", "Source", d.Text[6]);
             Set("Metadata", "Tags", d.Text[7]);
             // (values the dialog shows as they were stay as written)
@@ -149,7 +150,7 @@ sealed partial class Editor
             else Diff("CircleSize", info.CS, d.CS, 10);
             Diff("ApproachRate", info.AR < 0 ? info.OD : info.AR, d.AR, 10);
             Diff("OverallDifficulty", info.OD, d.OD, 10);
-            Set("General", "SampleSet", SampleSets[d.Set], "Normal");
+            if (d.Set != d.OpenSet) SetKv("General", "SampleSet", SampleSets[d.Set]);
             // (the timing points only when their set or volume was changed here)
             int set = d.Set + 1;
             bool sets = !d.SetsDiffer && (d.Set != d.OpenSet || d.Overrides != d.OpenOverrides), volumes = !d.VolumesDiffer && d.Volume != d.OpenVolume;
@@ -193,13 +194,11 @@ sealed partial class Editor
         });
         info = ReloadInfo();
         Rebuild();
-        if (d.NewDifficulty)
-        {
-            path = NewDifficultyPath(d);
-            if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
-        }
-        Save();
-        if (!d.NewDifficulty) return;
+        if (!d.NewDifficulty) { Save(); return; }
+        string old = path;
+        path = NewDifficultyPath(d);
+        if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
+        if (!TrySave()) { path = old; return; } // (not written: still this difficulty, its changes unsaved)
         undo.Clear(); redo.Clear(); // (a new file's own history)
         if (objs.Count > 0) prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); if (KeepBreaks()) info = ReloadInfo(); Save(); }, "Yes", "No");
     }
@@ -245,7 +244,7 @@ sealed partial class Editor
     }
 
     static bool BoxOn(SetupDialog d, int i) => i switch { 0 or 2 => !d.NewDifficulty, 1 => !Ascii(d.Text[0]), 3 => !Ascii(d.Text[2]), _ => true };
-    static bool SetupOkOn(SetupDialog d) => d.Text[2].Length > 0 && d.Text[0].Length > 0 && d.Text[5].Length > 0 && d.Text[4].Length > 0 && d.Text[1].Length > 0 && d.Text[3].Length > 0;
+    static bool SetupOkOn(SetupDialog d) => d.Text[2].Length > 0 && d.Text[0].Length > 0 && d.Text[5].Trim().Length > 0 && d.Text[4].Length > 0 && d.Text[1].Length > 0 && d.Text[3].Length > 0;
 
     static void TextChanged(SetupDialog d, int i)
     {

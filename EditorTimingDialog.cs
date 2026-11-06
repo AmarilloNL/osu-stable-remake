@@ -18,13 +18,17 @@ sealed partial class Editor
 {
     sealed class TimingDialog : WinUi
     {
-        public int ListTab, LeftTab, Scroll, Anchor = -1, UndoAt, Divisor = 3;
+        public int ListTab, LeftTab, Scroll, Divisor = 3;
         public List<ETiming> Sel = [];
-        public bool Inherit = true, Scale, SnapObjects, Resnap, Bookmarks;
+        public ETiming? Anchor; // (Shift+click selects from here)
+        public bool Inherit = true, Scale, SnapObjects, Resnap, Bookmarks, WasModified;
+        public string Before = ""; // the map at open: Cancel puts it back, OK makes the dialog's changes one undo state
         public List<(ETiming P, double Time, double Beat)> Reds = []; // the timing points as they were (scaling objects)
-        public double FirstOffset;
+        public double? FirstOffset; // (none: the map had no timing points)
         public string EditText = ""; // a number box being typed into (Focus)
-        public bool Commit; // (Enter or a click elsewhere: the typed number goes in)
+        public Action<double>? CommitTo; // (where it goes, bound to the points selected when it was clicked)
+        public double FocusValue;
+        public bool Commit; // (Enter, Tab or a click anywhere: the typed number goes in first)
         public double MoveBy;
     }
     TimingDialog? timingDlg;
@@ -36,9 +40,9 @@ sealed partial class Editor
 
     void OpenTimingDialog()
     {
-        var d = new TimingDialog { UndoAt = undo.Count };
+        var d = new TimingDialog { Before = Snapshot(), WasModified = modified };
         d.Reds = [.. timing.Where(p => p.Red).Select(p => (p, p.Time, p.Beat))];
-        d.FirstOffset = timing.Where(p => p.Red).Select(p => p.Time).DefaultIfEmpty(0).Min();
+        d.FirstOffset = timing.Any(p => p.Red) ? timing.Where(p => p.Red).Min(p => p.Time) : null;
         d.Divisor = Math.Max(0, Array.IndexOf(SnapDivisors, divisor));
         if (d.Divisor < 0) d.Divisor = 3;
         if (timing.Where(p => p.Time <= time + 1).OrderBy(p => p.Time).LastOrDefault() is { } at) d.Sel.Add(at);
@@ -95,8 +99,10 @@ sealed partial class Editor
     {
         var d = timingDlg!;
         timingDlg = null;
-        while (undo.Count > d.UndoAt) Restore(undo, redo);
-        redo.Clear();
+        string now = Snapshot();
+        if (now == d.Before) return;
+        Load(now, d.Before);
+        modified = d.WasModified;
     }
 
     void TimingOk()
@@ -105,8 +111,14 @@ sealed partial class Editor
         if (!timing.Any(p => p.Red)) { prompt = new("At least one timing point is required.", null, _ => { }, "OK", ""); return; }
         timingDlg = null;
         bool scale = d.Scale && d.Reds.Any(r => timing.Contains(r.P) && (r.P.Time != r.Time || r.P.Beat != r.Beat));
-        double shift = timing.Where(p => p.Red).Min(p => p.Time) - d.FirstOffset;
-        if (!scale && !d.SnapObjects && !d.Resnap && !(d.Bookmarks && shift != 0)) return;
+        double shift = d.FirstOffset is { } first ? timing.Where(p => p.Red).Min(p => p.Time) - first : 0; // (stable's: the first timing point's move)
+        bool options = scale || d.SnapObjects || d.Resnap || d.Bookmarks && shift != 0;
+        if (!options && Snapshot() == d.Before) return;
+        // the whole dialog: one undo state
+        undo.Add(d.Before);
+        if (undo.Count > 100) undo.RemoveAt(0);
+        redo.Clear();
+        if (!options) return;
         Change(() =>
         {
             if (scale)
@@ -158,13 +170,13 @@ sealed partial class Editor
                 if (double.TryParse(Kv("General", "PreviewTime"), NumberStyles.Float, Inv, out double preview) && preview >= 0)
                     SetKv("General", "PreviewTime", ((int)(preview + shift)).ToString(Inv));
             }
-        });
+        }, undoable: false);
     }
 
     void TimingRemove(TimingDialog d)
     {
         var gone = d.Sel.ToList();
-        Change(() => timing.RemoveAll(gone.Contains));
+        Change(() => timing.RemoveAll(gone.Contains), undoable: false);
         d.Sel.Clear();
     }
 
@@ -175,17 +187,17 @@ sealed partial class Editor
         var p = new ETiming { Time = Math.Round(time), Red = red };
         if (from != null) { p.Meter = from.Meter; p.Set = from.Set; p.Index = from.Index; p.Volume = from.Volume; p.Effects = from.Effects; }
         p.Beat = red ? (timing.Any(t => t.Red) ? RedAt(time).Beat : 500) : from is { Red: false } ? from.Beat : -100;
-        Change(() => timing.Add(p));
+        Change(() => timing.Add(p), undoable: false);
         d.Sel = [p];
         TimingScrollTo(d, p);
     }
 
-    // a change to every selected point
-    void TimingEdit(TimingDialog d, Action<ETiming> edit, Func<ETiming, bool>? only = null)
+    // a change to the given points (no undo state of its own: the dialog's OK makes one)
+    void TimingEdit(List<ETiming> on, Action<ETiming> edit, Func<ETiming, bool>? only = null)
     {
-        var points = d.Sel.Where(p => timing.Contains(p) && (only == null || only(p))).ToList();
+        var points = on.Where(p => timing.Contains(p) && (only == null || only(p))).ToList();
         if (points.Count == 0) return;
-        Change(() => { foreach (var p in points) { edit(p); p.Raw = null; } });
+        Change(() => { foreach (var p in points) { edit(p); p.Raw = null; } }, undoable: false);
     }
 
     // the dialog's controls, drawn (act false) or taking the mouse (act true) from one layout
@@ -196,27 +208,29 @@ sealed partial class Editor
         var sel = d.Sel.Where(timing.Contains).ToList();
         if (sel.Count != d.Sel.Count) d.Sel = sel;
         var one = sel.Count == 1 ? sel[0] : null;
-
-        // a number box that can be typed into (a click on its text), committed with Enter or a click elsewhere
-        bool Number(int id, ref double v, double min, double max, double step, string format, float x, float y, float w, float h, bool on = true)
+        if (act && d.Commit)
         {
-            if (act && d.Focus == id && d.Commit)
-            {
-                d.Focus = -1;
-                d.Commit = false;
-                if (double.TryParse(d.EditText, NumberStyles.Float, Inv, out double typed) && Math.Clamp(typed, min, max) != v) { v = Math.Clamp(typed, min, max); return true; }
-                return false;
-            }
-            if (act && on && d.Hit(d.R(x, y, w - 16, h))) { d.Focus = id; d.EditText = v.ToString(format, Inv); return false; }
+            var to = d.CommitTo;
+            d.Commit = false; d.Focus = -1; d.CommitTo = null;
+            if (to != null && double.TryParse(d.EditText, NumberStyles.Float, Inv, out double typed) && double.IsFinite(typed) && typed != d.FocusValue) to(typed);
+            sel = d.Sel.Where(timing.Contains).ToList();
+            one = sel.Count == 1 ? sel[0] : null;
+        }
+
+        // a number box that can be typed into (a click on its text): set gets what's typed, or a step from its arrows
+        void Number(int id, double v, double min, double max, double step, string format, float x, float y, float w, float h, bool on, Action<double> set)
+        {
+            if (act && on && d.Hit(d.R(x, y, w - 16, h))) { d.Focus = id; d.EditText = v.ToString(format, Inv); d.FocusValue = v; d.CommitTo = t => set(Math.Clamp(t, min, max)); return; }
             if (!act && d.Focus == id)
             {
                 var r = d.R(x, y, w, h);
                 DrawRectangleRec(r, Color.White);
                 DrawRectangleLinesEx(r, 1, WinUi.Blue);
                 Game.Text(d.EditText + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : ""), r.X + 3 * s, r.Y + (r.Height - fs) / 2, fs, WinUi.Text);
-                return false;
+                return;
             }
-            return d.Numeric(ref v, min, max, step, format, x, y, w, h, on);
+            double nv = v;
+            if (d.Numeric(ref nv, min, max, step, format, x, y, w, h, on)) set(nv);
         }
 
         // ---- the list (right)
@@ -252,10 +266,10 @@ sealed partial class Editor
             {
                 if (!d.Hit(row)) continue;
                 if (Input.CtrlHeld) { if (!d.Sel.Remove(p)) d.Sel.Add(p); }
-                else if (Input.ShiftHeld && d.Anchor >= 0 && d.Anchor < list.Count)
-                    d.Sel = [.. list.Skip(Math.Min(d.Anchor, i + d.Scroll)).Take(Math.Abs(d.Anchor - (i + d.Scroll)) + 1)];
+                else if (Input.ShiftHeld && d.Anchor != null && list.IndexOf(d.Anchor) is var a and >= 0)
+                    d.Sel = [.. list.Skip(Math.Min(a, i + d.Scroll)).Take(Math.Abs(a - (i + d.Scroll)) + 1)];
                 else { d.Sel = [p]; Seek(p.Time); }
-                if (!Input.ShiftHeld) d.Anchor = i + d.Scroll;
+                if (!Input.ShiftHeld) d.Anchor = p;
                 d.Focus = -1;
                 continue;
             }
@@ -310,8 +324,8 @@ sealed partial class Editor
             {
                 d.Group(px + 6, py + 6, 218, 71, "General");
                 d.Label(px + 12, py + 25, "Move selected offsets by:", true);
-                Number(100, ref d.MoveBy, -300000, 300000, 1, "0", px + 15, py + 45, 120, 20);
-                if (d.Button(px + 143, py + 43, 75, 23, "Move") && d.MoveBy != 0) { double by = d.MoveBy; TimingEdit(d, p => p.Time += by); }
+                Number(100, d.MoveBy, -300000, 300000, 1, "0", px + 15, py + 45, 120, 20, true, v => d.MoveBy = v);
+                if (d.Button(px + 143, py + 43, 75, 23, "Move") && d.MoveBy != 0) { double by = d.MoveBy; TimingEdit(sel, p => p.Time += by); }
                 Signature(px + 6, py + 83, 97, 22, 43, 64, sel.Where(p => p.Red).ToList());
                 Velocity(px + 6, py + 186, 77, 22, 48, sel.Where(p => !p.Red).ToList());
                 break;
@@ -321,8 +335,8 @@ sealed partial class Editor
                 d.Group(px + 6, py + 6, 218, 129, "General");
                 d.Label(px + 12, py + 42, "Offset", true);
                 double t = one.Time;
-                if (Number(101, ref t, -1e8, 1e8, 1, "0", px + 71, py + 40, 147, 20)) { double to = t; TimingEdit(d, p => p.Time = to); }
-                if (d.Button(px + 12, py + 87, 206, 42, "Use Current Time")) { double now = Math.Round(time); TimingEdit(d, p => p.Time = now); }
+                Number(101, t, -1e8, 1e8, 1, "0", px + 71, py + 40, 147, 20, true, v => TimingEdit(sel, p => p.Time = Math.Round(v)));
+                if (d.Button(px + 12, py + 87, 206, 42, "Use Current Time")) { double now = Math.Round(time); TimingEdit(sel, p => p.Time = now); }
                 d.Group(px + 6, py + 141, 218, 124, "Difficulty");
                 d.Label(px + 12, py + 160, "Slider velocity multiplier:", true);
                 Velocity(px + 6, py + 141, 0, 37, 63, [one], false);
@@ -335,9 +349,9 @@ sealed partial class Editor
                 d.Label(px + 12, py + 25, "BPM", true, null, 0, on);
                 d.Label(px + 12, py + 55, "Offset", true, null, 0, on);
                 double bpm = one?.Bpm ?? 120, t = one?.Time ?? 0;
-                if (Number(102, ref bpm, 15, 10000, 1, "0.000", px + 71, py + 23, 147, 20, on)) { double beat = 60000 / bpm; TimingEdit(d, p => p.Beat = beat); }
-                if (Number(103, ref t, -1e8, 1e8, 1, "0", px + 71, py + 53, 147, 20, on)) { double to = t; TimingEdit(d, p => p.Time = to); }
-                if (d.Button(px + 12, py + 87, 206, 42, "Use Current Time", on)) { double now = Math.Round(time); TimingEdit(d, p => p.Time = now); }
+                Number(102, bpm, 15, 10000, 1, "0.000", px + 71, py + 23, 147, 20, on, v => TimingEdit(sel, p => p.Beat = 60000 / v));
+                Number(103, t, -1e8, 1e8, 1, "0", px + 71, py + 53, 147, 20, on, v => TimingEdit(sel, p => p.Time = Math.Round(v)));
+                if (d.Button(px + 12, py + 87, 206, 42, "Use Current Time", on)) { double now = Math.Round(time); TimingEdit(sel, p => p.Time = now); }
                 Signature(px + 6, py + 141, 124, 31, 52, 73, one != null ? [one] : []);
                 break;
             }
@@ -347,22 +361,22 @@ sealed partial class Editor
                 int set = one != null ? Math.Clamp(one.Set - 1, 0, 2) : sel.Count > 0 && sel.All(p => p.Set == sel[0].Set) ? Math.Clamp(sel[0].Set - 1, 0, 2) : -1;
                 int was = set;
                 d.ListBox(ref set, SampleSets, px + 14, py + 28, 103, 62, any);
-                if (set != was && set >= 0) { int to = set + 1; TimingEdit(d, p => p.Set = to); }
+                if (set != was && set >= 0) { int to = set + 1; TimingEdit(sel, p => p.Set = to); }
                 int index = sel.Count > 0 && sel.All(p => p.Index == sel[0].Index) ? sel[0].Index : -1;
                 int kind = index switch { 0 => 0, 1 => 1, >= 2 => 2, _ => -1 }, kindWas = kind;
                 d.Radio(ref kind, 0, px + 123, py + 28, "Default", any);
                 d.Radio(ref kind, 1, px + 123, py + 49, "Custom 1", any);
                 d.Radio(ref kind, 2, px + 123, py + 70, " ", any);
-                if (kind != kindWas) { int to = kind == 2 ? Math.Max(2, index) : kind; TimingEdit(d, p => p.Index = to); }
+                if (kind != kindWas) { int to = kind == 2 ? Math.Max(2, index) : kind; TimingEdit(sel, p => p.Index = to); }
                 double custom = Math.Max(2, index);
-                if (Number(104, ref custom, 2, 100, 1, "0", px + 139, py + 70, 54, 20, any && kind == 2)) { int to = (int)custom; TimingEdit(d, p => p.Index = to); }
+                Number(104, custom, 2, 100, 1, "0", px + 139, py + 70, 54, 20, any && kind == 2, v => TimingEdit(sel, p => p.Index = (int)v));
                 d.Link(px + 12, py + 99, "How to add custom sample overrides");
                 d.Group(px + 6, py + 143, 218, 123, "Volume");
                 int vol = sel.Count > 0 ? sel[0].Volume : 100, volWas = vol;
                 d.Track(0, ref vol, 5, 100, px + 8, py + 163, 147, 5, false, any, 1);
-                if (vol != volWas) { int to = vol; TimingEdit(d, p => p.Volume = to); }
+                if (vol != volWas) { int to = vol; TimingEdit(sel, p => p.Volume = to); }
                 double volume = vol;
-                if (Number(105, ref volume, 5, 100, 1, "0", px + 162, py + 166, 43, 20, any)) { int to = (int)volume; TimingEdit(d, p => p.Volume = to); }
+                Number(105, volume, 5, 100, 1, "0", px + 162, py + 166, 43, 20, any, v => TimingEdit(sel, p => p.Volume = (int)v));
                 d.Label(px + 205, py + 170, "%", false, null, 0, any);
                 string[] sounds = ["Hit", "Whistle", "Finish", "Clap"];
                 for (int i = 0; i < 4; i++)
@@ -376,10 +390,10 @@ sealed partial class Editor
                 bool kiai = sel.Count > 0 && (sel[0].Effects & 1) != 0, omit = sel.Count > 0 && (sel[0].Effects & 8) != 0;
                 bool kiaiWas = kiai, omitWas = omit;
                 d.Check(ref kiai, px + 15, py + 28, "Kiai Mode", any);
-                if (kiai != kiaiWas) { bool on = kiai; TimingEdit(d, p => p.Effects = on ? p.Effects | 1 : p.Effects & ~1); }
+                if (kiai != kiaiWas) { bool on = kiai; TimingEdit(sel, p => p.Effects = on ? p.Effects | 1 : p.Effects & ~1); }
                 d.Wrap(px + 12, py + 54, 206, "Fountains, flying stars, flashing beats. This is what you could call the \"epic chorus\" mode in osu!. It will emphasize a particular part of a song. Please don't overuse it.");
                 d.Check(ref omit, px + 15, py + 141, "Omit first bar line", any);
-                if (omit != omitWas) { bool on = omit; TimingEdit(d, p => p.Effects = on ? p.Effects | 8 : p.Effects & ~8); }
+                if (omit != omitWas) { bool on = omit; TimingEdit(sel, p => p.Effects = on ? p.Effects | 8 : p.Effects & ~8); }
                 d.Wrap(px + 12, py + 168, 206, "Use this to remove the first bar line from this section in Taiko and Mania modes.");
                 break;
             }
@@ -396,8 +410,8 @@ sealed partial class Editor
             d.Radio(ref pick, 4, gx + 9, gy + y4, "4 / 4 (common)", on);
             d.Radio(ref pick, 0, gx + 9, gy + yo, "Other:", on);
             double other = meter is >= 5 and <= 8 ? meter : 5;
-            if (pick != pickWas) { int to = pick == 0 ? (int)other : pick; TimingEdit(d, p => p.Meter = to, p => p.Red); }
-            if (Number(106, ref other, 5, 8, 1, "0", gx + 73, gy + yo, 44, 20, on && pick == 0)) { int to = (int)other; TimingEdit(d, p => p.Meter = to, p => p.Red); }
+            if (pick != pickWas) { int to = pick == 0 ? (int)other : pick; TimingEdit(reds, p => p.Meter = to, p => p.Red); }
+            Number(106, other, 5, 8, 1, "0", gx + 73, gy + yo, 44, 20, on && pick == 0, v => TimingEdit(reds, p => p.Meter = (int)v, p => p.Red));
             d.Label(gx + 123, gy + yo + 2, "/ 4", false, null, 0, on);
         }
         // a slider velocity group (or just its choices, under a label): 0.75x, 1.0x, 1.5x or a custom one
@@ -412,8 +426,8 @@ sealed partial class Editor
             d.Radio(ref pick, 2, gx + 135, gy + yr, "1.5x", on);
             d.Radio(ref pick, 3, gx + 9, gy + yc, "Custom:", on);
             double custom = sv > 0 ? Math.Round(sv, 2) : 1;
-            if (pick != pickWas && pick < 3) { double to = pick switch { 0 => 0.75, 1 => 1, _ => 1.5 }; TimingEdit(d, p => p.Beat = -100 / to, p => !p.Red); }
-            if (Number(107, ref custom, 0.1, 10, 0.1, "0.00", gx + 91, gy + yc - 1, 61, 20, on && pick == 3)) { double to = Math.Round(custom, 2); TimingEdit(d, p => p.Beat = -100 / to, p => !p.Red); }
+            if (pick != pickWas && pick < 3) { double to = pick switch { 0 => 0.75, 1 => 1, _ => 1.5 }; TimingEdit(greens, p => p.Beat = -100 / to, p => !p.Red); }
+            Number(107, custom, 0.1, 10, 0.1, "0.00", gx + 91, gy + yc - 1, 61, 20, on && pick == 3, v => TimingEdit(greens, p => p.Beat = -100 / Math.Round(v, 2), p => !p.Red));
         }
 
         // ---- when applying timing changes, OK / Cancel
@@ -437,6 +451,5 @@ sealed partial class Editor
         }
         if (d.Button(4, 383, 397, 35, "OK", true, true)) { TimingOk(); return; }
         if (d.Button(407, 383, 171, 35, "Cancel")) { TimingCancel(); return; }
-        if (act && d.Commit) { d.Commit = false; d.Focus = -1; } // (a typed number whose box went away)
     }
 }
