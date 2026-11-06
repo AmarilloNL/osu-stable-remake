@@ -48,7 +48,8 @@ sealed partial class Player
     double[] mAutoRelease = [];
     double mW300g, mW300, mW200, mW100, mW50, mWMiss;
     double mBonus = 100, mScore; // ScoreV1's bonus meter and the running score
-    (int Result, double At) mLastJudge = (-1, double.MinValue);
+    // each stage's last judgement (SeparateScore: a note's shows on its own stage only, else on both)
+    readonly (int Result, double At, float Tilt)[] mJudges = [(-1, double.MinValue, 0), (-1, double.MinValue, 0)];
 
     // the scroll: distance (units) covered from the map's start up to each red / green point
     readonly List<(double Time, double Dist, double PerMs)> mScroll = [];
@@ -208,7 +209,7 @@ sealed partial class Player
     }
 
     int mJudged, mRecorded;
-    float mHiddenH = 160, mHiddenA, mJudgeTilt;
+    float mHiddenH = 160, mHiddenA;
     int mSpeed = 12;
 
     // stable's scroll speed keys (F3 / F4 by default) during a play: saved as the speed (and, when remembering per
@@ -341,9 +342,11 @@ sealed partial class Player
         n.Result = result;
         mJudged++;
         int comboBefore = combo;
-        mLastJudge = (result, Game.NowMs);
+        var look = mLook ??= BuildLook();
+        var judged = (result, Game.NowMs, result == 0 ? (float)(Random.Shared.NextDouble() * 0.2 - 0.1) : 0);
+        int stage = look.Stages.Length > 1 && look.X[n.Column] >= look.Stages[1].X ? 1 : 0;
+        for (int s = 0; s < mJudges.Length; s++) if (s == stage || !look.SeparateScore) mJudges[s] = judged;
         if (result > 0) mLitAt[n.Column] = Game.NowMs;
-        if (result == 0) mJudgeTilt = (float)(Random.Shared.NextDouble() * 0.2 - 0.1);
         double hp = map.RawHP;
         switch (result)
         {
@@ -400,7 +403,7 @@ sealed partial class Player
         public float[] LineW = []; // ColumnLineWidth: the lines left of each column and right of the last (2)
         public Color ColumnLine = Color.White, Barline = Color.White, JudgementLine = Color.White, Hold = new(255, 199, 51, 255), Break = Color.Red;
         public float BarlineHeight = 1.2f, LightY = 413, NoteScaleW; // NoteScaleW: the width notes take their height from
-        public bool Judgement = true, KeysUnderNotes;
+        public bool Judgement = true, KeysUnderNotes, SeparateScore = true;
         public int LightFps = 60;
         public string StageBottom = "mania-stage-bottom";
         public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
@@ -466,6 +469,7 @@ sealed partial class Player
         look.LightFps = (int)F("LightFramePerSecond", 60) is > 0 and var fps ? fps : 24;
         look.Judgement = B("JudgementLine", true);
         look.KeysUnderNotes = B("KeysUnderNotes", false);
+        look.SeparateScore = B("SeparateScore", true);
         look.NoteScaleW = F("WidthForNoteHeightScale", 0) is > 0 and var ns ? ns : look.W.Min();
         look.StageBottom = M("StageBottom") ?? look.StageBottom;
         look.StageLeft = M("StageLeft") ?? look.StageLeft;
@@ -656,24 +660,25 @@ sealed partial class Player
         }
 
         // the judgement (ScorePosition 325) popping in and the combo (ComboPosition 111), centred on the stage
-        double age = Game.NowMs - mLastJudge.At;
         // stable: the judgement fades in over 20ms; a hit shrinks 1 -> 0.7 over 80ms, a miss settles 1.2 -> 1 over 100ms
         // with a slight random tilt; then 0.7 -> 0.4 (a miss stays) and gone between 180 and 220ms
-        if (mLastJudge.Result >= 0 && age < 220)
+        for (int s = 0; s < look.Stages.Length && s < mJudges.Length; s++)
         {
-            string name = look.Hit.TryGetValue(mLastJudge.Result, out var hitImage) ? hitImage : look.Hit[0];
-            bool miss = mLastJudge.Result == 0;
+            var (result, at, tilt) = mJudges[s];
+            double age = Game.NowMs - at;
+            if (result < 0 || age >= 220) continue;
+            string name = look.Hit.TryGetValue(result, out var hitImage) ? hitImage : look.Hit[0];
             float scale, rot = 0;
-            if (miss)
+            if (result == 0)
             {
                 float e = (float)Easing.Apply(1, Math.Min(1, age / 100));
                 scale = 1.2f - 0.2f * e;
-                rot = mJudgeTilt * e;
+                rot = tilt * e;
             }
             else scale = age < 80 ? 1 - 0.3f * (float)(age / 80) : age < 180 ? 0.7f : 0.7f - 0.3f * (float)Easing.Apply(2, (age - 180) / 40);
             float a = Math.Min(1, (float)(age / 20)) * (age > 180 ? 1 - (float)((age - 180) / 40) : 1);
-            foreach (var (stX, stW) in look.Stages) // (each stage shows it)
-                (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + (stX + stW / 2) * u, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
+            var (stX, stW) = look.Stages[s];
+            (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + (stX + stW / 2) * u, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
         }
         ManiaCombo(look, left, u, sd, alpha);
         DrawManiaStars(u, sd, alpha);
