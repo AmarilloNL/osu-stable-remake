@@ -11,15 +11,16 @@ namespace OsuStableRemake;
 // offset and time signature, an inherited one's offset and slider velocity, or with several selected: moving them,
 // their time signature and velocity), Audio (sample set, custom samples, volume) and Style (kiai, omit first bar line).
 // Changes show at once; Cancel or Escape takes them all back. OK applies the options under "When applying timing
-// changes...": objects scaled with their timing points (their place in beats kept) or snapped to the new timing, and
-// bookmarks and the preview point moved with the first timing point.
+// changes...": objects scaled with their timing points (their place in beats kept) or snapped to the new timing,
+// sliders lengthened or shortened to end on the beat snap divisor, and bookmarks and the preview point moved with the
+// first timing point.
 sealed partial class Editor
 {
     sealed class TimingDialog : WinUi
     {
         public int ListTab, LeftTab, Scroll, Anchor = -1, UndoAt, Divisor = 3;
         public List<ETiming> Sel = [];
-        public bool Inherit = true, Scale, SnapObjects, Bookmarks;
+        public bool Inherit = true, Scale, SnapObjects, Resnap, Bookmarks;
         public List<(ETiming P, double Time, double Beat)> Reds = []; // the timing points as they were (scaling objects)
         public double FirstOffset;
         public string EditText = ""; // a number box being typed into (Focus)
@@ -105,7 +106,7 @@ sealed partial class Editor
         timingDlg = null;
         bool scale = d.Scale && d.Reds.Any(r => timing.Contains(r.P) && (r.P.Time != r.Time || r.P.Beat != r.Beat));
         double shift = timing.Where(p => p.Red).Min(p => p.Time) - d.FirstOffset;
-        if (!scale && !d.SnapObjects && !(d.Bookmarks && shift != 0)) return;
+        if (!scale && !d.SnapObjects && !d.Resnap && !(d.Bookmarks && shift != 0)) return;
         Change(() =>
         {
             if (scale)
@@ -133,6 +134,21 @@ sealed partial class Editor
                     double end = o.Spinner || (o.Type & 128) != 0 ? SnapTo(o.End) : t + len;
                     if (t == o.Time && end == o.End) continue;
                     o.Time = t; o.End = Math.Max(t, end); o.Raw = null;
+                }
+            }
+            if (d.Resnap)
+            {
+                // each slider's length made to end its span on the beat snap divisor under the new timing
+                int div = SnapDivisors[d.Divisor];
+                var sorted = timing.OrderBy(p => p.Time).ToList();
+                foreach (var o in objs.Where(o => o.Slider && o.Path.Length > 1))
+                {
+                    double span = (SliderEnd(o, sorted) - o.Time) / o.Slides;
+                    var red = RedAt(o.Time + span);
+                    double step = red.Beat / div, to = Math.Round(red.Time + Math.Round((o.Time + span - red.Time) / step) * step);
+                    if (span <= 0 || to <= o.Time || Math.Abs(to - (o.Time + span)) <= 1) continue;
+                    o.Length *= (to - o.Time) / span;
+                    o.Raw = null;
                 }
             }
             if (d.Bookmarks && shift != 0)
@@ -407,8 +423,7 @@ sealed partial class Editor
         d.Check(ref d.SnapObjects, 12, 346, "Snap objects to new timing");
         if (d.Scale && !scaleWas) d.SnapObjects = false;
         if (d.SnapObjects && !snapWas) d.Scale = false;
-        bool resnap = false;
-        d.Check(ref resnap, 195, 325, "Resnap slider lengths", false);
+        d.Check(ref d.Resnap, 195, 325, "Resnap slider lengths");
         d.Check(ref d.Bookmarks, 195, 346, "Adjust bookmarks and audio preview");
         d.Label(344, 327, "Use beat snap divisor of");
         double div = d.Divisor;
