@@ -2799,20 +2799,40 @@ sealed partial class Editor : Screen
         DrawSetupExtras(u);
     }
 
-    // ---- the bottom bar: the time, the song's progress (click to seek), play / pause / stop and the playback rate
-    // (the right end kept clear for the frame counter)
+    // ---- the bottom bar: the time, the song's progress (click to seek), and stable's pictures: play / pause / stop /
+    // test centred 245, 225, 205 and 175 units from the right at 470 (1.2x hovered, over 100ms), the Playback Rate scale
+    // centred 77 from the right with its 25/50/75/100% (half seen, all hovered) and an arrow over the rate
     Rectangle ProgressRect() { float u = U; return new Rectangle(120 * u, Game.H - 22 * u, Game.W - 384 * u, 14 * u); }
-    Rectangle TransportRect(int i) { float u = U; return new Rectangle(Game.W - 256 * u + i * 26 * u, Game.H - 24 * u, 24 * u, 18 * u); }
-    Rectangle RateRect(int i) { float u = U; return new Rectangle(Game.W - 172 * u + i * 30 * u, Game.H - 24 * u, 28 * u, 18 * u); }
+    static readonly string[] TransportSprites = ["editor-button-play", "editor-button-pause", "editor-button-stop", "editor-button-test"];
+    static readonly float[] TransportX = [245, 225, 205, 175];
+    static readonly string[] RateSprites = ["editor-rate-25", "editor-rate-50", "editor-rate-75", "editor-rate-100"];
+    static readonly float[] RateX = [85, 62, 41, 18];
+    Rectangle TransportRect(int i) => Centred(TransportSprites[i], Game.W / U - TransportX[i], 470);
+    Rectangle RateRect(int i) => Centred(RateSprites[i], Game.W / U - RateX[i], 470);
+    Rectangle Centred(string name, float x, float y, float scale = 1)
+    {
+        float u = U, sd = u / 1.6f * scale;
+        var s = skin.DefaultTex(name);
+        float w = (s?.Width ?? 30) * sd, h = (s?.Height ?? 30) * sd;
+        return new Rectangle(x * u - w / 2, y * u - h / 2, w, h);
+    }
     static readonly double[] Rates = [0.25, 0.5, 0.75, 1];
+    readonly (bool On, double At)[] transportHover = new (bool, double)[4], rateHover = new (bool, double)[4];
+    static float Hovered(ref (bool On, double At) s, bool on, float from, float to)
+    {
+        double now = Game.NowMs;
+        if (on != s.On) s = (on, now);
+        float k = (float)Math.Clamp((now - s.At) / 100, 0, 1);
+        return on ? from + (to - from) * k : to + (from - to) * k;
+    }
 
     bool UpdateBottomBar(Vector2 mouse)
     {
         if (CheckCollisionPointRec(mouse, ProgressRect())) { var r = ProgressRect(); Seek((mouse.X - r.X) / r.Width * length); return true; }
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < TransportSprites.Length; i++)
             if (CheckCollisionPointRec(mouse, TransportRect(i)))
             {
-                if (i == 0) SetPlaying(true); else if (i == 1) SetPlaying(!playing); else { SetPlaying(false); Seek(0); }
+                if (i == 0) SetPlaying(true); else if (i == 1) SetPlaying(!playing); else if (i == 2) { SetPlaying(false); Seek(0); } else TestPlay();
                 return true;
             }
         for (int i = 0; i < 4; i++)
@@ -2833,7 +2853,9 @@ sealed partial class Editor : Screen
 
     void DrawBottomBar(float u)
     {
-        DrawRectangle(0, (int)(Game.H - 28 * u), Game.W, (int)(28 * u), new Color(0, 0, 0, 210));
+        if (skin.DefaultTex("editor-menu-bg-bottom") is { } bg)
+            DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height), new Rectangle(0, Game.H - bg.Height * u / 1.6f, Game.W, bg.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
+        else DrawRectangle(0, (int)(Game.H - 28 * u), Game.W, (int)(28 * u), new Color(0, 0, 0, 210));
         Game.TextBold(FormatTime(time), 6 * u, Game.H - 24 * u, 16 * u, Color.White);
         var r = ProgressRect();
         DrawRectangle((int)r.X, (int)(r.Y + r.Height / 2 - 1 * u), (int)r.Width, (int)(2 * u), Color.Gray);
@@ -2842,8 +2864,22 @@ sealed partial class Editor : Screen
         foreach (int b in Bookmarks()) DrawRectangle((int)(r.X + r.Width * b / length), (int)(r.Y + r.Height / 2), Math.Max(1, (int)u), (int)(r.Height / 2), new Color(60, 140, 255, 255));
         float x = r.X + r.Width * (float)(time / length);
         DrawRectangle((int)x - (int)u, (int)r.Y, (int)(3 * u), (int)r.Height, Color.White);
-        string[] t3 = ["Play", playing ? "Pause" : "Paused", "Stop"];
-        for (int i = 0; i < 3; i++) DrawButton(TransportRect(i), t3[i][..1] == "P" && i == 1 ? "||" : i == 0 ? " >" : " []", i == 1 && !playing);
-        for (int i = 0; i < 4; i++) DrawButton(RateRect(i), $"{Rates[i] * 100:0}%", rate == Rates[i]);
+        var mouse = Input.GetMousePosition();
+        void Picture(string name, Rectangle at, float alpha = 1)
+        {
+            if (skin.DefaultTex(name) is { } s) DrawTexturePro(s.Tex, new Rectangle(0, 0, s.Tex.Width, s.Tex.Height), at, Vector2.Zero, 0, ColorAlpha(Color.White, alpha));
+        }
+        string? tip = null;
+        for (int i = 0; i < TransportSprites.Length; i++)
+        {
+            bool over = CheckCollisionPointRec(mouse, TransportRect(i));
+            Picture(TransportSprites[i], Centred(TransportSprites[i], Game.W / u - TransportX[i], 470, Hovered(ref transportHover[i], over, 1, 1.2f)));
+            if (over && i == 3) tip = "Enter test mode, where you can play through from the current location.\nThis requires saving your beatmap.";
+        }
+        Picture("editor-rate-bg", Centred("editor-rate-bg", Game.W / u - 77, 470));
+        for (int i = 0; i < RateSprites.Length; i++) Picture(RateSprites[i], RateRect(i), Hovered(ref rateHover[i], CheckCollisionPointRec(mouse, RateRect(i)), 0.5f, 1));
+        // (stable: the arrow 73 units from the right at 25%, 7 at 100%)
+        Picture("editor-rate-arrow", Centred("editor-rate-arrow", Game.W / u - (73 - (float)(rate * 100 - 25) / 75 * 66), 473));
+        if (tip != null) Options.DrawScreenTooltip(tip, mouse);
     }
 }
