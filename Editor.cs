@@ -101,7 +101,17 @@ sealed partial class Editor : Screen
     // stable's editor: a native menu strip (24px at 100% scaling) above the game area, which is the rest of the window
     // (stable takes the strip's height off the game's and makes the window taller); everything else is drawn and
     // clicked in the game area's coordinates
-    static float Strip => MathF.Round(24 * Math.Max(1, GetWindowScaleDPI().Y));
+    static float Strip
+    {
+        get
+        {
+            // (the DPI asked of the window only when its size changes: everything here measures in U, many times a frame)
+            if (stripFor != Game.H) { stripFor = Game.H; strip = MathF.Round(24 * Math.Max(1, GetWindowScaleDPI().Y)); }
+            return strip;
+        }
+    }
+    static float strip;
+    static int stripFor = -1;
     static float EH => Game.H - Strip;
     static Vector2 RawMouse => Input.GetMousePosition();
     static Vector2 EMouse => RawMouse - new Vector2(0, Strip);

@@ -80,6 +80,9 @@ sealed partial class Editor
 
     static (int Start, int End)? BreakTimes(string l)
     {
+        // (the first field looked at in place: [Events] can hold thousands of storyboard lines, read every frame)
+        int c = l.IndexOf(',');
+        if (c < 0 || l.AsSpan(0, c).Trim() is var head && !head.SequenceEqual("2") && !head.SequenceEqual("Break")) return null;
         var f = l.Split(',');
         return f.Length >= 3 && f[0].Trim() is "2" or "Break" && double.TryParse(f[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double s)
             && double.TryParse(f[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double e) ? ((int)s, (int)e) : null;
