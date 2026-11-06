@@ -93,7 +93,6 @@ sealed partial class Editor : Screen
     Vector2? boxFrom; // drag-selecting
     double scrubFrom = double.NaN, scrubTime;
     int timingSel = -1;
-    int field = -1; // the Song Setup text field being typed into
     string? exitPrompt; double exitAt;
     double loadedAt = Game.NowMs;
 
@@ -515,9 +514,10 @@ sealed partial class Editor : Screen
         if (exitPrompt != null) { UpdateExitPrompt(raw); return; }
         if (xform != null) { UpdateXform(mouse); return; }
         if (prompt != null) { UpdatePrompt(mouse); return; }
+        if (setupDlg != null) { UpdateSetupDialog(mouse); return; }
         if (bmsWindow != null) { UpdateBmsImport(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
-        if (field < 0 && UpdateMenu(raw)) return;
+        if (UpdateMenu(raw)) return;
         if (raw.Y < Strip && (Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsMouseButtonPressed(MouseButton.Right))) return; // (the strip's empty part takes its clicks)
         // (the AiMod and Sample import windows: the editor below keeps its keys while they have the mouse)
         // (not during a drag begun in the editor: that keeps the mouse until it's let go)
@@ -540,12 +540,9 @@ sealed partial class Editor : Screen
         else if (music == null && playing) time = Math.Min(length, time + dtMs * rate);
         PlayHitsounds();
 
-        if (field >= 0) { UpdateTextField(); return; }
-
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
-            if (setupColourPick >= 0) setupColourPick = -1;
-            else if (tab == 3 && sbColourPick) sbColourPick = false;
+            if (tab == 3 && sbColourPick) sbColourPick = false;
             else if (tab == 3 && sbLibrary) sbLibrary = false;
             else if (tab == 3 && sbSel != null) sbSel = null;
             else if (sliderDraft != null) sliderDraft = null;
@@ -558,7 +555,6 @@ sealed partial class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F3)) SetTab(1);
         if (Input.IsKeyPressed(KeyboardKey.F4)) SetTab(2);
         if (Input.IsKeyPressed(KeyboardKey.F6)) { if (tab == 1) timingPanel = !timingPanel; else { SetTab(1); timingPanel = tab == 1; } } // (stable's Timing Setup Panel)
-        if (tab != 2) setupColourPick = -1; // (the palette closes with the tab)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.L)) { RevertPrompt(full: Input.ShiftHeld); return; }
@@ -632,7 +628,6 @@ sealed partial class Editor : Screen
         {
             case 0: UpdateCompose(mouse, u); break;
             case 1: Metronome(); UpdateTiming(mouse, u); break;
-            case 2: UpdateSetup(mouse, u); break;
             case 3: UpdateDesign(mouse, u); break;
         }
     }
@@ -1602,7 +1597,7 @@ sealed partial class Editor : Screen
             new("Reset combo colours", "", ResetComboColours), new("Reset breaks", "", ResetBreaks), Sep,
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => SetTab(0), tab == 0), new("Design", "F2", () => SetTab(3), tab == 3), new("Timing", "F3", () => SetTab(1), tab == 1), Sep,
-            new("Song Setup...", "F4", () => SetTab(2), tab == 2), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
+            new("Song Setup...", "F4", () => SetTab(2), setupDlg != null), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
             new("Volume", "", () => volumeWindow ??= new VolumeWindow()),
             new("Grid Level", Sub: [.. new[] { ("1 (Most sparse)", 32), ("2", 16), ("3", 8), ("4 (Most precise)", 4) }.Select(g => new MenuItem(g.Item1, "", () => gridSize = g.Item2, gridSize == g.Item2))]),
             new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => Config.SetOwn("EditorFollowPoints", (followPoints = !followPoints) ? "1" : "0"), followPoints),
@@ -2066,77 +2061,6 @@ sealed partial class Editor : Screen
             }
     }
 
-    // ---- song setup
-    static readonly (string Section, string Key, string Label)[] Fields =
-    [
-        ("Metadata", "Artist", "Artist"), ("Metadata", "ArtistUnicode", "Romanised artist (unicode)"), ("Metadata", "Title", "Title"),
-        ("Metadata", "TitleUnicode", "Title (unicode)"), ("Metadata", "Creator", "Creator"), ("Metadata", "Version", "Difficulty"),
-        ("Metadata", "Source", "Source"), ("Metadata", "Tags", "Tags"),
-    ];
-    // (mania, like stable's: Circle Size is the Key Count, 1 to 9 in whole steps, and there's no Approach Rate)
-    (string Key, string Label, double Min, double Max, double Step)[] Sliders => mode != 3 ? AllSliders
-        : [.. AllSliders.Where(s => s.Key != "ApproachRate").Select(s => s.Key == "CircleSize" ? ("CircleSize", "Key Count", 1.0, 9.0, 1.0) : s)];
-    static readonly (string Key, string Label, double Min, double Max, double Step)[] AllSliders =
-    [
-        ("HPDrainRate", "HP Drain Rate", 0, 10, 0.1), ("CircleSize", "Circle Size", 0, 10, 0.1), ("ApproachRate", "Approach Rate", 0, 10, 0.1),
-        ("OverallDifficulty", "Overall Difficulty", 0, 10, 0.1), ("SliderMultiplier", "Slider Velocity", 0.4, 3.6, 0.01), ("SliderTickRate", "Slider Tick Rate", 0.5, 8, 0.5),
-    ];
-    string fieldText = "";
-
-    Rectangle FieldRect(int i) { float u = U; return new Rectangle(220 * u, (96 + i * 26) * u, Game.W - 440 * u, 22 * u); }
-    Rectangle SliderRect(int i) { float u = U; return new Rectangle(220 * u, (320 + i * 22) * u, Game.W - 440 * u, 18 * u); }
-    int sliderDragging = -1;
-
-    // the map's mode (stable's Advanced tab: Allowed Modes)
-    static readonly string[] ModeNames = ["osu!", "Taiko", "Catch the Beat", "osu!mania"];
-    static Rectangle ModeRect() { float u = U; return new Rectangle(Game.W - 200 * u - 150 * u, 80 * u, 146 * u, 14 * u); }
-
-    void UpdateSetup(Vector2 mouse, float u)
-    {
-        if (UpdateSetupExtras(mouse)) return;
-        if (Input.IsMouseButtonPressed(MouseButton.Left) && CheckCollisionPointRec(mouse, ModeRect()))
-        {
-            undo.Add(Snapshot()); redo.Clear();
-            mode = (mode + 1) % 4;
-            SetKv("General", "Mode", mode.ToString());
-            tool = Math.Min(tool, ToolNames.Length - 1);
-            selected.Clear();
-            info = ReloadInfo();
-            Rebuild();
-            return;
-        }
-        if (Input.IsMouseButtonPressed(MouseButton.Left))
-        {
-            for (int i = 0; i < Fields.Length; i++)
-                if (CheckCollisionPointRec(mouse, FieldRect(i))) { field = i; fieldText = Kv(Fields[i].Section, Fields[i].Key) ?? ""; return; }
-            for (int i = 0; i < Sliders.Length; i++)
-                if (CheckCollisionPointRec(mouse, SliderRect(i))) { sliderDragging = i; undo.Add(Snapshot()); redo.Clear(); }
-        }
-        if (sliderDragging >= 0)
-        {
-            if (!Input.IsMouseButtonDown(MouseButton.Left)) { sliderDragging = -1; info = ReloadInfo(); Rebuild(); return; }
-            var s = Sliders[sliderDragging];
-            var r = SliderRect(sliderDragging);
-            double f = Math.Clamp((mouse.X - r.X) / r.Width, 0, 1), v = s.Min + f * (s.Max - s.Min);
-            v = Math.Round(v / s.Step) * s.Step;
-            SetKv("Difficulty", s.Key, Num(Math.Round(v, 2)));
-        }
-    }
-
-    void UpdateTextField()
-    {
-        for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32) fieldText += char.ConvertFromUtf32(c);
-        if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && fieldText.Length > 0) fieldText = fieldText[..^1];
-        bool done = Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.Tab) || Input.IsMouseButtonPressed(MouseButton.Left) && !CheckCollisionPointRec(EMouse, FieldRect(field));
-        if (Input.IsKeyPressed(KeyboardKey.Escape)) { field = -1; return; }
-        if (!done) return;
-        var f = Fields[field];
-        string value = fieldText.Trim();
-        if ((Kv(f.Section, f.Key) ?? "") != value) { undo.Add(Snapshot()); redo.Clear(); SetKv(f.Section, f.Key, value); }
-        field = Input.IsKeyPressed(KeyboardKey.Tab) && field + 1 < Fields.Length ? field + 1 : -1;
-        if (field >= 0) fieldText = Kv(Fields[field].Section, Fields[field].Key) ?? "";
-    }
-
     Beatmap ReloadInfo(string[]? lines = null)
     {
         try
@@ -2184,6 +2108,7 @@ sealed partial class Editor : Screen
     // a tab change (stable's: Compose and Design only once the song has a timing point)
     void SetTab(int t)
     {
+        if (t == 2) { OpenSetup(); return; } // (stable's Song Setup: a dialog over the tab you're on)
         if (t is 0 or 3 && timing.Count == 0)
         {
             Notification.Show("Please time the song first!  This is imperative to creating a good beatmap.\nRead the guide on the site if you don't understand timing,\nor ask in the Beatmap Help forum.", 5000);
@@ -2255,7 +2180,6 @@ sealed partial class Editor : Screen
         {
             case 0: DrawCompose(u); break;
             case 1: DrawTiming(u); break;
-            case 2: DrawSetup(u); break;
             case 3: DrawDesign(u); break;
         }
         // (stable's dark gradient behind the top 69 units)
@@ -2278,6 +2202,7 @@ sealed partial class Editor : Screen
         if (sampleImport != null) DrawSampleImport();
         if (volumeWindow != null) DrawVolumeWindow();
         if (bmsWindow != null) DrawBmsImport();
+        if (setupDlg != null) DrawSetupDialog();
         if (xform != null) DrawXform(u);
         if (prompt != null) DrawPrompt(u);
         if (poly != null) DrawPoly(u);
@@ -3123,37 +3048,6 @@ sealed partial class Editor : Screen
             }
             Game.Text("Shift: bigger / finer steps", Game.W - 210 * u, 256 * u, 10 * u, Color.LightGray);
         }
-    }
-
-    void DrawSetup(float u)
-    {
-        DrawRectangle((int)(200 * u), (int)(80 * u), (int)(Game.W - 400 * u), (int)(360 * u), new Color(0, 0, 0, 200));
-        for (int i = 0; i < Fields.Length; i++)
-        {
-            var r = FieldRect(i);
-            Game.Text(Fields[i].Label, r.X - 4 * u - Game.TextWidth(Fields[i].Label, 11 * u) + 0, r.Y + 4 * u, 11 * u, Color.LightGray);
-            DrawRectangleRec(r, field == i ? new Color(70, 70, 90, 255) : new Color(40, 40, 40, 255));
-            string text = field == i ? fieldText + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : "") : Kv(Fields[i].Section, Fields[i].Key) ?? "";
-            BeginScissorMode((int)r.X, (int)(r.Y + Strip), (int)r.Width, (int)r.Height);
-            float over = Math.Max(0, Game.TextWidth(text, 12 * u) - (r.Width - 8 * u)); // (typing past the end scrolls)
-            Game.Text(text, r.X + 4 * u - (field == i ? over : 0), r.Y + 4 * u, 12 * u, Color.White);
-            EndScissorMode();
-        }
-        var mr = ModeRect();
-        DrawRectangleRec(mr, new Color(40, 40, 40, 255));
-        Game.Text($"Mode: {ModeNames[Math.Clamp(mode, 0, 3)]} (click to change)", mr.X + 4 * u, mr.Y + 1 * u, 11 * u, Color.White);
-        for (int i = 0; i < Sliders.Length; i++)
-        {
-            var r = SliderRect(i);
-            var s = Sliders[i];
-            double v = double.TryParse(Kv("Difficulty", s.Key), NumberStyles.Float, Inv, out double d) ? d : s.Min;
-            float f = (float)Math.Clamp((v - s.Min) / (s.Max - s.Min), 0, 1);
-            Game.Text($"{s.Label}", r.X - 4 * u - Game.TextWidth(s.Label, 11 * u), r.Y + 2 * u, 11 * u, Color.LightGray);
-            DrawRectangle((int)r.X, (int)(r.Y + r.Height / 2 - 1 * u), (int)r.Width, (int)(2 * u), Color.Gray);
-            DrawCircleV(new(r.X + r.Width * f, r.Y + r.Height / 2), 6 * u, new Color(255, 160, 40, 255));
-            Game.Text(v.ToString("0.##", Inv), r.X + r.Width + 6 * u, r.Y + 2 * u, 11 * u, Color.White);
-        }
-        DrawSetupExtras(u);
     }
 
     // ---- the bottom bar: the time, the song's progress (click to seek), and stable's pictures: play / pause / stop /
