@@ -16,6 +16,7 @@ sealed partial class Player
         public double Time, End; // End > Time: a hold note
         public bool Done, Holding, Broken;
         public double PressAt = double.NaN, ReleaseAt = double.NaN; // a hold note's first press and last release
+        public double FirstReleaseAt = double.NaN, HoldFrom, HeldMs; // (and how long it's been held: its body animates only then)
         public bool HeadHit => !double.IsNaN(PressAt);
         public int Result = -1;
         public bool Hold => End > Time;
@@ -295,10 +296,11 @@ sealed partial class Player
         if (n.Hold)
         {
             // the first press counts for the judgement (an early one mirrored); pressing again just holds on
-            if (n.HeadHit) { n.Holding = true; return; }
+            if (n.HeadHit) { n.Holding = true; n.HoldFrom = at; return; }
             if (err < -mWMiss) return;
             n.PressAt = at;
             n.Holding = true;
+            n.HoldFrom = at;
             if (a <= mW50) hitErrors.Add(err);
             return;
         }
@@ -315,6 +317,8 @@ sealed partial class Player
         if (!n.Hold || !n.Holding || n.Done) return;
         n.Holding = false;
         n.ReleaseAt = at;
+        n.HeldMs += at - n.HoldFrom;
+        if (double.IsNaN(n.FirstReleaseAt)) n.FirstReleaseAt = at;
         // let go before the tail's 50 window: the combo breaks (once) and the hold carries on; within it, it's judged
         if (at < n.End - mW50) { if (!n.Broken) { n.Broken = true; BreakCombo(); } }
         else ManiaJudge(n, ManiaHoldResult(n, at));
@@ -396,6 +400,7 @@ sealed partial class Player
         public float Start = 136, HitY = 402, ScoreY = 325, ComboY = 111;
         public float[] X = [], W = [];
         public string[] Note = [], NoteH = [], NoteL = [], NoteT = [], Key = [], KeyD = [];
+        public int[] BodyStyle = []; // NoteBodyStyle{n}: 0 stretched, 2 repeated from the head end, 3 from the tail end, 4 centred
         public string LightingN = "lightingN", LightingL = "lightingL", WarningArrow = "mania-warningarrow";
         public Color KeyWarning = Color.Black; // ColourKeyWarning: the keys' names on them at the start
         public float[] LightingNW = [], LightingLW = []; // (0: the column's width)
@@ -453,6 +458,9 @@ sealed partial class Player
         look.NoteH = Per(c => $"NoteImage{c}H", c => $"mania-note{ManiaColumnKind(c)}H");
         look.NoteL = Per(c => $"NoteImage{c}L", c => $"mania-note{ManiaColumnKind(c)}L");
         look.NoteT = Per(c => $"NoteImage{c}T", c => $"mania-note{ManiaColumnKind(c)}T");
+        // stable's NoteBodyStyle{n}, else NoteBodyStyle, else repeated from the tail end; skins before 2.5 stretch
+        static int Style(string? v) => v?.Trim() switch { null => -1, var s when int.TryParse(s, out int i) => i, "Stretch" => 0, "RepeatTop" => 2, "RepeatBottom" => 3, "RepeatTopAndBottom" => 4, _ => -1 };
+        look.BodyStyle = [.. Enumerable.Range(0, mKeys).Select(c => skin.Version < 2.5 ? 0 : Style(M($"NoteBodyStyle{c}")) is >= 0 and var s ? s : Style(M("NoteBodyStyle")) is >= 0 and var all ? all : 3)];
         look.Key = Per(c => $"KeyImage{c}", c => $"mania-key{ManiaColumnKind(c)}");
         look.KeyD = Per(c => $"KeyImage{c}D", c => $"mania-key{ManiaColumnKind(c)}D");
         Color Colour(string k, Color def) => M(k) is { } v && ParseRgba(v) is { } cv ? cv : def;
@@ -611,13 +619,23 @@ sealed partial class Player
                 if (n.Done && (!n.Hold || n.Result > 0 || n.End < time)) continue;
                 if (n.Hold)
                 {
+                    // stable: a pressed hold's head stays on the hit position to its end; one pressed outside the 50 window
+                    // moves on once let go, from the first release. The body (the tail's centre to the head's) and the tail
+                    // (flipped) scroll on regardless, cut off at the head's centre.
                     float yEnd = hitY - (float)(ManiaDist(n.End) - now);
-                    float yHead = n.Holding && !n.Done ? hitY : y;
+                    bool pinned = n.Holding && !n.Done || n.HeadHit && Math.Abs(n.PressAt - n.Time) <= mW50;
+                    float yHead = pinned ? hitY : n.HeadHit && !double.IsNaN(n.FirstReleaseAt) ? hitY - (float)(ManiaDist(Math.Max(n.Time, n.FirstReleaseAt)) - now) : y;
                     var bodyTint = ColorAlpha(n.Broken || n.Done ? Color.Gray : Color.White, alpha);
-                    if ((skin.AnimFrame(look.NoteL[c], Game.NowMs) ?? skin.Tex(look.NoteL[c])) is { } body)
-                        DrawTexturePro(body.Tex, Src(body), new Rectangle(x, yEnd * u, cw, Math.Max(0, (yHead - yEnd) * u)), Vector2.Zero, 0, bodyTint);
-                    ManiaNote(skin.Tex(look.NoteT[c]) ?? skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yEnd * u, cw, noteScale, bodyTint, flipY: skin.Tex(look.NoteT[c]) == null);
-                    ManiaNote(skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yHead * u, cw, noteScale, bodyTint);
+                    var head = skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]);
+                    float half = head is { } hs ? hs.Height * (noteScale / hs.Width) / 2 : 0, cut = yHead * u - half;
+                    // (the body's frames, 30ms each, only run while it's held)
+                    if (skin.Animation(look.NoteL[c], true) is { Length: > 0 } frames)
+                    {
+                        double held = n.HeldMs + (n.Holding && !n.Done ? time - n.HoldFrom : 0);
+                        ManiaBody(frames[(int)(Math.Max(0, held) / 30) % frames.Length], x, cw, yEnd * u - half, y * u - half, cut, look.BodyStyle[c], sd, bodyTint);
+                    }
+                    ManiaNote(skin.Tex(look.NoteT[c]) ?? head, x, yEnd * u, cw, noteScale, bodyTint, flipY: true, clip: cut);
+                    ManiaNote(head, x, yHead * u, cw, noteScale, bodyTint);
                 }
                 else ManiaNote(skin.AnimFrame(look.Note[c], Game.NowMs) ?? skin.Tex(look.Note[c]), x, y * u, cw, noteScale, tint);
             }
@@ -853,12 +871,33 @@ sealed partial class Player
     }
 
     // a note: as wide as its column, as tall as the image is at scaleW wide (stable: the narrowest column's width, or
-    // WidthForNoteHeightScale)
-    void ManiaNote(Sprite? s, float x, float bottomY, float cw, float scaleW, Color tint, bool flipY = false)
+    // WidthForNoteHeightScale); nothing of it below clip
+    void ManiaNote(Sprite? s, float x, float bottomY, float cw, float scaleW, Color tint, bool flipY = false, float clip = float.MaxValue)
     {
         if (s is not { } n) return;
-        float nh = n.Height * (scaleW / n.Width);
-        DrawTexturePro(n.Tex, new Rectangle(0, 0, n.Tex.Width, flipY ? -n.Tex.Height : n.Tex.Height), new Rectangle(x, bottomY - nh, cw, nh), Vector2.Zero, 0, tint);
+        float nh = n.Height * (scaleW / n.Width), top = bottomY - nh, shown = Math.Min(nh, clip - top);
+        if (shown <= 0) return;
+        float th = n.Tex.Height * shown / nh; // (flipped, the image's bottom part shows at the top)
+        DrawTexturePro(n.Tex, new Rectangle(0, flipY ? n.Tex.Height - th : 0, n.Tex.Width, flipY ? -th : th), new Rectangle(x, top, cw, shown), Vector2.Zero, 0, tint);
+    }
+
+    // a hold's body from top (the tail's centre) to bottom (the head's), nothing of it below clip. Stable's NoteBodyStyle 0
+    // stretches the image over it; the others repeat it at its own height, starting at the tail end (3, or any other),
+    // the head end (2) or centred (4).
+    readonly HashSet<uint> mRepeating = []; // (textures set to repeat downwards)
+    void ManiaBody(Sprite b, float x, float cw, float top, float bottom, float clip, int style, float sd, Color tint)
+    {
+        float len = bottom - top, shown = Math.Min(bottom, clip) - top;
+        if (len <= 0 || shown <= 0) return;
+        if (style == 0)
+        {
+            DrawTexturePro(b.Tex, new Rectangle(0, 0, b.Tex.Width, b.Tex.Height * shown / len), new Rectangle(x, top, cw, shown), Vector2.Zero, 0, tint);
+            return;
+        }
+        if (mRepeating.Add(b.Tex.Id)) Rlgl.TextureParameters(b.Tex.Id, 0x2803, 0x2901); // GL_TEXTURE_WRAP_T: GL_REPEAT
+        float k = b.Tex.Height / b.Height, imageLen = len / sd; // (texture pixels per image pixel; the length in image pixels)
+        float from = style switch { 2 => (int)(b.Height - imageLen), 4 => (int)((b.Height - imageLen) / 2), _ => 0 };
+        DrawTexturePro(b.Tex, new Rectangle(0, from * k, b.Tex.Width, shown / sd * k), new Rectangle(x, top, cw, shown), Vector2.Zero, 0, tint);
     }
 
     // stable's default column looks: from each edge 1, 2, 1, 2..., the middle of an odd count special
