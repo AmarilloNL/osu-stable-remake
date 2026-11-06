@@ -14,14 +14,12 @@ namespace OsuStableRemake;
 // from osu!mania asks first, then clears the notes); Cancel or Escape leaves it as it was.
 sealed partial class Editor
 {
-    sealed class SetupDialog
+    sealed class SetupDialog : WinUi
     {
-        public int Tab, Focus = -1, Open = -1, Dragging = -1, Pick = -1;
-        public Vector2 Pos = new(float.NaN), Mouse;
-        public Vector2? Drag;
+        public int Tab, Pick = -1;
         public string[] Text = new string[8]; // artist, romanised artist, title, romanised title, creator, difficulty, source, tags
         public int HP, CS, AR, OD, Volume, Stack, Mode, OldMode, Speed, CountdownOffset, Set; // (Speed: the countdown's, 1 normal, 2 half, 3 double)
-        public bool Countdown, Coop, Overrides, MatchRate, CustomColours, Letterbox, Widescreen, Epilepsy, NPlus1, SetsDiffer, VolumesDiffer, Changed;
+        public bool Countdown, Coop, Overrides, MatchRate, CustomColours, Letterbox, Widescreen, Epilepsy, NPlus1, SetsDiffer, VolumesDiffer;
         public List<Color> Combos = [];
         public Color Background;
         public string Skin = "";
@@ -182,22 +180,14 @@ sealed partial class Editor
         Save();
     }
 
-    Rectangle SetupRect(float x, float y, float w, float h) { var p = setupDlg!.Pos; float s = AiS; return new Rectangle(p.X + x * s, p.Y + (AiCaption + y) * s, w * s, h * s); }
+    Rectangle SetupRect(float x, float y, float w, float h) => setupDlg!.R(x, y, w, h);
 
     // true while the dialog is open (it has all the input)
     bool UpdateSetupDialog(Vector2 mouse)
     {
         var d = setupDlg!;
-        float s = AiS;
-        d.Mouse = mouse;
-        if (float.IsNaN(d.Pos.X)) d.Pos = new((Game.W - SsW * s) / 2, (EH - (SsH + AiCaption) * s) / 2);
-        if (prompt != null) return true;
-        if (d.Drag is { } dr)
-        {
-            if (!Input.IsMouseButtonDown(MouseButton.Left)) d.Drag = null;
-            else d.Pos = new(Math.Clamp(mouse.X - dr.X, -SsW * s / 2, Game.W - SsW * s / 2), Math.Clamp(mouse.Y - dr.Y, 0, EH - AiCaption * s));
-            return true;
-        }
+        if (d.Pick < 0 && d.UpdateFrame(mouse, SsW, SsH)) { setupDlg = null; return true; }
+        if (d.Drag != null) return true;
         if (Input.IsKeyPressed(KeyboardKey.Escape))
         {
             if (d.Open >= 0 || d.Pick >= 0) { d.Open = d.Pick = -1; return true; }
@@ -209,11 +199,7 @@ sealed partial class Editor
         // typing into the focused text box
         if (d.Focus >= 0 && d.Tab == 0)
         {
-            string before = d.Text[d.Focus];
-            for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32) d.Text[d.Focus] += char.ConvertFromUtf32(c);
-            if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && d.Text[d.Focus].Length > 0) d.Text[d.Focus] = d.Text[d.Focus][..^1];
-            if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.V)) d.Text[d.Focus] += (GetClipboardText_() ?? "").Replace("\r", "").Replace("\n", " ");
-            if (d.Text[d.Focus] != before) TextChanged(d, d.Focus);
+            if (WinUi.Type(ref d.Text[d.Focus])) TextChanged(d, d.Focus);
             if (Input.IsKeyPressed(KeyboardKey.Tab))
             {
                 int next = d.Focus;
@@ -222,13 +208,6 @@ sealed partial class Editor
             }
         }
         if (Input.IsKeyPressed(KeyboardKey.Enter) && d.Open < 0 && d.Pick < 0) { if (SetupOkOn(d)) SetupOk(); return true; }
-        bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        var cap = new Rectangle(d.Pos.X, d.Pos.Y, SsW * s, AiCaption * s);
-        if (click && d.Open < 0 && d.Pick < 0)
-        {
-            if (CheckCollisionPointRec(mouse, new Rectangle(cap.X + cap.Width - 28 * s, cap.Y, 28 * s, cap.Height))) { setupDlg = null; return true; }
-            if (CheckCollisionPointRec(mouse, cap)) { d.Drag = mouse - d.Pos; return true; }
-        }
         SetupUi(d, true);
         return true;
     }
@@ -249,40 +228,29 @@ sealed partial class Editor
     void DrawSetupDialog()
     {
         var d = setupDlg!;
-        float s = AiS, fs = 11 * s;
         if (float.IsNaN(d.Pos.X)) return;
-        Color face = new(240, 240, 240, 255), text = Color.Black;
-        var whole = new Rectangle(d.Pos.X, d.Pos.Y, SsW * s, (SsH + AiCaption) * s);
-        var cap = new Rectangle(d.Pos.X, d.Pos.Y, SsW * s, AiCaption * s);
-        DrawRectangle((int)(whole.X + 4 * s), (int)(whole.Y + 4 * s), (int)whole.Width, (int)whole.Height, new Color(0, 0, 0, 70));
-        DrawRectangleRec(whole, face);
-        DrawRectangleRec(cap, Color.White);
-        Game.Text("Song Setup", cap.X + 6 * s, cap.Y + (cap.Height - fs) / 2, fs, text);
-        float cx = cap.X + cap.Width - 14 * s, cy = cap.Y + cap.Height / 2;
-        DrawLineEx(new(cx - 4 * s, cy - 4 * s), new(cx + 4 * s, cy + 4 * s), 1.2f * s, text);
-        DrawLineEx(new(cx - 4 * s, cy + 4 * s), new(cx + 4 * s, cy - 4 * s), 1.2f * s, text);
-        DrawRectangleLinesEx(whole, 1, new Color(160, 160, 160, 255));
+        d.DrawFrame("Song Setup", SsW, SsH);
         SetupUi(d, false);
     }
 
     // the dialog's controls, drawn (act false) or taking the mouse (act true) from one layout
     void SetupUi(SetupDialog d, bool act)
     {
-        float s = AiS, fs = 11 * s;
+        d.Begin(act, d.Open >= 0 || d.Pick >= 0);
+        float s = AiS, fs = WinUi.Fs;
         var mouse = d.Mouse;
-        bool click = act && Input.IsMouseButtonPressed(MouseButton.Left);
-        bool down = Input.IsMouseButtonDown(MouseButton.Left);
-        Color text = Color.Black, grey = new(109, 109, 109, 255), face = new(240, 240, 240, 255), blue = new(0, 120, 215, 255);
-        Rectangle R(float x, float y, float w, float h) => SetupRect(x, y, w, h);
-        bool Hover(Rectangle r) => d.Open < 0 && d.Pick < 0 && CheckCollisionPointRec(mouse, r);
-        bool Hit(Rectangle r) => click && Hover(r);
+        bool click = d.Clicked;
+        Color text = WinUi.Text, grey = WinUi.Grey, face = WinUi.Face, blue = WinUi.Blue;
+        Rectangle R(float x, float y, float w, float h) => d.R(x, y, w, h);
+        bool Hover(Rectangle r) => d.Hover(r);
+        bool Hit(Rectangle r) => d.Hit(r);
 
         // an open drop-down or the colour picker takes the click first
         if (act && click && d.Open >= 0)
         {
             var (items, box) = DropItems(d);
             for (int i = 0; i < items.Length; i++)
-                if (CheckCollisionPointRec(mouse, DropRow(box, i)))
+                if (CheckCollisionPointRec(mouse, WinUi.ListRow(box, i)))
                 {
                     if (d.Open == 0) { d.Text[5] = items[i]; d.Changed = true; }
                     if (d.Open == 1) { d.Skin = i == 0 ? "" : items[i]; d.Changed = true; }
@@ -305,144 +273,17 @@ sealed partial class Editor
             return;
         }
 
-        void Label(float x, float y, string t, bool bold = false, Color? c = null, float right = 0, bool on = true)
+        void Box(int i, float x, float y, float w, float h) => d.Box(i, d.Text[i], x, y, w, h, BoxOn(d, i));
+        // (Difficulty's: a text box with the list's arrow)
+        void EditDrop(int id, int box, float x, float y, float w, float h)
         {
-            if (act) return;
-            float px = right > 0 ? R(x + right, 0, 0, 0).X - (bold ? Game.BoldWidth(t, fs) : Game.TextWidth(t, fs)) : R(x, 0, 0, 0).X;
-            var col = on ? c ?? text : grey;
-            if (bold) Game.TextBold(t, px, R(0, y, 0, 0).Y, fs, col); else Game.Text(t, px, R(0, y, 0, 0).Y, fs, col);
-        }
-        void Wrap(float x, float y, float w, string t, Color? c = null, bool on = true)
-        {
-            if (act) return;
-            float line = 15;
-            foreach (var para in t.Split('\n'))
-            {
-                string cur = "";
-                foreach (var word in para.Split(' '))
-                {
-                    string next = cur.Length == 0 ? word : cur + " " + word;
-                    if (cur.Length > 0 && Game.TextWidth(next, fs) > w * s) { Label(x, y, cur, false, c, 0, on); y += line; cur = word; }
-                    else cur = next;
-                }
-                Label(x, y, cur, false, c, 0, on);
-                y += line;
-            }
-        }
-        bool Button(float x, float y, float w, float h, string t, bool on = true, bool def = false)
-        {
-            var r = R(x, y, w, h);
-            if (act) return on && Hit(r);
-            bool hover = on && Hover(r);
-            DrawRectangleRec(r, hover ? new Color(229, 241, 251, 255) : new Color(225, 225, 225, 255));
-            DrawRectangleLinesEx(r, def || hover ? 2 * MathF.Max(1, s / 2) : 1, hover || def && on ? blue : new Color(173, 173, 173, 255));
-            Game.Text(t, r.X + r.Width / 2 - Game.TextWidth(t, fs) / 2, r.Y + (r.Height - fs) / 2, fs, on ? text : grey);
-            return false;
-        }
-        void Group(float x, float y, float w, float h, string t)
-        {
-            if (act) return;
-            var r = R(x, y + 7, w, h - 7);
-            DrawRectangleLinesEx(r, 1, new Color(220, 220, 220, 255));
-            float tw = Game.TextWidth(t, fs);
-            var gap = R(x + 6, y, 0, 15);
-            DrawRectangle((int)gap.X, (int)r.Y - 1, (int)(tw + 4 * s), 3, Color.White);
-            Game.Text(t, gap.X + 2 * s, gap.Y, fs, text);
-        }
-        void Box(int i, float x, float y, float w, float h)
-        {
-            var r = R(x, y, w, h);
-            bool on = BoxOn(d, i);
-            if (act) { if (on && Hit(r)) d.Focus = i; return; }
-            bool focus = d.Focus == i && d.Tab == 0;
-            DrawRectangleRec(r, on ? Color.White : face);
-            DrawRectangleLinesEx(r, 1, focus ? blue : on ? new Color(122, 122, 122, 255) : new Color(204, 204, 204, 255));
-            string shown = d.Text[i] + (focus && (int)(Game.NowMs / 500) % 2 == 0 ? "|" : "");
-            float tw = Game.TextWidth(shown, fs);
-            BeginScissorMode((int)r.X + 1, (int)(r.Y + Strip), (int)r.Width - 2, (int)r.Height);
-            Game.Text(shown, r.X + 3 * s - (focus ? Math.Max(0, tw - r.Width + 8 * s) : 0), r.Y + (r.Height - fs) / 2, fs, on ? text : grey);
-            EndScissorMode();
-        }
-        void Check(ref bool v, float x, float y, string t, bool on = true)
-        {
-            var box = R(x, y + 3, 13, 13);
-            var whole = R(x, y, 17 + Game.TextWidth(t, fs) / s, 19);
-            if (act) { if (on && Hit(whole)) { v = !v; d.Changed = true; } return; }
-            DrawRectangleRec(box, Color.White);
-            DrawRectangleLinesEx(box, 1, on ? new Color(51, 51, 51, 255) : new Color(204, 204, 204, 255));
-            if (v)
-            {
-                var c = on ? text : grey;
-                DrawLineEx(new(box.X + 3 * s, box.Y + 6.5f * s), new(box.X + 5.5f * s, box.Y + 9.5f * s), 1.5f * s, c);
-                DrawLineEx(new(box.X + 5.5f * s, box.Y + 9.5f * s), new(box.X + 10 * s, box.Y + 3.5f * s), 1.5f * s, c);
-            }
-            Game.Text(t, box.X + 17 * s, box.Y + (box.Height - fs) / 2, fs, on ? text : grey);
-        }
-        void Radio(int value, float x, float y, string t, bool on)
-        {
-            var whole = R(x, y, 17 + Game.TextWidth(t, fs) / s, 20);
-            if (act) { if (on && Hit(whole) && d.Speed != value) { d.Speed = value; d.Changed = true; } return; }
-            var c = R(x + 6.5f, y + 10, 0, 0);
-            DrawCircleV(new(c.X, c.Y), 6.5f * s, on ? new Color(51, 51, 51, 255) : new Color(204, 204, 204, 255));
-            DrawCircleV(new(c.X, c.Y), 5.5f * s, Color.White);
-            if (d.Speed == value) DrawCircleV(new(c.X, c.Y), 3.5f * s, on ? text : grey);
-            Game.Text(t, c.X + 10.5f * s, c.Y - fs / 2, fs, on ? text : grey);
-        }
-        void Track(int id, ref int v, int min, int max, float x, float y, float w, int tick, bool snap, bool on = true)
-        {
-            var r = R(x, y, w, 30);
-            float left = r.X + 13 * s, span = r.Width - 26 * s;
-            if (act)
-            {
-                if (on && Hit(r)) d.Dragging = id;
-                if (d.Dragging == id)
-                {
-                    if (!down) { d.Dragging = -1; return; }
-                    int to = min + (int)Math.Round(Math.Clamp((mouse.X - left) / span, 0, 1) * (max - min));
-                    if (snap && !Input.ShiftHeld) to = Math.Clamp((int)Math.Round(to / 10.0) * 10, min, max);
-                    if (to != v) { v = to; d.Changed = true; }
-                }
-                return;
-            }
-            var channel = new Rectangle(r.X + 8 * s, r.Y + 8 * s, r.Width - 16 * s, 4 * s);
-            DrawRectangleRec(channel, new Color(231, 234, 234, 255));
-            DrawRectangleLinesEx(channel, 1, new Color(214, 214, 214, 255));
-            for (int t = min; t <= max; t += Math.Max(1, tick))
-            {
-                float tx = left + (max > min ? (t - min) / (float)(max - min) : 0) * span;
-                DrawRectangle((int)tx, (int)(r.Y + 24 * s), 1, (int)((t == min || t == max ? 4 : 3) * s), new Color(196, 196, 196, 255));
-            }
-            float cx = left + (max > min ? (Math.Clamp(v, min, max) - min) / (float)(max - min) : 0) * span;
-            var thumb = on ? d.Dragging == id ? new Color(204, 204, 204, 255) : Hover(r) ? new Color(23, 23, 23, 255) : blue : new Color(204, 204, 204, 255);
-            DrawRectangleRec(new Rectangle(cx - 5.5f * s, r.Y + 2 * s, 11 * s, 15 * s), thumb);
-            DrawTriangle(new(cx - 5.5f * s, r.Y + 17 * s), new(cx, r.Y + 22 * s), new(cx + 5.5f * s, r.Y + 17 * s), thumb);
-            if (d.Dragging == id || Hover(r)) Tip(Num(id == 4 || id == 1 && tick == 1 ? v : v / 10.0)); // (stable's tooltip: the value)
-        }
-        void Link(float x, float y, string t)
-        {
-            if (act) return;
-            var p = R(x, y, 0, 0);
-            Game.Text(t, p.X, p.Y, fs, new Color(0, 102, 204, 255));
-            DrawRectangle((int)p.X, (int)(p.Y + fs + 1 * s), (int)Game.TextWidth(t, fs), 1, new Color(0, 102, 204, 255));
-        }
-        void Drop(int id, string shown, float x, float y, float w, float h, bool editable, int box = -1, bool on = true)
-        {
-            var r = R(x, y, w, h);
             var arrow = R(x + w - 17, y, 17, h);
-            if (act)
-            {
-                if (!on) return;
-                if (Hit(editable ? arrow : r)) d.Open = id;
-                else if (editable && Hit(r)) d.Focus = box;
-                return;
-            }
-            bool hover = on && Hover(r);
-            DrawRectangleRec(r, editable ? on ? Color.White : face : hover ? new Color(229, 241, 251, 255) : new Color(225, 225, 225, 255));
-            DrawRectangleLinesEx(r, 1, hover || editable && d.Focus == box ? blue : new Color(122, 122, 122, 255));
-            if (editable && box >= 0) { Box(box, x, y, w - 17, h); DrawRectangleLinesEx(r, 1, d.Focus == box ? blue : new Color(122, 122, 122, 255)); }
-            else Game.Text(shown, r.X + 3 * s, r.Y + (r.Height - fs) / 2, fs, on ? text : grey);
-            float ax = arrow.X + arrow.Width / 2, ay = arrow.Y + arrow.Height / 2;
-            DrawTriangle(new(ax - 3.5f * s, ay - 1.5f * s), new(ax, ay + 2 * s), new(ax + 3.5f * s, ay - 1.5f * s), on ? text : grey);
+            if (act) { if (Hit(arrow)) d.Open = id; else Box(box, x, y, w - 17, h); return; }
+            var r = R(x, y, w, h);
+            DrawRectangleRec(r, Color.White);
+            Box(box, x, y, w - 17, h);
+            DrawRectangleLinesEx(r, 1, d.Focus == box ? blue : new Color(122, 122, 122, 255));
+            WinUi.Arrow(arrow, true);
         }
         void Colour(int i, float x, float y, float w, float h, string t, Color c)
         {
@@ -454,105 +295,76 @@ sealed partial class Editor
             Game.TextBold(t, r.X + r.Width / 2 - Game.BoldWidth(t, big) / 2, r.Y + (r.Height - big) / 2, big, Color.White);
         }
 
-        // the tabs (the selected one a little bigger, its page white)
-        float tx = 2;
-        for (int i = 0; i < SetupTabs.Length; i++)
-        {
-            float tw = Game.TextWidth(SetupTabs[i], fs) / s + 12;
-            var r = R(tx, 2, tw, 20);
-            if (act) { if (Hit(r)) { d.Tab = i; d.Open = -1; } }
-            else if (d.Tab != i)
-            {
-                DrawRectangleRec(r, Hover(r) ? new Color(229, 241, 251, 255) : face);
-                DrawRectangleLinesEx(r, 1, new Color(217, 217, 217, 255));
-                Game.Text(SetupTabs[i], r.X + 6 * s, r.Y + (r.Height - fs) / 2, fs, text);
-            }
-            tx += tw;
-        }
-        if (!act)
-        {
-            var page = R(0, 22, 385, 364);
-            DrawRectangleRec(page, Color.White);
-            DrawRectangleLinesEx(page, 1, new Color(217, 217, 217, 255));
-            tx = 2;
-            for (int i = 0; i < d.Tab; i++) tx += Game.TextWidth(SetupTabs[i], fs) / s + 12;
-            float sw = Game.TextWidth(SetupTabs[d.Tab], fs) / s + 12;
-            var sel = R(tx - 2, 0, sw + 4, 23);
-            DrawRectangleRec(sel, Color.White);
-            DrawRectangleLinesEx(sel with { Height = sel.Height - 1 * s }, 1, new Color(217, 217, 217, 255));
-            DrawRectangleRec(new Rectangle(sel.X + 1, sel.Y + sel.Height - 2 * s, sel.Width - 2, 3 * s), Color.White);
-            Game.Text(SetupTabs[d.Tab], sel.X + 8 * s, sel.Y + (sel.Height - fs) / 2, fs, text);
-        }
-
+        d.Tabs(ref d.Tab, SetupTabs, 0, 0, 385, 364);
         float ox = 4, oy = 22; // (the page's corner)
         switch (d.Tab)
         {
             case 0:
             {
                 float gx = ox + 6, gy = oy + 6;
-                Group(gx, gy, 365, 223, "Song and Map Metadata");
-                Label(gx + 32, gy + 22, "Artist", true, null, 105);
+                d.Group(gx, gy, 365, 223, "Song and Map Metadata");
+                d.Label(gx + 32, gy + 22, "Artist", true, null, 105);
                 Box(0, gx + 141, gy + 20, 218, 20);
-                Label(gx + 6, gy + 47, "Romanised Artist", true, null, 131, BoxOn(d, 1));
+                d.Label(gx + 6, gy + 47, "Romanised Artist", true, null, 131, BoxOn(d, 1));
                 Box(1, gx + 141, gy + 45, 218, 20);
-                Label(gx + 32, gy + 72, "Title", true, null, 105);
+                d.Label(gx + 32, gy + 72, "Title", true, null, 105);
                 Box(2, gx + 141, gy + 70, 218, 20);
-                Label(gx + 6, gy + 97, "Romanised Title", true, null, 131, BoxOn(d, 3));
+                d.Label(gx + 6, gy + 97, "Romanised Title", true, null, 131, BoxOn(d, 3));
                 Box(3, gx + 141, gy + 95, 218, 20);
-                Label(gx + 5, gy + 122, "Beatmap Creator", true, null, 132);
+                d.Label(gx + 5, gy + 122, "Beatmap Creator", true, null, 132);
                 Box(4, gx + 141, gy + 120, 218, 20);
-                Label(gx + 32, gy + 147, "Difficulty", true, null, 105);
-                Drop(0, d.Text[5], gx + 141, gy + 145, 218, 21, true, 5);
-                Label(gx + 32, gy + 172, "Source", true, null, 105);
+                d.Label(gx + 32, gy + 147, "Difficulty", true, null, 105);
+                EditDrop(0, 5, gx + 141, gy + 145, 218, 21);
+                d.Label(gx + 32, gy + 172, "Source", true, null, 105);
                 Box(6, gx + 141, gy + 170, 218, 20);
-                Label(gx + 32, gy + 197, "Tags", true, null, 105);
+                d.Label(gx + 32, gy + 197, "Tags", true, null, 105);
                 Box(7, gx + 141, gy + 195, 218, 20);
                 gy = oy + 234;
-                Group(gx, gy, 365, 118, "A quick note");
-                Wrap(gx + 6, gy + 18, 353, "Due to the large number of beatmap submissions, the standard of approval is relatively high.  Please ensure your beatmap is at least timed properly, or it will likely be ignored!", new Color(255, 0, 0, 255));
-                Link(gx + 31, gy + 91, "Editor Guide/FAQ");
-                Link(gx + 182, gy + 91, "Official Submission Criteria");
+                d.Group(gx, gy, 365, 118, "A quick note");
+                d.Wrap(gx + 6, gy + 18, 353, "Due to the large number of beatmap submissions, the standard of approval is relatively high.  Please ensure your beatmap is at least timed properly, or it will likely be ignored!", new Color(255, 0, 0, 255));
+                d.Link(gx + 31, gy + 91, "Editor Guide/FAQ");
+                d.Link(gx + 182, gy + 91, "Official Submission Criteria");
                 break;
             }
             case 1:
             {
                 float gx = ox + 4, gy = oy + 6;
                 bool mania = d.Mode == 3;
-                Group(gx, gy, 365, 351, "Difficulty");
-                Label(gx + 10, gy + 28, "HP Drain Rate", true);
-                Track(0, ref d.HP, 0, 100, gx + 118, gy + 19, 241, 10, true);
-                Label(gx + 122, gy + 47, "Easy");
-                Label(gx + 314, gy + 47, "Insane", false, null, 41);
-                Wrap(gx + 9, gy + 69, 350, "The constant rate of health-bar drain throughout the song");
-                Label(gx + 10, gy + 102, mania ? "Key Count" : "Circle Size", true);
-                if (mania) Track(1, ref d.CS, 1, 9, gx + 118, gy + 93, 241, 1, false);
-                else Track(1, ref d.CS, Math.Min(20, d.CS), Math.Max(70, d.CS), gx + 118, gy + 93, 241, 10, true);
-                if (mania) { bool coopOn = d.CS >= 5; if (!coopOn) d.Coop = false; Check(ref d.Coop, gx + 12, gy + 124, "Co-op mode", coopOn); }
-                Label(gx + 122, gy + 124, mania ? "1" : "Large");
-                if (!mania) Label(gx + 216, gy + 124, "Normal");
-                Label(gx + 319, gy + 124, mania ? "9" : "Small", false, null, 36);
-                Wrap(gx + 9, gy + 145, 350, mania ? "The column count" : "The radial size of hit circles and sliders");
-                Label(gx + 10, gy + 176, "Approach Rate", true, null, 0, !mania);
-                Track(2, ref d.AR, 0, 100, gx + 118, gy + 168, 241, 10, true, !mania);
-                Label(gx + 122, gy + 196, "Slow", false, null, 0, !mania);
-                Label(gx + 327, gy + 196, "Fast", false, null, 28, !mania);
-                Wrap(gx + 9, gy + 218, 350, "The speed at which objects appear");
-                Label(gx + 10, gy + 250, "Overall Difficulty", true);
-                Track(3, ref d.OD, 0, 100, gx + 118, gy + 241, 241, 10, true);
-                Label(gx + 122, gy + 270, "Easy");
-                Label(gx + 314, gy + 270, "Insane", false, null, 41);
-                Wrap(gx + 9, gy + 293, 350, "The harshness of the hit window and the difficulty of spinners");
-                Label(gx + 66, gy + 331, "Hold shift for precise difficulty adjustment.");
+                d.Group(gx, gy, 365, 351, "Difficulty");
+                d.Label(gx + 10, gy + 28, "HP Drain Rate", true);
+                d.Track(0, ref d.HP, 0, 100, gx + 118, gy + 19, 241, 10, true);
+                d.Label(gx + 122, gy + 47, "Easy");
+                d.Label(gx + 314, gy + 47, "Insane", false, null, 41);
+                d.Wrap(gx + 9, gy + 69, 350, "The constant rate of health-bar drain throughout the song");
+                d.Label(gx + 10, gy + 102, mania ? "Key Count" : "Circle Size", true);
+                if (mania) d.Track(1, ref d.CS, 1, 9, gx + 118, gy + 93, 241, 1, false, true, 1);
+                else d.Track(1, ref d.CS, Math.Min(20, d.CS), Math.Max(70, d.CS), gx + 118, gy + 93, 241, 10, true);
+                if (mania) { bool coopOn = d.CS >= 5; if (!coopOn) d.Coop = false; d.Check(ref d.Coop, gx + 12, gy + 124, "Co-op mode", coopOn); }
+                d.Label(gx + 122, gy + 124, mania ? "1" : "Large");
+                if (!mania) d.Label(gx + 216, gy + 124, "Normal");
+                d.Label(gx + 319, gy + 124, mania ? "9" : "Small", false, null, 36);
+                d.Wrap(gx + 9, gy + 145, 350, mania ? "The column count" : "The radial size of hit circles and sliders");
+                d.Label(gx + 10, gy + 176, "Approach Rate", true, null, 0, !mania);
+                d.Track(2, ref d.AR, 0, 100, gx + 118, gy + 168, 241, 10, true, !mania);
+                d.Label(gx + 122, gy + 196, "Slow", false, null, 0, !mania);
+                d.Label(gx + 327, gy + 196, "Fast", false, null, 28, !mania);
+                d.Wrap(gx + 9, gy + 218, 350, "The speed at which objects appear");
+                d.Label(gx + 10, gy + 250, "Overall Difficulty", true);
+                d.Track(3, ref d.OD, 0, 100, gx + 118, gy + 241, 241, 10, true);
+                d.Label(gx + 122, gy + 270, "Easy");
+                d.Label(gx + 314, gy + 270, "Insane", false, null, 41);
+                d.Wrap(gx + 9, gy + 293, 350, "The harshness of the hit window and the difficulty of spinners");
+                d.Label(gx + 66, gy + 331, "Hold shift for precise difficulty adjustment.");
                 break;
             }
             case 2:
             {
                 float gx = ox + 6, gy = oy + 6;
-                Group(gx, gy, 365, 270, "Default Sample Settings");
+                d.Group(gx, gy, 365, 270, "Default Sample Settings");
                 if (d.SetsDiffer)
                 {
-                    Wrap(gx + 13, gy + 26, 336, "This beatmap has timing-section dependent volume settings.  \nYou can therefore not set beatmap-wide settings here.");
-                    if (Button(gx + 234, gy + 62, 123, 23, "Reset Settings")) { d.SetsDiffer = false; d.Changed = true; }
+                    d.Wrap(gx + 13, gy + 26, 336, "This beatmap has timing-section dependent volume settings.  \nYou can therefore not set beatmap-wide settings here.");
+                    if (d.Button(gx + 234, gy + 62, 123, 23, "Reset Settings")) { d.SetsDiffer = false; d.Changed = true; }
                 }
                 else
                 {
@@ -569,121 +381,103 @@ sealed partial class Editor
                             Game.Text(SampleSets[i], row.X + 2 * s, row.Y + (row.Height - fs) / 2, fs, d.Set == i ? Color.White : text);
                         }
                     }
-                    Check(ref d.Overrides, gx + 153, gy + 22, "Enable custom overrides");
-                    Link(gx + 150, gy + 45, "How to add custom sample overrides");
+                    d.Check(ref d.Overrides, gx + 153, gy + 22, "Enable custom overrides");
+                    d.Link(gx + 150, gy + 45, "How to add custom sample overrides");
                 }
                 if (d.VolumesDiffer)
                 {
-                    Wrap(gx + 12, gy + 105, 345, "This beatmap has timing-section dependent volume settings.  \nYou can therefore not set beatmap-wide settings here.");
-                    if (Button(gx + 234, gy + 141, 123, 23, "Reset Settings")) { d.VolumesDiffer = false; d.Changed = true; }
+                    d.Wrap(gx + 12, gy + 105, 345, "This beatmap has timing-section dependent volume settings.  \nYou can therefore not set beatmap-wide settings here.");
+                    if (d.Button(gx + 234, gy + 141, 123, 23, "Reset Settings")) { d.VolumesDiffer = false; d.Changed = true; }
                 }
                 else
                 {
-                    Label(gx + 8, gy + 101, "Sample Volume");
-                    Track(4, ref d.Volume, 0, 100, gx + 6, gy + 119, 353, 10, false);
+                    d.Label(gx + 8, gy + 101, "Sample Volume");
+                    d.Track(4, ref d.Volume, 0, 100, gx + 6, gy + 119, 353, 10, false, true, 1);
                 }
                 string[] sounds = ["Normal", "Whistle", "Finish", "Clap"];
                 float[] at = [5, 98, 190, 280];
                 for (int i = 0; i < 4; i++)
-                    if (Button(gx + at[i], gy + 170, i == 3 ? 79 : 75, 23, sounds[i]))
+                    if (d.Button(gx + at[i], gy + 170, i == 3 ? 79 : 75, 23, sounds[i]))
                         samples.Play(d.Set + 1, "hit" + sounds[i].ToLowerInvariant(), d.Overrides ? 1 : 0, Math.Max(8, d.Volume));
-                Wrap(gx + 6, gy + 207, 353, "Sample settings (sets and volume) can also be assigned independently for each timing section via the timing setup panel (F6 in the editor).");
+                d.Wrap(gx + 6, gy + 207, 353, "Sample settings (sets and volume) can also be assigned independently for each timing section via the timing setup panel (F6 in the editor).");
                 gy = oy + 282;
-                Group(gx, gy, 365, 44, "Misc. Toggles");
-                Check(ref d.MatchRate, gx + 8, gy + 21, "Samples match playback rate (for fully-hitsounded maps)");
+                d.Group(gx, gy, 365, 44, "Misc. Toggles");
+                d.Check(ref d.MatchRate, gx + 8, gy + 21, "Samples match playback rate (for fully-hitsounded maps)");
                 break;
             }
             case 3:
             {
                 float gx = ox + 3, gy = oy + 3;
-                Group(gx, gy, 365, 202, "Hitcircle/Slider Combos");
+                d.Group(gx, gy, 365, 202, "Hitcircle/Slider Combos");
                 for (int i = 0; i < d.Combos.Count; i++) Colour(i, gx + (i % 2 == 0 ? 7 : 185), gy + 19 + i / 2 * 34, 172, 32, $"Combo {i + 1}", d.Combos[i]);
-                if (d.Combos.Count < 8 && Button(gx + (d.Combos.Count % 2 == 0 ? 7 : 185), gy + 19 + d.Combos.Count / 2 * 34, 172, 32, "New Combo Colour"))
+                if (d.Combos.Count < 8 && d.Button(gx + (d.Combos.Count % 2 == 0 ? 7 : 185), gy + 19 + d.Combos.Count / 2 * 34, 172, 32, "New Combo Colour"))
                 {
                     d.Combos.Add(d.Combos[^1]);
                     d.Pick = d.Combos.Count - 1;
                     d.Changed = true;
                 }
-                if (Button(gx + 185, gy + 164, 172, 32, "Remove Combo Colour", d.Combos.Count > 2)) { d.Combos.RemoveAt(d.Combos.Count - 1); d.Changed = true; }
-                Check(ref d.CustomColours, gx + 12, gy + 171, "Enable Custom Colours");
+                if (d.Button(gx + 185, gy + 164, 172, 32, "Remove Combo Colour", d.Combos.Count > 2)) { d.Combos.RemoveAt(d.Combos.Count - 1); d.Changed = true; }
+                d.Check(ref d.CustomColours, gx + 12, gy + 171, "Enable Custom Colours");
                 gy = oy + 208;
-                Group(gx, gy, 365, 115, "Playfield Background");
+                d.Group(gx, gy, 365, 115, "Playfield Background");
                 Colour(8, gx + 7, gy + 19, 352, 32, "Background Colour", d.Background);
-                Wrap(gx + 6, gy + 57, 353, "Please note that this colour is dimmed in both editor compose mode and in gameplay during playtime.  It will be the exact shade of the chosen colour during breaks.");
+                d.Wrap(gx + 6, gy + 57, 353, "Please note that this colour is dimmed in both editor compose mode and in gameplay during playtime.  It will be the exact shade of the chosen colour during breaks.");
                 break;
             }
             case 4:
             {
                 float gx = ox + 6, gy = oy + 4;
-                Group(gx, gy, 365, 179, "Countdown");
-                Check(ref d.Countdown, gx + 10, gy + 19, "Enable countdown");
+                d.Group(gx, gy, 365, 179, "Countdown");
+                d.Check(ref d.Countdown, gx + 10, gy + 19, "Enable countdown");
                 bool cdOn = d.Countdown;
-                Link(gx + 201, gy + 19, "Customising the countdown");
-                Wrap(gx + 3, gy + 40, 356, "If this is checked, an \"Are you ready? 3, 2, 1, GO!\" countdown will be inserted at the beginning of the beatmap, assuming there is enough time to do so.");
+                d.Link(gx + 201, gy + 19, "Customising the countdown");
+                d.Wrap(gx + 3, gy + 40, 356, "If this is checked, an \"Are you ready? 3, 2, 1, GO!\" countdown will be inserted at the beginning of the beatmap, assuming there is enough time to do so.");
                 float px = gx + 3, py = gy + 90;
-                Label(px + 3, py + 3, "Countdown Speed:", true, null, 0, cdOn);
-                Radio(2, px + 137, py + 1, "Half", cdOn);
-                Radio(1, px + 206, py + 1, "Normal", cdOn);
-                Radio(3, px + 275, py + 1, "Double", cdOn);
-                Label(px + 3, py + 29, "Countdown Offset:", true, null, 0, cdOn);
-                var num = R(px + 137, py + 27, 49, 20);
-                if (act) { if (cdOn && Hit(num)) { int step = mouse.Y < num.Y + num.Height / 2 ? 1 : -1; if (mouse.X > num.X + num.Width - 16 * s) { d.CountdownOffset = Math.Clamp(d.CountdownOffset + step, 0, 3); d.Changed = true; } } }
-                else
-                {
-                    DrawRectangleRec(num, cdOn ? Color.White : face);
-                    DrawRectangleLinesEx(num, 1, new Color(122, 122, 122, 255));
-                    Game.Text(d.CountdownOffset.ToString(Inv), num.X + 3 * s, num.Y + (num.Height - fs) / 2, fs, cdOn ? text : grey);
-                    float ax = num.X + num.Width - 8 * s;
-                    DrawTriangle(new(ax - 3 * s, num.Y + 8 * s), new(ax + 3 * s, num.Y + 8 * s), new(ax, num.Y + 4 * s), cdOn ? text : grey);
-                    DrawTriangle(new(ax - 3 * s, num.Y + 12 * s), new(ax, num.Y + 16 * s), new(ax + 3 * s, num.Y + 12 * s), cdOn ? text : grey);
-                }
-                Wrap(px + 3, py + 50, 340, "If the countdown sounds off-time, use this to make it appear\none or more beats early.", null, cdOn);
+                d.Label(px + 3, py + 3, "Countdown Speed:", true, null, 0, cdOn);
+                d.Radio(ref d.Speed, 2, px + 137, py + 1, "Half", cdOn);
+                d.Radio(ref d.Speed, 1, px + 206, py + 1, "Normal", cdOn);
+                d.Radio(ref d.Speed, 3, px + 275, py + 1, "Double", cdOn);
+                d.Label(px + 3, py + 29, "Countdown Offset:", true, null, 0, cdOn);
+                double offset = d.CountdownOffset;
+                if (d.Numeric(ref offset, 0, 3, 1, "0", px + 137, py + 27, 49, 20, cdOn)) d.CountdownOffset = (int)offset;
+                d.Wrap(px + 3, py + 50, 340, "If the countdown sounds off-time, use this to make it appear\none or more beats early.", null, cdOn);
                 gy = oy + 189;
-                Group(gx, gy, 365, 116, "Misc. Toggles");
-                Check(ref d.Widescreen, gx + 10, gy + 22, "Widescreen Support");
-                Check(ref d.Letterbox, gx + 10, gy + 44, "Letterbox during breaks");
-                Check(ref d.Epilepsy, gx + 10, gy + 66, "Display epilepsy warning (storyboard has quick strobing)");
+                d.Group(gx, gy, 365, 116, "Misc. Toggles");
+                d.Check(ref d.Widescreen, gx + 10, gy + 22, "Widescreen Support");
+                d.Check(ref d.Letterbox, gx + 10, gy + 44, "Letterbox during breaks");
+                d.Check(ref d.Epilepsy, gx + 10, gy + 66, "Display epilepsy warning (storyboard has quick strobing)");
                 gy = oy + 311;
-                Group(gx, gy, 365, 41, "Skinning");
-                Label(gx + 6, gy + 19, "Preferred Skin:");
-                Drop(1, d.Skin.Length > 0 ? d.Skin : d.Skins[0], gx + 95, gy + 16, 263, 21, false);
+                d.Group(gx, gy, 365, 41, "Skinning");
+                d.Label(gx + 6, gy + 19, "Preferred Skin:");
+                d.Drop(1, d.Skin.Length > 0 ? d.Skin : d.Skins[0], gx + 95, gy + 16, 263, 21);
                 break;
             }
             case 5:
             {
                 float gx = ox + 6, gy = oy + 4;
-                Group(gx, gy, 365, 131, "Stacking");
-                Label(gx + 6, gy + 24, "Stack Leniency:", true);
-                Track(5, ref d.Stack, 0, 10, gx + 118, gy + 21, 241, 1, false);
-                Label(gx + 122, gy + 51, "Rarely Stack");
-                Label(gx + 279, gy + 51, "Always Stack", false, null, 75);
-                Wrap(gx + 7, gy + 69, 351, "In play mode, osu! automatically stacks notes which occur at the same location.  Increasing this value means it is more likely to snap notes of further time-distance.");
+                d.Group(gx, gy, 365, 131, "Stacking");
+                d.Label(gx + 6, gy + 24, "Stack Leniency:", true);
+                d.Track(5, ref d.Stack, 0, 10, gx + 118, gy + 21, 241, 1, false);
+                d.Label(gx + 122, gy + 51, "Rarely Stack");
+                d.Label(gx + 279, gy + 51, "Always Stack", false, null, 75);
+                d.Wrap(gx + 7, gy + 69, 351, "In play mode, osu! automatically stacks notes which occur at the same location.  Increasing this value means it is more likely to snap notes of further time-distance.");
                 gy = oy + 141;
-                Group(gx, gy, 365, 158, "Mode Specific");
-                Label(gx + 6, gy + 22, "Allowed Modes:", true);
-                Drop(2, AllowedModes[d.Mode], gx + 118, gy + 19, 236, 21, false);
-                Check(ref d.NPlus1, gx + 8, gy + 45, "Use special style(N+1 style) for mania", d.Mode == 3);
+                d.Group(gx, gy, 365, 158, "Mode Specific");
+                d.Label(gx + 6, gy + 22, "Allowed Modes:", true);
+                d.Drop(2, AllowedModes[d.Mode], gx + 118, gy + 19, 236, 21);
+                d.Check(ref d.NPlus1, gx + 8, gy + 45, "Use special style(N+1 style) for mania", d.Mode == 3);
                 break;
             }
         }
 
-        if (Button(4, 392, 232, 34, "OK", SetupOkOn(d), true)) { SetupOk(); return; }
-        if (Button(242, 392, 139, 34, "Cancel")) { setupDlg = null; return; }
+        if (d.Button(4, 392, 232, 34, "OK", SetupOkOn(d), true)) { SetupOk(); return; }
+        if (d.Button(242, 392, 139, 34, "Cancel")) { setupDlg = null; return; }
 
         // on top: an open drop-down's list, the colour picker
         if (!act && d.Open >= 0)
         {
             var (items, box) = DropItems(d);
-            var all = new Rectangle(box.X, box.Y + box.Height, box.Width, items.Length * 17 * s + 2);
-            DrawRectangleRec(all, Color.White);
-            DrawRectangleLinesEx(all, 1, new Color(100, 100, 100, 255));
-            for (int i = 0; i < items.Length; i++)
-            {
-                var row = DropRow(box, i);
-                bool hover = CheckCollisionPointRec(mouse, row);
-                if (hover) DrawRectangleRec(row, blue);
-                Game.Text(items[i], row.X + 3 * s, row.Y + (row.Height - fs) / 2, fs, hover ? Color.White : text);
-            }
+            d.DrawList(box, items);
         }
         if (!act && d.Pick >= 0)
         {
@@ -709,7 +503,6 @@ sealed partial class Editor
         1 => (d.Skins, SetupRect(4 + 6 + 95, 22 + 311 + 16, 263, 21)),
         _ => (AllowedModes, SetupRect(4 + 6 + 118, 22 + 141 + 19, 236, 21)),
     };
-    static Rectangle DropRow(Rectangle box, int i) { float s = AiS; return new Rectangle(box.X + 1, box.Y + box.Height + 1 + i * 17 * s, box.Width - 2, 17 * s); }
 
     // stable re-ranges circle size for the mode: mania's key count 1-9 (from the map's), the others 2-7
     void ModeChanged(SetupDialog d)
