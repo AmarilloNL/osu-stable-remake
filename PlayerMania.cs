@@ -27,7 +27,9 @@ sealed partial class Player
     int mKeys;
     bool mSplit; // two stages
     KeyboardKey[] mBind = [], mAltBind = [];
-    bool[] mDown = [];
+    bool[] mDown = [], mShownDown = [];
+    double[] mPressedAt = [], mReleasedAt = []; // (the stage's: song time)
+    List<double>? mBars; // the bar lines' times
     // stable's lighting: every judgement that isn't a miss bursts the column's lightingN once at the hit position
     // (in over 80ms, out from 80 to 200ms); a hold being held loops lightingL there (in over 80ms, out over 120ms)
     double[] mLitAt = [], mHoldOnAt = [], mHoldOffAt = [];
@@ -47,7 +49,7 @@ sealed partial class Player
     double mW300g, mW300, mW200, mW100, mW50, mWMiss;
     double mBonus = 100, mScore; // ScoreV1's bonus meter and the running score
     (int Result, double At) mLastJudge = (-1, double.MinValue);
-    double mComboAt = double.MinValue;
+
     // the scroll: distance (units) covered from the map's start up to each red / green point
     readonly List<(double Time, double Dist, double PerMs)> mScroll = [];
 
@@ -136,6 +138,9 @@ sealed partial class Player
         mAltBind = AltKeys(mKeys, mSplit);
         for (int c = 0; c < mAltBind.Length; c++) if (mBind.Contains(mAltBind[c])) mAltBind[c] = KeyboardKey.Null; // (a layout's own column on Ctrl)
         mDown = new bool[mKeys];
+        mShownDown = new bool[mKeys];
+        mPressedAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();
+        mReleasedAt = [.. mPressedAt];
         mStartAt = Game.NowMs;
         mLitAt = Enumerable.Repeat(double.NegativeInfinity, mKeys).ToArray();
         mHoldOnAt = [.. mLitAt]; mHoldOffAt = [.. mLitAt];
@@ -351,7 +356,7 @@ sealed partial class Player
         }
         if (result > 0)
         {
-            combo++; maxCombo = Math.Max(maxCombo, combo); mComboAt = Game.NowMs;
+            combo++; maxCombo = Math.Max(maxCombo, combo);
             if (result < 300 && mods.HasFlag(Mods.Perfect)) Fail(); // (Perfect: 300s and MAXes only)
         }
         else BreakCombo();
@@ -391,7 +396,13 @@ sealed partial class Player
         public string LightingN = "lightingN", LightingL = "lightingL", WarningArrow = "mania-warningarrow";
         public Color KeyWarning = Color.Black; // ColourKeyWarning: the keys' names on them at the start
         public float[] LightingNW = [], LightingLW = []; // (0: the column's width)
-        public Color?[] Colour = [];
+        public Color[] Colour = [], Light = []; // Colour{n}: the column (black), ColourLight{n}: its stage light (white)
+        public float[] LineW = []; // ColumnLineWidth: the lines left of each column and right of the last (2)
+        public Color ColumnLine = Color.White, Barline = Color.White, JudgementLine = Color.White, Hold = new(255, 199, 51, 255), Break = Color.Red;
+        public float BarlineHeight = 1.2f, LightY = 413, NoteScaleW; // NoteScaleW: the width notes take their height from
+        public bool Judgement = true, KeysUnderNotes;
+        public int LightFps = 60;
+        public string StageBottom = "mania-stage-bottom";
         public string StageLeft = "mania-stage-left", StageRight = "mania-stage-right", StageHint = "mania-stage-hint", StageLight = "mania-stage-light";
         public readonly Dictionary<int, string> Hit = new() { [320] = "mania-hit300g", [300] = "mania-hit300", [200] = "mania-hit200", [100] = "mania-hit100", [50] = "mania-hit50", [0] = "mania-hit0" };
         public float Width => X.Length == 0 ? 0 : X[^1] + W[^1];
@@ -412,18 +423,26 @@ sealed partial class Player
                 if (float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f)) a[i] = f;
             return a;
         }
+        bool B(string k, bool def) => M(k) is { } v ? v.Trim() is "1" or "true" or "True" : def;
         var look = new ManiaLook
         {
             Start = F("ColumnStart", 136), HitY = Math.Clamp(F("HitPosition", 402), 240, 480), ScoreY = F("ScorePosition", 325), ComboY = F("ComboPosition", 111),
-            W = List("ColumnWidth", mKeys, 30),
+            W = [.. List("ColumnWidth", mKeys, 30).Select(x => Math.Clamp(x, 5, 100))],
         };
         var spacing = List("ColumnSpacing", mKeys - 1, 0);
-        look.X = new float[mKeys];
-        for (int c = 1; c < mKeys; c++) look.X[c] = look.X[c - 1] + look.W[c - 1] + spacing[c - 1];
+        for (int c = 0; c < spacing.Length; c++) spacing[c] = Math.Max(spacing[c], -look.W[c + 1]); // (stable's: no further back than the next column)
         // two stages: the first has the (larger) half of the columns, the second starts StageSeparation after it
         bool split = mSplit;
         int half = split ? (mKeys + 1) / 2 : mKeys;
         float separation = Math.Max(5, F("StageSeparation", 40));
+        // stable's fit: a stage too wide for the screen (from ColumnStart, keeping ColumnRight free) is narrowed
+        float screenW = Game.W / (Game.H / 480f), right = F("ColumnRight", 19);
+        look.Start = Math.Min(look.Start, screenW - right);
+        float total = look.W.Sum() + spacing.Sum() + (split ? separation : 0), over = Math.Max(0, look.Start + total + Math.Min(right, screenW - look.Start) - screenW);
+        float fit = total > 0 ? (total - over) / total : 1;
+        if (fit < 1) { for (int c = 0; c < mKeys; c++) look.W[c] *= fit; for (int c = 0; c < spacing.Length; c++) spacing[c] *= fit; separation *= fit; }
+        look.X = new float[mKeys];
+        for (int c = 1; c < mKeys; c++) look.X[c] = look.X[c - 1] + look.W[c - 1] + spacing[c - 1];
         for (int c = half; c < mKeys; c++) look.X[c] += separation;
         look.Stages = split ? [(0, look.X[half - 1] + look.W[half - 1]), (look.X[half], look.Width - look.X[half])] : [(0, look.Width)];
         string[] Per(Func<int, string> name, Func<int, string> def) => Enumerable.Range(0, mKeys).Select(c => M(name(c)) ?? def(c)).ToArray();
@@ -433,7 +452,22 @@ sealed partial class Player
         look.NoteT = Per(c => $"NoteImage{c}T", c => $"mania-note{ManiaColumnKind(c)}T");
         look.Key = Per(c => $"KeyImage{c}", c => $"mania-key{ManiaColumnKind(c)}");
         look.KeyD = Per(c => $"KeyImage{c}D", c => $"mania-key{ManiaColumnKind(c)}D");
-        look.Colour = Enumerable.Range(0, mKeys).Select(c => M($"Colour{c + 1}") is { } v ? ParseRgba(v) : null).ToArray();
+        Color Colour(string k, Color def) => M(k) is { } v && ParseRgba(v) is { } cv ? cv : def;
+        look.Colour = [.. Enumerable.Range(0, mKeys).Select(c => Colour($"Colour{c + 1}", Color.Black))];
+        look.Light = [.. Enumerable.Range(0, mKeys).Select(c => Colour($"ColourLight{c + 1}", Color.White))];
+        look.ColumnLine = Colour("ColourColumnLine", look.ColumnLine);
+        look.Barline = Colour("ColourBarline", look.Barline);
+        look.JudgementLine = Colour("ColourJudgementLine", look.JudgementLine);
+        look.Hold = Colour("ColourHold", look.Hold);
+        look.Break = Colour("ColourBreak", look.Break);
+        look.LineW = [.. List("ColumnLineWidth", mKeys + 1, 2).Select(x => x > 0 && x < 2 ? 2 : x)]; // (stable: under 2 counts as 2, 0 as none)
+        look.BarlineHeight = F("BarlineHeight", 1.2f);
+        look.LightY = F("LightPosition", 413);
+        look.LightFps = (int)F("LightFramePerSecond", 60) is > 0 and var fps ? fps : 24;
+        look.Judgement = B("JudgementLine", true);
+        look.KeysUnderNotes = B("KeysUnderNotes", false);
+        look.NoteScaleW = F("WidthForNoteHeightScale", 0) is > 0 and var ns ? ns : look.W.Min();
+        look.StageBottom = M("StageBottom") ?? look.StageBottom;
         look.StageLeft = M("StageLeft") ?? look.StageLeft;
         look.StageRight = M("StageRight") ?? look.StageRight;
         look.StageHint = M("StageHint") ?? look.StageHint;
@@ -466,21 +500,89 @@ sealed partial class Player
         UpdateComboBursts();
         DrawManiaBursts(look, left, u, sd, h, alpha);
 
+        // (presses and releases as the stage shows them, in song time)
         for (int c = 0; c < mKeys; c++)
-            DrawRectangle((int)(left + look.X[c] * u), 0, (int)Math.Ceiling(look.W[c] * u), h, look.Colour[c] is { } cc ? ColorAlpha(cc, cc.A / 255f * alpha) : ColorAlpha(Color.Black, 0.8f * alpha));
+            if (mDown[c] != mShownDown[c]) { mShownDown[c] = mDown[c]; if (mDown[c]) mPressedAt[c] = time; else mReleasedAt[c] = time; }
+        Color A(Color c, float a = 1) => ColorAlpha(c, c.A / 255f * a * alpha);
+        static Rectangle Src(Sprite sp) => new(0, 0, sp.Tex.Width, sp.Tex.Height);
+
+        // stable's stage, back to front. The columns (Colour{n}: black) and their lines (ColumnLineWidth, 0.74 of it wide;
+        // ColourColumnLine) down to the hit position: left of each column, right of the last and (skins from 2.4) right of
+        // any with a line after it
+        for (int c = 0; c < mKeys; c++)
+            DrawRectangleRec(new Rectangle(left + look.X[c] * u, 0, look.W[c] * u, h), A(look.Colour[c]));
+        for (int c = 0; c < mKeys; c++)
+        {
+            float x = left + look.X[c] * u, cw = look.W[c] * u;
+            if (look.LineW[c] > 0) DrawRectangleRec(new Rectangle(x, 0, 0.74f * look.LineW[c] * sd, hitY * u), A(look.ColumnLine));
+            if (look.LineW[c + 1] > 0 && skin.Version >= 2.4 || c == mKeys - 1)
+                DrawRectangleRec(new Rectangle(x + cw - (c == mKeys - 1 ? 0.1f * u : 0), 0, 0.74f * look.LineW[c + 1] * sd, hitY * u), A(look.ColumnLine));
+        }
+        // the hint across the hit position (0.9 alpha, 1.6026 x 0.9 its height) and the judgement line just under it
+        foreach (var (stX, stW) in look.Stages)
+        {
+            float sl0 = left + stX * u, sw = stW * u * 1.6026f / 1.6f;
+            if (skin.Tex(look.StageHint) is { } hint)
+            {
+                float hh = hint.Height * 0.9f * 1.6026f * sd;
+                DrawTexturePro(hint.Tex, Src(hint), new Rectangle(sl0, hitY * u - hh / 2, sw, hh), Vector2.Zero, 0, ColorAlpha(Color.White, 0.9f * alpha));
+            }
+            if (look.Judgement) DrawRectangleRec(new Rectangle(sl0, hitY * u, sw, 0.7f * 1.6026f * sd), A(look.JudgementLine, 0.9f));
+        }
+        // the stage lights (StageLight, ColourLight{n}): on a press, standing on LightPosition at the image's height; let
+        // go, they fade and sink to nothing over 400ms
+        var lights = skin.Animation(look.StageLight, true);
+        for (int c = 0; c < mKeys && lights.Length > 0; c++)
+        {
+            float la = mShownDown[c] ? 1 : 1 - (float)Math.Clamp((time - mReleasedAt[c]) / (400 / rate), 0, 1);
+            if (la <= 0) continue;
+            var fr = lights[(int)(Math.Max(0, time - mPressedAt[c]) / (1000.0 / look.LightFps)) % lights.Length];
+            float lh = fr.Height * sd * la;
+            DrawTexturePro(fr.Tex, Src(fr), new Rectangle(left + look.X[c] * u, look.LightY * u - lh, look.W[c] * u, lh), Vector2.Zero, 0, A(look.Light[c], la));
+        }
+        // the keys (KeyImage{n}, as wide as the column at their own height), pressed for 80ms after a release too; under
+        // the notes with KeysUnderNotes, else over them
+        void Keys()
+        {
+            for (int c = 0; c < mKeys; c++)
+            {
+                float x = left + look.X[c] * u, cw = look.W[c] * u;
+                bool lit = mShownDown[c] || time - mReleasedAt[c] < 80;
+                if (((lit ? skin.Tex(look.KeyD[c]) : null) ?? skin.Tex(look.Key[c])) is not { } k) continue;
+                float kh = k.Height * sd;
+                DrawTexturePro(k.Tex, Src(k), new Rectangle(x, h - kh, cw, kh), Vector2.Zero, 0, tint);
+                // stable: the column's key on it as the play starts, fading out from 0.5 to 3.5 seconds (not watching)
+                double shown = Game.NowMs - mStartAt;
+                if (playback == null && !auto && shown < 3500 && c < mBind.Length && mBind[c] != KeyboardKey.Null)
+                {
+                    string name = KeyName(mBind[c]);
+                    float size = look.W[c] / 2 * u, ka = shown < 500 ? 1 : 1 - (float)((shown - 500) / 3000);
+                    Game.TextBold(name, x + cw / 2 - Game.TextWidth(name, size) / 2, h - kh / 2 - size / 2, size, ColorAlpha(look.KeyWarning, look.KeyWarning.A / 255f * ka * alpha));
+                }
+            }
+        }
+        if (look.KeysUnderNotes) Keys();
         foreach (var (stX, stW) in look.Stages)
         {
             float sl0 = left + stX * u;
-            if (skin.Tex(look.StageLeft) is { } sl) DrawTexturePro(sl.Tex, new Rectangle(0, 0, sl.Tex.Width, sl.Tex.Height), new Rectangle(sl0 - sl.Width * sd, 0, sl.Width * sd, h), Vector2.Zero, 0, tint);
-            if (skin.Tex(look.StageRight) is { } sr) DrawTexturePro(sr.Tex, new Rectangle(0, 0, sr.Tex.Width, sr.Tex.Height), new Rectangle(sl0 + stW * u, 0, sr.Width * sd, h), Vector2.Zero, 0, tint);
-            if (skin.Tex(look.StageHint) is { } hint)
-                DrawTexturePro(hint.Tex, new Rectangle(0, 0, hint.Tex.Width, hint.Tex.Height), new Rectangle(sl0, hitY * u - hint.Height * sd / 2, stW * u, hint.Height * sd), Vector2.Zero, 0, tint);
-            else DrawRectangle((int)sl0, (int)(hitY * u), (int)(stW * u), 2, tint);
+            if (skin.Tex(look.StageLeft) is { } sl) DrawTexturePro(sl.Tex, Src(sl), new Rectangle(sl0 - sl.Width * sd, 0, sl.Width * sd, h), Vector2.Zero, 0, tint);
+            if (skin.Tex(look.StageRight) is { } sr) DrawTexturePro(sr.Tex, Src(sr), new Rectangle(sl0 + stW * u, 0, sr.Width * sd, h), Vector2.Zero, 0, tint);
         }
-        for (int c = 1; c < mKeys; c++)
-            if (look.Stages.All(s => Math.Abs(s.X - look.X[c]) > 0.01f)) DrawRectangle((int)(left + look.X[c] * u), 0, 1, (int)(hitY * u), ColorAlpha(Color.White, 0.15f * alpha));
 
         double now = ManiaDist(time);
+        // the bar lines (ColourBarline, BarlineHeight thick), scrolling like notes; IgnoreBarline leaves them out
+        if (!Config.GetBool("IgnoreBarline", false))
+        {
+            mBars ??= ManiaBars();
+            float bh = look.BarlineHeight * sd;
+            foreach (double bt in mBars)
+            {
+                float y = hitY - (float)(ManiaDist(bt) - now);
+                if (y > 490) continue;
+                if (y < -10) break;
+                foreach (var (stX, stW) in look.Stages) DrawRectangleRec(new Rectangle(left + stX * u, y * u - bh / 2, stW * u, bh), A(look.Barline));
+            }
+        }
         // stable's warning arrows: down the middle of the stage like notes, 1, 2 and 3 seconds before the first one (not
         // before the first timing point); skins from 2.4 size them to the columns (at most 1x)
         if (mNotes.Count > 0 && mScroll.Count > 0 && skin.Tex(look.WarningArrow) is { } arrow)
@@ -494,6 +596,7 @@ sealed partial class Player
                 foreach (var (stX, stW) in look.Stages) arrow.Draw(new(left + (stX + stW / 2) * u, y * u - arrow.Height * scale / 2), scale, tint);
             }
         }
+        float noteScale = look.NoteScaleW * u; // (the width notes take their height from)
         for (int c = 0; c < mKeys; c++)
         {
             float x = left + look.X[c] * u, cw = look.W[c] * u;
@@ -508,29 +611,21 @@ sealed partial class Player
                     float yHead = n.Holding && !n.Done ? hitY : y;
                     var bodyTint = ColorAlpha(n.Broken || n.Done ? Color.Gray : Color.White, alpha);
                     if ((skin.AnimFrame(look.NoteL[c], Game.NowMs) ?? skin.Tex(look.NoteL[c])) is { } body)
-                        DrawTexturePro(body.Tex, new Rectangle(0, 0, body.Tex.Width, body.Tex.Height), new Rectangle(x, yEnd * u, cw, Math.Max(0, (yHead - yEnd) * u)), Vector2.Zero, 0, bodyTint);
-                    ManiaNote(skin.Tex(look.NoteT[c]) ?? skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yEnd * u, cw, bodyTint, flipY: skin.Tex(look.NoteT[c]) == null);
-                    ManiaNote(skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yHead * u, cw, bodyTint);
+                        DrawTexturePro(body.Tex, Src(body), new Rectangle(x, yEnd * u, cw, Math.Max(0, (yHead - yEnd) * u)), Vector2.Zero, 0, bodyTint);
+                    ManiaNote(skin.Tex(look.NoteT[c]) ?? skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yEnd * u, cw, noteScale, bodyTint, flipY: skin.Tex(look.NoteT[c]) == null);
+                    ManiaNote(skin.Tex(look.NoteH[c]) ?? skin.Tex(look.Note[c]), x, yHead * u, cw, noteScale, bodyTint);
                 }
-                else ManiaNote(skin.AnimFrame(look.Note[c], Game.NowMs) ?? skin.Tex(look.Note[c]), x, y * u, cw, tint);
+                else ManiaNote(skin.AnimFrame(look.Note[c], Game.NowMs) ?? skin.Tex(look.Note[c]), x, y * u, cw, noteScale, tint);
             }
-            // the key at the bottom, lit while held
-            var key = (mDown[c] ? skin.Tex(look.KeyD[c]) : null) ?? skin.Tex(look.Key[c]);
-            if (key is { } k)
-            {
-                float kh = k.Height * (cw / k.Width);
-                DrawTexturePro(k.Tex, new Rectangle(0, 0, k.Tex.Width, k.Tex.Height), new Rectangle(x, h - kh, cw, kh), Vector2.Zero, 0, tint);
-                // stable: the column's key on it as the play starts, fading out from 0.5 to 3.5 seconds (not watching)
-                double shown = Game.NowMs - mStartAt;
-                if (playback == null && !auto && shown < 3500 && c < mBind.Length && mBind[c] != KeyboardKey.Null)
-                {
-                    string name = KeyName(mBind[c]);
-                    float size = look.W[c] / 2 * u, ka = shown < 500 ? 1 : 1 - (float)((shown - 500) / 3000);
-                    Game.TextBold(name, x + cw / 2 - Game.TextWidth(name, size) / 2, h - kh / 2 - size / 2, size, ColorAlpha(look.KeyWarning, look.KeyWarning.A / 255f * ka * alpha));
-                }
-            }
-            if (mDown[c] && skin.Tex(look.StageLight) is { } light)
-                DrawTexturePro(light.Tex, new Rectangle(0, 0, light.Tex.Width, light.Tex.Height), new Rectangle(x, hitY * u - light.Height * sd * 1.6f, cw, light.Height * sd * 1.6f), Vector2.Zero, 0, ColorAlpha(Color.White, 0.6f * alpha));
+        }
+        if (!look.KeysUnderNotes) Keys();
+        // the stage's bottom (StageBottom, 1.6x, 60fps) over the keys
+        if (skin.Animation(look.StageBottom, true) is { Length: > 0 } bottom)
+        {
+            var bf = bottom[(int)(Game.NowMs / 16.666666) % bottom.Length];
+            float bw = bf.Width * 1.6f * sd, bh2 = bf.Height * 1.6f * sd;
+            foreach (var (stX, stW) in look.Stages)
+                DrawTexturePro(bf.Tex, Src(bf), new Rectangle(left + (stX + stW / 2) * u - bw / 2, h - bh2, bw, bh2), Vector2.Zero, 0, tint);
         }
 
         DrawManiaLighting(look, left, u, sd, alpha);
@@ -580,13 +675,80 @@ sealed partial class Player
             foreach (var (stX, stW) in look.Stages) // (each stage shows it)
                 (skin.AnimFrame(name, age) ?? skin.Tex(name))?.Draw(new(left + (stX + stW / 2) * u, look.ScoreY * u), sd * scale, ColorAlpha(Color.White, alpha * a), rot * 180 / MathF.PI);
         }
-        if (combo > 0)
-        {
-            string text = combo.ToString();
-            float size = 32 * u * (Game.NowMs - mComboAt < 80 ? 1.15f : 1);
-            foreach (var (stX, stW) in look.Stages) Game.TextBold(text, left + (stX + stW / 2) * u - Game.TextWidth(text, size) / 2, look.ComboY * u, size, tint);
-        }
+        ManiaCombo(look, left, u, sd, alpha);
         DrawManiaStars(u, sd, alpha);
+    }
+
+    // stable's mania combo: the skin's combo font centred on each stage at ComboPosition (skins from 2.4 sized to the
+    // columns, at most 1x; older ones 1.28x). It counts up a step a frame, each step stretching it 1.4x tall to settle
+    // over 300ms; it takes the hold colour (ColourHold) over 300ms while a hold note is held. A break leaves the old
+    // number showing as it fades (120ms) and throws a copy off in ColourBreak, growing 4x and fading over 200ms.
+    int mComboShown;
+    bool mComboVisible, mComboBreakArmed, mComboHolding;
+    double mComboStepAt = double.NegativeInfinity, mComboVisibleAt = double.NegativeInfinity, mComboHoldAt = double.NegativeInfinity;
+    readonly List<(string Text, double At)> mComboBreaks = [];
+
+    void ManiaCombo(ManiaLook look, float left, float u, float sd, float alpha)
+    {
+        double now = Game.NowMs;
+        if (combo > mComboShown) { mComboShown++; mComboStepAt = now; mComboBreakArmed = true; }
+        else if (combo < mComboShown)
+        {
+            if (combo != 0) mComboShown = combo;
+            else if (mComboBreakArmed) { mComboBreakArmed = false; mComboBreaks.Add((mComboShown.ToString(), now)); }
+        }
+        if (mComboShown > 0 && !mComboVisible) { mComboVisible = true; mComboVisibleAt = now; }
+        else if (mComboVisible && combo == 0) { mComboVisible = false; mComboVisibleAt = now; }
+        bool holding = mHoldLit.Any(x => x);
+        if (holding != mComboHolding) { mComboHolding = holding; mComboHoldAt = now; }
+        float hold = (float)Math.Clamp((now - mComboHoldAt) / 300, 0, 1);
+        if (!mComboHolding) hold = 1 - hold;
+        var colour = new Color((byte)(255 + (look.Hold.R - 255) * hold), (byte)(255 + (look.Hold.G - 255) * hold), (byte)(255 + (look.Hold.B - 255) * hold), (byte)255);
+        float shown = (float)Math.Clamp((now - mComboVisibleAt) / 120, 0, 1), a = mComboVisible ? shown : 1 - shown;
+        float scale = skin.Version >= 2.4 ? Math.Min(look.W.Average() / 30, 1) : 1.28f;
+        float stretch = 1 + 0.4f * (1 - (float)Easing.Apply(1, Math.Clamp((now - mComboStepAt) / 300, 0, 1)));
+        float glyph = skin.Glyph(skin.ComboPrefix, '0')?.Height ?? 0;
+        void Draw(string text, float s, float sy, Color c)
+        {
+            foreach (var (stX, stW) in look.Stages)
+            {
+                float cx = left + (stX + stW / 2) * u, cy = look.ComboY * u;
+                if (!skin.DrawFont(skin.ComboPrefix, skin.ComboOverlap, text, cx, cy - glyph * s * sd * sy / 2, s * sd, 0.5f, c, scaleY: sy))
+                {
+                    float size = 32 * u * s;
+                    Game.TextBold(text, cx - Game.TextWidth(text, size) / 2, cy - size * sy / 2, size, c);
+                }
+            }
+        }
+        if (a > 0 && mComboShown > 0) Draw(mComboShown.ToString(), scale, stretch, ColorAlpha(colour, a * alpha));
+        mComboBreaks.RemoveAll(b => now - b.At > 200);
+        foreach (var (text, at) in mComboBreaks)
+        {
+            float t = (float)((now - at) / 200);
+            Draw(text, 1 + 3 * t, 1, ColorAlpha(look.Break, look.Break.A / 255f * 0.8f * (1 - t) * alpha));
+        }
+    }
+
+    // stable's bar lines: from each red point a meter's worth of beats apart up to the next (its first left out where
+    // it omits it), the last running to the end of the notes
+    List<double> ManiaBars()
+    {
+        var bars = new List<double>();
+        var reds = map.TimingPoints.Where(p => p.Uninherited && p.BeatLength >= 0).OrderBy(p => p.Time).ToList();
+        double end = mNotes.Count > 0 ? mNotes.Max(n => n.Hold ? n.End : n.Time) + 1 : 0;
+        for (int j = 0; j < reds.Count; j++)
+        {
+            double to = j + 1 < reds.Count ? reds[j + 1].Time - 1 : end;
+            for (double t = reds[j].Time; t < to;)
+            {
+                if (t > reds[j].Time || !reds[j].OmitFirstBarLine) bars.Add(t);
+                double step = reds[j].BeatLength * reds[j].Meter;
+                if (step < 0.001) break;
+                t += step;
+            }
+        }
+        bars.Sort();
+        return bars;
     }
 
     void ManiaBurst()
@@ -685,10 +847,12 @@ sealed partial class Player
         EndBlendMode();
     }
 
-    void ManiaNote(Sprite? s, float x, float bottomY, float cw, Color tint, bool flipY = false)
+    // a note: as wide as its column, as tall as the image is at scaleW wide (stable: the narrowest column's width, or
+    // WidthForNoteHeightScale)
+    void ManiaNote(Sprite? s, float x, float bottomY, float cw, float scaleW, Color tint, bool flipY = false)
     {
         if (s is not { } n) return;
-        float nh = n.Height * (cw / n.Width);
+        float nh = n.Height * (scaleW / n.Width);
         DrawTexturePro(n.Tex, new Rectangle(0, 0, n.Tex.Width, flipY ? -n.Tex.Height : n.Tex.Height), new Rectangle(x, bottomY - nh, cw, nh), Vector2.Zero, 0, tint);
     }
 

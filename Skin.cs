@@ -122,7 +122,7 @@ sealed class Skin
 
     // Draws text with a skin number font (score-0.png ...). alignX: 0 = left edge at x, 1 = right edge at x.
     // Returns false (drawing nothing) if the skin lacks a glyph, so callers can fall back to plain text.
-    public bool DrawFont(string prefix, float overlap, string text, float x, float y, float scale, float alignX, Color tint, bool constant = false)
+    public bool DrawFont(string prefix, float overlap, string text, float x, float y, float scale, float alignX, Color tint, bool constant = false, float scaleY = 1)
     {
         float total = 0;
         foreach (char c in text)
@@ -135,8 +135,9 @@ sealed class Skin
         foreach (char c in text)
         {
             var g = Glyph(prefix, c)!.Value;
-            float cell = Advance(prefix, c, g, constant) * scale, gh = g.Height * scale;
-            g.Draw(new Vector2(cx + cell / 2, y + gh / 2), scale, tint);
+            float cell = Advance(prefix, c, g, constant) * scale, gh = g.Height * scale * scaleY;
+            if (scaleY == 1) g.Draw(new Vector2(cx + cell / 2, y + gh / 2), scale, tint);
+            else DrawTexturePro(g.Tex, new Rectangle(0, 0, g.Tex.Width, g.Tex.Height), new Rectangle(cx + cell / 2 - g.Width * scale / 2, y, g.Width * scale, gh), Vector2.Zero, 0, tint); // (stretched tall)
             cx += cell - overlap * scale;
         }
         return true;
