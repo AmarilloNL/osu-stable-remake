@@ -180,7 +180,6 @@ sealed partial class Editor
     // velocity 0.1, Ctrl 0.01, 0.4 - 3.6; tick rate 1 to 4 in whole steps). "Move already placed notes" (on) takes the
     // section's objects along: an offset change shifts them, a BPM change stretches them from the offset. Its button on
     // the right, a click on the BPM or offset, or F6 open the timing setup panel (the table) instead.
-    bool timingPanel;
     bool moveNotes = true;
     static readonly float[] RowY = [120, 186, 276, 306];
     static readonly string[] RowLabels = ["BPM:", "Offset:", "Slider Velocity:", "Slider Tick Rate:"];
@@ -203,8 +202,8 @@ sealed partial class Editor
 
     void UpdateTimingView(Vector2 mouse)
     {
-        if (CheckCollisionPointRec(mouse, TimingPic("editor-timing-manual", 455, 146))) { timingPanel = true; return; }
-        for (int v = 0; v < 2; v++) if (TimedSection != null && CheckCollisionPointRec(mouse, RowValue(v))) { timingSel = timing.IndexOf(TimedSection); timingPanel = true; return; }
+        if (CheckCollisionPointRec(mouse, TimingPic("editor-timing-manual", 455, 146))) { OpenTimingDialog(); return; }
+        for (int v = 0; v < 2; v++) if (TimedSection != null && CheckCollisionPointRec(mouse, RowValue(v))) { OpenTimingDialog(); return; }
         if (CheckCollisionPointRec(mouse, MoveNotesBox()))
         {
             moveNotes = !moveNotes;

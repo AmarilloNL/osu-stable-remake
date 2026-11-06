@@ -20,7 +20,9 @@ sealed partial class Editor
         public string[] Text = new string[8]; // artist, romanised artist, title, romanised title, creator, difficulty, source, tags
         public int HP, CS, AR, OD, Volume, Stack, Mode, OldMode, Speed, CountdownOffset, Set; // (Speed: the countdown's, 1 normal, 2 half, 3 double)
         public bool Countdown, Coop, Overrides, MatchRate, CustomColours, Letterbox, Widescreen, Epilepsy, NPlus1, SetsDiffer, VolumesDiffer;
-        public List<Color> Combos = [];
+        public List<Color> Combos = [], OpenCombos = [];
+        public int OpenSet, OpenVolume;
+        public bool OpenOverrides, OpenCustom;
         public Color Background;
         public string Skin = "";
         public string[] Skins = [];
@@ -51,17 +53,19 @@ sealed partial class Editor
         d.Stack = (int)Math.Max(0, Math.Round((double.TryParse(General("StackLeniency", "0.7"), NumberStyles.Float, Inv, out double sl) ? sl : 0.7) * 10));
         d.Set = Math.Max(0, Array.IndexOf(SampleSets, General("SampleSet", "Normal")));
         d.Overrides = timing.Count > 0 && timing[0].Index == 1;
-        d.Volume = timing.Count > 0 ? timing[0].Volume : 100;
+        d.Volume = timing.Count > 0 ? Math.Max(5, timing[0].Volume) : 100;
+        (d.OpenSet, d.OpenOverrides, d.OpenVolume) = (d.Set, d.Overrides, d.Volume);
         d.SetsDiffer = timing.Any(p => p.Set != timing[0].Set || p.Index != timing[0].Index || p.Index >= 2);
         d.VolumesDiffer = timing.Any(p => p.Volume != timing[0].Volume);
         d.MatchRate = General("SamplesMatchPlaybackRate", "0") == "1";
         // the colour buttons start from the first combo's (stable's Combo2, Combo1 last), at least two
-        var combos = ComboColours().Select(c => new Color(c.R, c.G, c.B, 255)).ToList();
+        var combos = Colours.Take(8).ToList();
         while (combos.Count < 2) combos.Add(new Color(240, 240, 240, 255));
         combos.Add(combos[0]);
         combos.RemoveAt(0);
         d.Combos = combos;
-        d.CustomColours = ComboColours().Count > 0;
+        d.OpenCombos = [.. combos];
+        d.CustomColours = d.OpenCustom = ComboColours().Count > 0;
         d.Background = BackgroundColour() ?? Color.Black;
         int cd = int.TryParse(General("Countdown", "1"), out int c0) ? Math.Clamp(c0, 0, 3) : 1;
         d.Countdown = cd > 0;
@@ -136,16 +140,18 @@ sealed partial class Editor
             Diff("ApproachRate", info.AR < 0 ? info.OD : info.AR, d.AR, 10);
             Diff("OverallDifficulty", info.OD, d.OD, 10);
             Set("General", "SampleSet", SampleSets[d.Set], "Normal");
+            // (the timing points only when their set or volume was changed here)
             int set = d.Set + 1;
+            bool sets = !d.SetsDiffer && (d.Set != d.OpenSet || d.Overrides != d.OpenOverrides), volumes = !d.VolumesDiffer && d.Volume != d.OpenVolume;
             foreach (var p in timing)
             {
                 bool changed = false;
-                if (!d.SetsDiffer && (p.Set != set || p.Index != (d.Overrides ? 1 : 0))) { p.Set = set; p.Index = d.Overrides ? 1 : 0; changed = true; }
-                if (!d.VolumesDiffer && p.Volume != d.Volume) { p.Volume = d.Volume; changed = true; }
+                if (sets && (p.Set != set || p.Index != (d.Overrides ? 1 : 0))) { p.Set = set; p.Index = d.Overrides ? 1 : 0; changed = true; }
+                if (volumes && p.Volume != d.Volume) { p.Volume = d.Volume; changed = true; }
                 if (changed) p.Raw = null;
             }
             Set("General", "SamplesMatchPlaybackRate", d.MatchRate ? "1" : "0", "0");
-            if (d.CustomColours)
+            if (d.CustomColours && (!d.OpenCustom || !d.Combos.SequenceEqual(d.OpenCombos)))
             {
                 var list = d.Combos.ToList();
                 list.Insert(0, list[^1]);
@@ -153,7 +159,7 @@ sealed partial class Editor
                 var now = list.Select(c => ((int)c.R, (int)c.G, (int)c.B)).ToList();
                 if (!now.SequenceEqual(ComboColours())) SetComboColours(now);
             }
-            else if (ComboColours().Count > 0) SetComboColours([]);
+            else if (!d.CustomColours && d.OpenCustom) SetComboColours([]);
             if (BackgroundColour() is var bg && (bg ?? Color.Black) is var was && (was.R, was.G, was.B) != (d.Background.R, d.Background.G, d.Background.B))
             {
                 var ev = EventsSection.Lines;
@@ -213,7 +219,7 @@ sealed partial class Editor
     }
 
     static bool BoxOn(SetupDialog d, int i) => i switch { 1 => !Ascii(d.Text[0]), 3 => !Ascii(d.Text[2]), _ => true };
-    static bool SetupOkOn(SetupDialog d) => d.Text[2].Length > 0 && d.Text[0].Length > 0 && d.Text[5].Length > 0 && d.Text[4].Length > 0;
+    static bool SetupOkOn(SetupDialog d) => d.Text[2].Length > 0 && d.Text[0].Length > 0 && d.Text[5].Length > 0 && d.Text[4].Length > 0 && d.Text[1].Length > 0 && d.Text[3].Length > 0;
 
     static void TextChanged(SetupDialog d, int i)
     {
@@ -254,7 +260,7 @@ sealed partial class Editor
                 {
                     if (d.Open == 0) { d.Text[5] = items[i]; d.Changed = true; }
                     if (d.Open == 1) { d.Skin = i == 0 ? "" : items[i]; d.Changed = true; }
-                    if (d.Open == 2 && d.Mode != i) { d.Mode = i; ModeChanged(d); d.Changed = true; }
+                    if (d.Open == 2 && d.Mode != i) { int was = d.Mode; d.Mode = i; ModeChanged(d, was); d.Changed = true; }
                 }
             d.Open = -1;
             return;
@@ -266,7 +272,7 @@ sealed partial class Editor
                 {
                     uint c = BasicColours[i];
                     var col = new Color((int)(c >> 16 & 0xFF), (int)(c >> 8 & 0xFF), (int)(c & 0xFF), 255);
-                    if (d.Pick == 8) d.Background = col; else d.Combos[d.Pick] = col;
+                    if (d.Pick == 8) d.Background = col; else if (d.Pick == d.Combos.Count) d.Combos.Add(col); else d.Combos[d.Pick] = col;
                     d.Changed = true;
                 }
             d.Pick = -1;
@@ -392,7 +398,7 @@ sealed partial class Editor
                 else
                 {
                     d.Label(gx + 8, gy + 101, "Sample Volume");
-                    d.Track(4, ref d.Volume, 0, 100, gx + 6, gy + 119, 353, 10, false, true, 1);
+                    d.Track(4, ref d.Volume, 5, 100, gx + 6, gy + 119, 353, 10, false, true, 1);
                 }
                 string[] sounds = ["Normal", "Whistle", "Finish", "Clap"];
                 float[] at = [5, 98, 190, 280];
@@ -411,11 +417,7 @@ sealed partial class Editor
                 d.Group(gx, gy, 365, 202, "Hitcircle/Slider Combos");
                 for (int i = 0; i < d.Combos.Count; i++) Colour(i, gx + (i % 2 == 0 ? 7 : 185), gy + 19 + i / 2 * 34, 172, 32, $"Combo {i + 1}", d.Combos[i]);
                 if (d.Combos.Count < 8 && d.Button(gx + (d.Combos.Count % 2 == 0 ? 7 : 185), gy + 19 + d.Combos.Count / 2 * 34, 172, 32, "New Combo Colour"))
-                {
-                    d.Combos.Add(d.Combos[^1]);
-                    d.Pick = d.Combos.Count - 1;
-                    d.Changed = true;
-                }
+                    d.Pick = d.Combos.Count; // (added once a colour is picked)
                 if (d.Button(gx + 185, gy + 164, 172, 32, "Remove Combo Colour", d.Combos.Count > 2)) { d.Combos.RemoveAt(d.Combos.Count - 1); d.Changed = true; }
                 d.Check(ref d.CustomColours, gx + 12, gy + 171, "Enable Custom Colours");
                 gy = oy + 208;
@@ -505,9 +507,9 @@ sealed partial class Editor
     };
 
     // stable re-ranges circle size for the mode: mania's key count 1-9 (from the map's), the others 2-7
-    void ModeChanged(SetupDialog d)
+    void ModeChanged(SetupDialog d, int was)
     {
         if (d.Mode == 3) d.CS = (int)Math.Round(Math.Clamp(info.CS / (d.Coop ? 2 : 1), 1, 9));
-        else if (d.OldMode == 3 && d.CS < 20) d.CS = (int)Math.Round(Math.Clamp(info.CS, 0, 10) * 10);
+        else if (was == 3) d.CS = (int)Math.Round(Math.Clamp(info.CS, 0, 10) * 10);
     }
 }

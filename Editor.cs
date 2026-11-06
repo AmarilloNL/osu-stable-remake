@@ -511,10 +511,12 @@ sealed partial class Editor : Screen
         var mouse = EMouse;
         float u = U;
         KeepBreaksAfterDrag();
+        if (exitPrompt != null || xform != null || prompt != null || bmsWindow != null || poly != null || setupDlg != null || timingDlg != null) lastSoundTime = double.NaN; // (the clock stops under a window: its hitsounds aren't all played after)
         if (exitPrompt != null) { UpdateExitPrompt(raw); return; }
         if (xform != null) { UpdateXform(mouse); return; }
         if (prompt != null) { UpdatePrompt(mouse); return; }
         if (setupDlg != null) { UpdateSetupDialog(mouse); return; }
+        if (timingDlg != null) { UpdateTimingDialog(mouse); return; }
         if (bmsWindow != null) { UpdateBmsImport(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
         if (UpdateMenu(raw)) return;
@@ -554,7 +556,7 @@ sealed partial class Editor : Screen
         if (Input.IsKeyPressed(KeyboardKey.F2)) SetTab(3);
         if (Input.IsKeyPressed(KeyboardKey.F3)) SetTab(1);
         if (Input.IsKeyPressed(KeyboardKey.F4)) SetTab(2);
-        if (Input.IsKeyPressed(KeyboardKey.F6)) { if (tab == 1) timingPanel = !timingPanel; else { SetTab(1); timingPanel = tab == 1; } } // (stable's Timing Setup Panel)
+        if (Input.IsKeyPressed(KeyboardKey.F6)) OpenTimingDialog(); // (stable's Timing Setup Panel)
         if (Input.IsKeyPressed(KeyboardKey.F5)) { TestPlay(); return; }
         if (Input.CtrlHeld && !Input.ShiftHeld && Input.IsKeyPressed(KeyboardKey.S)) Save();
         if (Input.CtrlHeld && Input.IsKeyPressed(KeyboardKey.L)) { RevertPrompt(full: Input.ShiftHeld); return; }
@@ -1597,7 +1599,7 @@ sealed partial class Editor : Screen
             new("Reset combo colours", "", ResetComboColours), new("Reset breaks", "", ResetBreaks), Sep,
             new("Nudge Backward", "J", Sel(() => Nudge(-1))), new("Nudge Forward", "K", Sel(() => Nudge(1)))],
         2 => [new("Compose", "F1", () => SetTab(0), tab == 0), new("Design", "F2", () => SetTab(3), tab == 3), new("Timing", "F3", () => SetTab(1), tab == 1), Sep,
-            new("Song Setup...", "F4", () => SetTab(2), setupDlg != null), new("Timing Setup...", "F6", () => SetTab(1)), Sep,
+            new("Song Setup...", "F4", () => SetTab(2), setupDlg != null), new("Timing Setup...", "F6", OpenTimingDialog), Sep,
             new("Volume", "", () => volumeWindow ??= new VolumeWindow()),
             new("Grid Level", Sub: [.. new[] { ("1 (Most sparse)", 32), ("2", 16), ("3", 8), ("4 (Most precise)", 4) }.Select(g => new MenuItem(g.Item1, "", () => gridSize = g.Item2, gridSize == g.Item2))]),
             new("Show Video/Storyboard", "", () => Config.SetOwn("EditorVideo", (showVideo = !showVideo) ? "1" : "0"), showVideo), new("Dim Background", "", () => dimBg = !dimBg, dimBg), new("Show Sample Name", "", () => showSampleName = !showSampleName, showSampleName), Sep, new("Hit animations", "", () => Config.SetOwn("EditorHitAnimations", (hitAnimations = !hitAnimations) ? "1" : "0"), hitAnimations), new("Follow points", "", () => Config.SetOwn("EditorFollowPoints", (followPoints = !followPoints) ? "1" : "0"), followPoints),
@@ -1973,13 +1975,6 @@ sealed partial class Editor : Screen
     }
 
     // ---- timing
-    Rectangle TimingRow(int i) { float u = U; return new Rectangle(80 * u, (100 + i * 18) * u, Game.W - 300 * u, 17 * u); }
-    static readonly string[] TimingButtons = ["Add timing point", "Add inherited point", "Delete", "Move to current time", "Kiai toggle", "Omit first bar line"];
-    Rectangle TimingButton(int i) { float u = U; return new Rectangle(Game.W - 210 * u, (100 + i * 26) * u, 200 * u, 22 * u); }
-    static readonly string[] Steppers = ["Offset", "BPM", "Slider velocity", "Meter", "Volume", "Sample set", "Custom sample"];
-    Rectangle StepRect(int i, int dir) { float u = U; return new Rectangle(Game.W - (dir < 0 ? 210 : 40) * u, (270 + i * 26) * u, 30 * u, 22 * u); }
-    int timingScroll;
-
     // stable's metronome (Timing tab, while the song plays): each beat, the bar's first metronomehigh, the rest
     // metronomelow at 0.8 (in 4/4 the third at 0.6)
     bool metronome = true;
@@ -1999,66 +1994,24 @@ sealed partial class Editor : Screen
         (inBar == 0 ? skin.Sound("metronomehigh") : skin.Sound("metronomelow"))?.Play(vol);
     }
 
-    // the Timing tab's buttons (also the Timing menu's and Ctrl+P / Ctrl+Shift+P)
+    // the Timing menu's Add Timing Section / Add Inheriting Section (Ctrl+P / Ctrl+Shift+P)
     void TimingAction(int i)
     {
-        var sel = timingSel >= 0 && timingSel < timing.Count ? timing[timingSel] : null;
         switch (i)
         {
             case 0: Change(() => { var red = RedAt(time); timing.Add(new ETiming { Time = Math.Round(time), Beat = red.Beat, Meter = red.Meter, Set = red.Set, Volume = red.Volume }); timingSel = timing.Count - 1; }); break;
             case 1: Change(() => { var red = RedAt(time); timing.Add(new ETiming { Time = Snap(time), Beat = -100, Red = false, Set = red.Set, Volume = red.Volume }); timingSel = timing.Count - 1; }); break;
-            case 2: if (sel != null) Change(() => { timing.Remove(sel); timingSel = -1; }); break;
-            case 3: if (sel != null) Change(() => sel.Time = Math.Round(time)); break;
-            case 4: if (sel != null) Change(() => sel.Effects ^= 1); break;
-            case 5: if (sel != null) Change(() => sel.Effects ^= 8); break;
         }
     }
 
     void UpdateTiming(Vector2 mouse, float u)
     {
-        var list = timing.OrderBy(t => t.Time).ToList();
-        if (Input.GetMouseWheelMove() != 0 && mouse.X < Game.W - 220 * u) { }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
         if (Input.IsKeyPressed(KeyboardKey.T) && !Input.CtrlHeld || click && CheckCollisionPointRec(mouse, TapButton())) { TimingTap(); return; } // (stable's Tap Here!)
         if (click && CheckCollisionPointRec(mouse, MetronomeReset())) { ResetCurrentSection(); return; }
         if (!click) return;
         if (TimingFlags(TimelineRect()).LastOrDefault(x => CheckCollisionPointRec(mouse, x.Flag)) is { Point: { } flagged }) { Seek(flagged.Time); return; }
-        if (!timingPanel) { UpdateTimingView(mouse); return; }
-        if (CheckCollisionPointRec(mouse, TimingButton(-1))) { timingPanel = false; return; }
-        for (int i = 0; i < 18 && i + timingScroll < list.Count; i++)
-            if (CheckCollisionPointRec(mouse, TimingRow(i))) { timingSel = timing.IndexOf(list[i + timingScroll]); Seek(list[i + timingScroll].Time); return; }
-        if (mouse.Y < 100 * u && mouse.X > 80 * u && mouse.X < Game.W - 220 * u) { timingScroll = Math.Max(0, timingScroll - 5); return; }
-        if (mouse.Y > (100 + 18 * 18) * u && mouse.X < Game.W - 220 * u) { timingScroll = Math.Min(Math.Max(0, list.Count - 18), timingScroll + 5); return; }
-        for (int i = 0; i < TimingButtons.Length; i++)
-        {
-            if (!CheckCollisionPointRec(mouse, TimingButton(i))) continue;
-            TimingAction(i);
-            return;
-        }
-        if (timingSel < 0 || timingSel >= timing.Count) return;
-        var t = timing[timingSel];
-        for (int i = 0; i < Steppers.Length; i++)
-            for (int dir = -1; dir <= 1; dir += 2)
-            {
-                if (!CheckCollisionPointRec(mouse, StepRect(i, dir))) continue;
-                double big = Input.ShiftHeld ? 10 : 1;
-                if (i == 3 ? Math.Clamp(t.Meter + dir, 1, 16) == t.Meter : i == 4 ? Math.Clamp(t.Volume + dir * 5, 5, 100) == t.Volume
-                    : i == 6 && Math.Clamp(t.Index + dir, 0, 100) == t.Index) return; // (at its end: no change, no undo state)
-                Change(() =>
-                {
-                    switch (i)
-                    {
-                        case 0: t.Time += dir * big; break;
-                        case 1: if (t.Red) t.Beat = 60000 / Math.Max(1, (t.Beat > 0 ? t.Bpm : 120) + dir * (Input.ShiftHeld ? 0.1 : 1)); break; // (an untimed section from 120)
-                        case 2: if (!t.Red) t.Beat = -100 / Math.Clamp(Math.Round((t.Sv + dir * (Input.ShiftHeld ? 0.01 : 0.05)) * 100) / 100, 0.1, 10); break;
-                        case 3: if (t.Red) t.Meter = Math.Clamp(t.Meter + dir, 1, 16); break;
-                        case 4: t.Volume = Math.Clamp(t.Volume + dir * 5, 5, 100); break;
-                        case 5: t.Set = (t.Set + dir + 4) % 4; break;
-                        case 6: t.Index = Math.Clamp(t.Index + dir, 0, 100); break; // (0: the skin's samples, 1+: the map's numbered ones)
-                    }
-                });
-                return;
-            }
+        UpdateTimingView(mouse);
     }
 
     Beatmap ReloadInfo(string[]? lines = null)
@@ -2115,7 +2068,6 @@ sealed partial class Editor : Screen
             return;
         }
         tab = t;
-        timingPanel = false;
         breakDrag = null;
     }
 
@@ -2187,7 +2139,7 @@ sealed partial class Editor : Screen
             DrawTexturePro(top.Tex, new Rectangle(0, 0, top.Tex.Width, top.Tex.Height), new Rectangle(0, 0, Game.W, top.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
         DrawTimeline(u);
         DrawKiaiTag(u);
-        if (tab == 1) { if (!timingPanel) DrawTimingStatus(u); DrawMetronome(u); }
+        if (tab == 1) { DrawTimingStatus(u); DrawMetronome(u); }
         var zm = EMouse;
         for (int i = 0; i < 2; i++)
             if (skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus") is { } zs)
@@ -2203,6 +2155,7 @@ sealed partial class Editor : Screen
         if (volumeWindow != null) DrawVolumeWindow();
         if (bmsWindow != null) DrawBmsImport();
         if (setupDlg != null) DrawSetupDialog();
+        if (timingDlg != null) DrawTimingDialog();
         if (xform != null) DrawXform(u);
         if (prompt != null) DrawPrompt(u);
         if (poly != null) DrawPoly(u);
@@ -2351,7 +2304,7 @@ sealed partial class Editor : Screen
             byte a = selected.Contains(o) ? (byte)255 : x0 > mid ? Fade(x0, 170) : x1 < mid ? Fade(x1, 170) : (byte)170;
             x0 = Math.Max(x0, left); x1 = Math.Min(x1, right);
             if (x0 > x1) continue;
-            var c = ObjColour(o, colours);
+            var c = o.Spinner ? Color.Gray : ObjColour(o, colours); // (spinners grey, like their circles)
             DrawRectangleRounded(new Rectangle(x0 - rad, cy - rad, x1 - x0 + rad * 2, rad * 2), 1, 16, c with { A = a });
         }
         var body = skin.Tex("hitcircle");
@@ -3017,37 +2970,7 @@ sealed partial class Editor : Screen
 
     void DrawTiming(float u)
     {
-        if (!timingPanel) { DrawTimingView(u); return; }
-        DrawButton(TimingButton(-1), "Close (F6)", false);
-        var list = timing.OrderBy(t => t.Time).ToList();
-        DrawRectangle((int)(76 * u), (int)(80 * u), (int)(Game.W - 290 * u), (int)(360 * u), new Color(0, 0, 0, 200));
-        Game.TextBold("Time          BPM / SV      Meter   Set     Vol   Kiai", 82 * u, 84 * u, 11 * u, Color.LightGray);
-        string[] sets = ["Auto", "Normal", "Soft", "Drum"];
-        for (int i = 0; i < 18 && i + timingScroll < list.Count; i++)
-        {
-            var t = list[i + timingScroll];
-            var r = TimingRow(i);
-            bool sel = timingSel >= 0 && timingSel < timing.Count && timing[timingSel] == t;
-            bool current = t == RedAt(time) || !t.Red && t.Time <= time && list.LastOrDefault(x => !x.Red && x.Time <= time) == t;
-            DrawRectangleRec(r, sel ? new Color(255, 160, 40, 160) : t.Red ? new Color(120, 30, 30, 140) : new Color(30, 110, 30, 140));
-            if (current) DrawRectangleLinesEx(r, 1, Color.White);
-            string row = $"{FormatTime(t.Time),-13} {(t.Red ? $"{t.Bpm:0.##} BPM" : $"{t.Sv:0.##}x"),-13} {(t.Red ? t.Meter.ToString() : ""),-7} {sets[Math.Clamp(t.Set, 0, 3)],-7} {t.Volume,-5} {((t.Effects & 1) != 0 ? "yes" : "")}";
-            Game.Text(row, r.X + 6 * u, r.Y + 2 * u, 11 * u, Color.White);
-        }
-        if (list.Count > 18) Game.Text($"{timingScroll + 1}-{Math.Min(list.Count, timingScroll + 18)} of {list.Count} (click above / below to scroll)", 82 * u, 428 * u, 10 * u, Color.LightGray);
-        for (int i = 0; i < TimingButtons.Length; i++) DrawButton(TimingButton(i), TimingButtons[i], false);
-        if (timingSel >= 0 && timingSel < timing.Count)
-        {
-            var t = timing[timingSel];
-            string[] values = [FormatTime(t.Time), t.Red ? $"{t.Bpm:0.###}" : "-", t.Red ? "-" : $"{t.Sv:0.##}x", t.Red ? t.Meter.ToString() : "-", $"{t.Volume}%", sets[Math.Clamp(t.Set, 0, 3)], t.Index == 0 ? "default" : t.Index.ToString(Inv)];
-            for (int i = 0; i < Steppers.Length; i++)
-            {
-                DrawButton(StepRect(i, -1), " -", false);
-                DrawButton(StepRect(i, 1), " +", false);
-                Game.Text($"{Steppers[i]}: {values[i]}", Game.W - 175 * u, (272 + i * 26) * u, 11 * u, Color.White);
-            }
-            Game.Text("Shift: bigger / finer steps", Game.W - 210 * u, 256 * u, 10 * u, Color.LightGray);
-        }
+        DrawTimingView(u);
     }
 
     // ---- the bottom bar: the time, the song's progress (click to seek), and stable's pictures: play / pause / stop /
