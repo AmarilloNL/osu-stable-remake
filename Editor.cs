@@ -604,6 +604,7 @@ sealed partial class Editor : Screen
         {
             for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { SetTab(TabOrder[i]); return; }
             if (UpdateBottomBar(mouse)) return;
+            if (CheckCollisionPointRec(mouse, TimeTextRect())) { JumpPrompt(); return; }
             for (int i = 0; i < 2; i++) if (CheckCollisionPointRec(mouse, ZoomRect(i))) { Zoom(i == 0 ? 0.1f : -0.1f); zoomClickAt[i] = Game.NowMs; return; }
         }
         if (UpdateSnapPanel(mouse)) return;
@@ -1299,6 +1300,50 @@ sealed partial class Editor : Screen
         public Action? Cancel = cancel;
     }
     Prompt? prompt;
+
+    // stable's Jump to time (a click on the time): milliseconds, mm:ss or mm:ss:ms, or an osu! timestamp "mm:ss:ms (1,2,3) -"
+    // that goes to the first object after it and selects those combo numbers (mania's: time|column pairs)
+    void JumpPrompt() => prompt = new("Jump to time: [mm:ss:ms] (combonumbers,...)", FormatTime(time), text => { if (!JumpTo(text.Trim())) Toast.Show("Invalid format!"); });
+    bool JumpTo(string s)
+    {
+        if (int.TryParse(s, out int ms)) { Seek(ms); return true; }
+        try
+        {
+            if (s.IndexOf('(') <= 0)
+            {
+                var p = s.Replace("-", "").Trim().Split(':');
+                if (p.Length is not (2 or 3)) return false;
+                Seek(int.Parse(p[0]) * 60000 + int.Parse(p[1]) * 1000 + (p.Length == 3 ? int.Parse(p[2]) : 0));
+                return true;
+            }
+            int at = int.Parse(s[..2]) * 60000 + int.Parse(s.Substring(3, 2)) * 1000 + int.Parse(s.Substring(6, 3)) - 20;
+            int first = objs.FindIndex(o => o.Time > at);
+            if (first < 0 || s.IndexOf(')') < 0) { Seek(at + 20); return true; }
+            Seek(objs[first].Time);
+            selected.Clear();
+            SetTab(0);
+            var items = s[11..s.IndexOf(')')].Split(',');
+            if (items.Length > 0 && items[0].IndexOf('|') > 0)
+            {
+                foreach (var item in items)
+                {
+                    var tc = item.Split('|');
+                    int.TryParse(tc[0], out int t); int.TryParse(tc[1], out int c);
+                    for (int j = first; j < objs.Count; j++) if (objs[j].Time == t && MColumn(objs[j], MKeys) == c) selected.Add(objs[j]);
+                }
+            }
+            else
+            {
+                var combos = items.Select(int.Parse).ToList();
+                if (combos.Count == 1) selected.Add(objs[first]);
+                else
+                    for (int k = first; k < objs.Count && combos.Count > 0; k++)
+                        if (objs[k].Combo == combos[0]) { selected.Add(objs[k]); combos.RemoveAt(0); }
+            }
+            return true;
+        }
+        catch (Exception e) when (e is FormatException or OverflowException or ArgumentOutOfRangeException or IndexOutOfRangeException) { return false; }
+    }
 
     void MoveAllPrompt() => prompt = new("Enter the amount of milliseconds to move all notes by:", "", text =>
     {
@@ -2927,6 +2972,7 @@ sealed partial class Editor : Screen
     // centred 77 from the right with its 25/50/75/100% (half seen, all hovered) and an arrow over the rate
     // stable's seek bar: (110,460), 20 units tall, to 260 from the right edge
     Rectangle ProgressRect() { float u = U; return new Rectangle(110 * u, 460 * u, Game.W - 370 * u, 20 * u); }
+    Rectangle TimeTextRect() { float u = U; return new Rectangle(10 * u, 463 * u, Game.TextWidth(FormatTime(time), 14 * u), 14 * u); }
     static readonly string[] TransportSprites = ["editor-button-play", "editor-button-pause", "editor-button-stop", "editor-button-test"];
     static readonly float[] TransportX = [245, 225, 205, 175];
     static readonly string[] RateSprites = ["editor-rate-25", "editor-rate-50", "editor-rate-75", "editor-rate-100"];
