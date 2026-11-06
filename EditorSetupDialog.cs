@@ -198,7 +198,7 @@ sealed partial class Editor
         string old = path;
         path = NewDifficultyPath(d);
         if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
-        if (!TrySave()) { path = old; return; } // (not written: still this difficulty, its changes unsaved)
+        if (!TrySave()) { path = old; Restore(undo, redo); redo.Clear(); return; } // (not written: still this difficulty, as it was)
         undo.Clear(); redo.Clear(); // (a new file's own history)
         if (objs.Count > 0) prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); if (KeepBreaks()) info = ReloadInfo(); Save(); }, "Yes", "No");
     }

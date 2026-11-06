@@ -529,7 +529,7 @@ sealed partial class Editor : Screen
             else time = music.PositionMs;
         }
         else if (music == null && playing) time = Math.Min(length, time + dtMs * rate);
-        if (exitPrompt != null || xform != null || prompt != null || bmsWindow != null || poly != null || setupDlg != null || timingDlg != null) lastSoundTime = double.NaN; // (the clock stops under a window: its hitsounds aren't all played after)
+        if (exitPrompt != null || xform != null || prompt != null || bmsWindow != null || poly != null || setupDlg != null || timingDlg != null || menuOpen >= 0) lastSoundTime = double.NaN; // (the clock stops under a window: its hitsounds aren't all played after)
         if (exitPrompt != null) { UpdateExitPrompt(raw); return; }
         if (xform != null) { UpdateXform(mouse); return; }
         if (prompt != null) { UpdatePrompt(mouse); return; }
@@ -717,28 +717,43 @@ sealed partial class Editor : Screen
                 {
                     if (o.End <= lastSoundTime || o.Time > time) continue;
                     var e = EdgeSounds(o);
+                    var sets = EdgeSetsOf(o);
                     for (int k = 0; k <= o.Slides; k++)
                     {
                         double t = o.Time + (o.End - o.Time) * k / o.Slides;
-                        if (t > lastSoundTime && t <= time) Hitsound(e[k], t);
+                        if (!(t > lastSoundTime && t <= time)) continue;
+                        var (n, a) = sets[k];
+                        if (k == 0 && n == 0 && FormatVersion < 14) n = SetsOf(o).Item1; // (gameplay's rule)
+                        Hitsound(e[k], t, n, a);
                     }
                     continue;
                 }
-                if (o.Time > lastSoundTime && o.Time <= time) Hitsound(o.HitSound, o.Time);
-                if (o.Spinner && o.End > lastSoundTime && o.End <= time) Hitsound(o.HitSound, o.End);
+                bool head = o.Time > lastSoundTime && o.Time <= time, end = o.Spinner && o.End > lastSoundTime && o.End <= time;
+                if (!head && !end) continue; // (only what sounds now is looked at: this runs over every object each frame)
+                var (normal, addition) = SetsOf(o);
+                var smp = o.Sample.Split(':');
+                int index = smp.Length > 2 && int.TryParse(smp[2], out int i) ? i : 0, volume = smp.Length > 3 && int.TryParse(smp[3], out int v) ? v : 0;
+                if (head) Hitsound(o.HitSound, o.Time, normal, addition, index, volume);
+                if (end) Hitsound(o.HitSound, o.End, normal, addition, index, volume, ahead: 0);
             }
         lastSoundTime = time;
     }
 
-    void Hitsound(int bits, double at)
+    // the game's hitsound mix (Player.PlayHitsound): the object's own sets, index and volume over the timing point's,
+    // the additions in the addition set, the normal sound only alone, when asked for or with the skin's LayeredHitSounds
+    void Hitsound(int bits, double at, int normalSet = 0, int additionSet = 0, int index = 0, int volume = 0, double ahead = 5)
     {
-        var tp = info.PointAt(at + 5);
-        int set = tp.SampleSet > 0 ? tp.SampleSet : 1, vol = Math.Max(8, tp.Volume);
-        samples.Play(set, "hitnormal", tp.SampleIndex, (int)(vol * 0.8));
-        if ((bits & 2) != 0) samples.Play(set, "hitwhistle", tp.SampleIndex, (int)(vol * 0.85));
-        if ((bits & 4) != 0) samples.Play(set, "hitfinish", tp.SampleIndex, vol);
-        if ((bits & 8) != 0) samples.Play(set, "hitclap", tp.SampleIndex, (int)(vol * 0.85));
+        var tp = info.PointAt(at + ahead);
+        int set = normalSet > 0 ? normalSet : tp.SampleSet > 0 ? tp.SampleSet : 1;
+        int add = additionSet > 0 ? additionSet : set;
+        int idx = index > 0 ? index : tp.SampleIndex;
+        int vol = Math.Max(8, volume > 0 ? volume : tp.Volume);
+        if (bits == 0 || (bits & 1) != 0 || skin.LayeredHitSounds) samples.Play(set, "hitnormal", idx, (int)(vol * 0.8));
+        if ((bits & 2) != 0) samples.Play(add, "hitwhistle", idx, (int)(vol * 0.85));
+        if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol);
+        if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, (int)(vol * 0.85));
     }
+    int FormatVersion => int.TryParse(header.AsSpan(header.LastIndexOf('v') + 1), out int fv) ? fv : 14;
 
     // ---- compose
     // stable's compose toolbox: its tools as osu!ui's pictures down the left from 140 (60 apart; mania's hold where the
@@ -815,7 +830,40 @@ sealed partial class Editor : Screen
     void SetSet(bool addition, int to)
     {
         if (selected.Count == 0) { setsNext = addition ? (setsNext.Normal, to) : (to, setsNext.Addition); return; }
-        Change(() => { foreach (var o in selected) { var (n, a) = SetsOf(o); SetSets(o, addition ? n : to, addition ? to : a); } });
+        int edge = SelEdge;
+        bool body = BodySel;
+        Change(() =>
+        {
+            foreach (var o in selected)
+            {
+                if (o.Slider)
+                {
+                    OwnEdges(o);
+                    var sets = EdgeSetsOf(o);
+                    for (int i = 0; i < sets.Length; i++)
+                        if (edge >= 0 ? i == edge : !body) sets[i] = addition ? (sets[i].Normal, to) : (to, sets[i].Addition);
+                    o.EdgeSets = string.Join("|", sets.Select(x => $"{x.Normal}:{x.Addition}"));
+                    o.Raw = null;
+                    if (edge >= 0) continue;
+                }
+                var (n, a) = SetsOf(o);
+                SetSets(o, addition ? n : to, addition ? to : a);
+            }
+        });
+    }
+
+    // a slider's edge sample sets (normal:addition each; the slider's own where it has none)
+    static (int Normal, int Addition)[] EdgeSetsOf(EObj o)
+    {
+        var given = o.EdgeSets.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        var own = SetsOf(o);
+        var r = new (int, int)[o.Slides + 1];
+        for (int i = 0; i < r.Length; i++)
+        {
+            var p = i < given.Length ? given[i].Split(':') : [];
+            r[i] = p.Length >= 2 && int.TryParse(p[0], out int n) && int.TryParse(p[1], out int a) ? (n, a) : own;
+        }
+        return r;
     }
 
     // stable's distance snap: a new object goes the beat-snapped time's worth of slider travel (times the map's
@@ -923,18 +971,18 @@ sealed partial class Editor : Screen
                 return;
             }
             var hit = objs.LastOrDefault(o => Math.Abs(TimelineX(o.Time) - mouse.X) < 10 * u);
-            if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && EdgeAtTimeline(only, mouse.X) is var at && (at >= 0 || hit == only))
+            if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && (hit == null || hit == only))
             {
-                PickEdge(only, at);
-                hit = only;
+                int at = EdgeAtTimeline(only, mouse.X);
+                if (at >= 0 || hit == only || mouse.X > TimelineX(only.Time) && mouse.X < TimelineX(only.End)) { PickEdge(only, at); hit = only; }
             }
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 if (noteLock) return;
-                undo.Add(Snapshot()); redo.Clear();
+                dragUndo = Snapshot();
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
-                timeMoved = false;
+                (timeMoved, timeFromX) = (false, mouse.X);
                 breakDragFit = true;
             }
             else if (!PickBreakEdge(mouse.X)) { scrubFrom = mouse.X; scrubTime = time; }
@@ -952,7 +1000,7 @@ sealed partial class Editor : Screen
         }
         if (timeDrag is { } td)
         {
-            timeMoved |= Math.Abs(TimelineX(td.From) - mouse.X) >= 1; // (a click that doesn't move leaves them where they are)
+            if (!timeMoved && held && Math.Abs(timeFromX - mouse.X) >= 1) { timeMoved = true; undo.Add(dragUndo); redo.Clear(); } // (a click that doesn't move leaves them where they are)
             if (held && timeMoved)
             {
                 double shift = Snap(td.Start.Keys.Min(o => td.Start[o]) + TimeAtX(mouse.X) - td.From) - td.Start.Keys.Min(o => td.Start[o]);
@@ -1868,14 +1916,14 @@ sealed partial class Editor : Screen
     }
 
     (EObj Slider, int Index)? pointDrag;
-    Vector2 pointFrom; bool pointMoved, timeMoved; // (a click on a point that doesn't move leaves it where it is)
+    Vector2 pointFrom; bool pointMoved, timeMoved; float timeFromX; string dragUndo = ""; // (the undo state once it moves) // (a click on a point that doesn't move leaves it where it is)
 
     void UpdateSelect(Vector2 mouse, Vector2 fieldPos, bool click, bool held, bool inField)
     {
         // a slider's point being dragged (on the grid with grid snap); the slider refits as it goes
         if (pointDrag is { } pd)
         {
-            pointMoved |= Vector2.Distance(fieldPos, pointFrom) >= 1;
+            if (!pointMoved && held && Vector2.Distance(fieldPos, pointFrom) >= 1) { pointMoved = true; undo.Add(dragUndo); redo.Clear(); }
             var p = GridSnap(fieldPos - StackShift(pd.Slider));
             if (held && pointMoved && pd.Slider.Anchors[pd.Index] != p) { pd.Slider.Anchors[pd.Index] = p; FitLength(pd.Slider); modified = true; Rebuild(); }
             if (!held) pointDrag = null;
@@ -1891,7 +1939,7 @@ sealed partial class Editor : Screen
                 Change(() => { a.Insert(pt.Index, a[pt.Index]); FitLength(pt.Slider, retype: true); });
                 return;
             }
-            undo.Add(Snapshot()); redo.Clear();
+            dragUndo = Snapshot();
             pointDrag = pt;
             (pointFrom, pointMoved) = (fieldPos, false);
             return;
@@ -1919,7 +1967,8 @@ sealed partial class Editor : Screen
         {
             // the topmost visible object under the cursor (its head)
             var hit = ObjectAt(fieldPos);
-            if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && (hit == only || hit == null && EdgeAt(only, fieldPos) >= 0))
+            if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && Visible().Contains(only)
+                && (hit == only || hit == null && (EdgeAt(only, fieldPos) >= 0 || OnBody(only, fieldPos))))
             {
                 PickEdge(only, EdgeAt(only, fieldPos));
                 hit = only;
@@ -2026,7 +2075,7 @@ sealed partial class Editor : Screen
     EObj? edgeSlider;
     int edgeSel = -1;
     bool bodySel;
-    int SelEdge => edgeSlider != null && selected.Count == 1 && selected.Contains(edgeSlider) ? edgeSel : -1;
+    int SelEdge => edgeSlider != null && selected.Count == 1 && selected.Contains(edgeSlider) && edgeSel <= edgeSlider.Slides ? edgeSel : -1;
     bool BodySel => edgeSlider != null && selected.Count == 1 && selected.Contains(edgeSlider) && bodySel;
     // the edge under a playfield point (stable's: the first within a radius, so the head before a repeat on it)
     int EdgeAt(EObj o, Vector2 fieldPos)
@@ -2044,6 +2093,12 @@ sealed partial class Editor : Screen
         return -1;
     }
     void PickEdge(EObj o, int edge) { edgeSlider = o; edgeSel = edge; bodySel = edge < 0; }
+    bool OnBody(EObj o, Vector2 fieldPos)
+    {
+        var p = fieldPos - StackShift(o);
+        for (int i = 1; i < o.Path.Length; i++) if (SegmentDistance(p, o.Path[i - 1], o.Path[i]) <= Radius) return true;
+        return false;
+    }
 
     IEnumerable<EObj> Visible()
     {
@@ -2661,7 +2716,7 @@ sealed partial class Editor : Screen
             }
         }
         // Sampleset and Additions: their names over dropdowns of Auto / Normal / Soft / Drum
-        var (selN, selA) = anySel ? SetsOf(selected.First()) : setsNext;
+        var (selN, selA) = selEdge >= 0 ? EdgeSetsOf(edgeSlider!)[selEdge] : anySel ? SetsOf(selected.First()) : setsNext;
         for (int s = 0; s < 2; s++)
         {
             bool addition = s == 1;

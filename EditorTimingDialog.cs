@@ -27,7 +27,7 @@ sealed partial class Editor
         public double? FirstOffset; // (none: the map had no timing points)
         public string EditText = ""; // a number box being typed into (Focus)
         public Action<double>? CommitTo; // (where it goes, bound to the points selected when it was clicked)
-        public double FocusValue;
+        public string FocusText = "";
         public bool Commit; // (Enter, Tab or a click anywhere: the typed number goes in first)
         public double MoveBy;
     }
@@ -212,7 +212,7 @@ sealed partial class Editor
         {
             var to = d.CommitTo;
             d.Commit = false; d.Focus = -1; d.CommitTo = null;
-            if (to != null && double.TryParse(d.EditText, NumberStyles.Float, Inv, out double typed) && double.IsFinite(typed) && typed != d.FocusValue) to(typed);
+            if (to != null && double.TryParse(d.EditText, NumberStyles.Float, Inv, out double typed) && double.IsFinite(typed) && d.EditText != d.FocusText) to(typed);
             sel = d.Sel.Where(timing.Contains).ToList();
             one = sel.Count == 1 ? sel[0] : null;
         }
@@ -220,7 +220,7 @@ sealed partial class Editor
         // a number box that can be typed into (a click on its text): set gets what's typed, or a step from its arrows
         void Number(int id, double v, double min, double max, double step, string format, float x, float y, float w, float h, bool on, Action<double> set)
         {
-            if (act && on && d.Hit(d.R(x, y, w - 16, h))) { d.Focus = id; d.EditText = v.ToString(format, Inv); d.FocusValue = v; d.CommitTo = t => set(Math.Clamp(t, min, max)); return; }
+            if (act && on && d.Hit(d.R(x, y, w - 16, h))) { d.Focus = id; d.EditText = d.FocusText = v.ToString(format, Inv); d.CommitTo = t => set(Math.Clamp(t, min, max)); return; }
             if (!act && d.Focus == id)
             {
                 var r = d.R(x, y, w, h);
