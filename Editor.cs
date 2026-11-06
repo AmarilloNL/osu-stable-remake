@@ -575,10 +575,8 @@ sealed partial class Editor : Screen
             if (rightKey && marks.FirstOrDefault(b => b > time + 1, -1) is var next and >= 0) Seek(next);
             if (Input.IsKeyPressed(KeyboardKey.B))
             {
-                // Ctrl+B adds one here, Ctrl+Shift+B removes the one here (within half a beat snap)
-                double near = RedAt(time).Beat / divisor / 2;
-                List<int> to = Input.ShiftHeld ? [.. marks.Where(b => Math.Abs(b - time) > near)] : [.. marks.Union([(int)Math.Round(time)]).Order()];
-                if (!to.SequenceEqual(marks)) Change(() => SetBookmarks(to)); // (undoable)
+                // Ctrl+B adds one here, Ctrl+Shift+B removes the nearest (stable's bookmark buttons)
+                if (Input.ShiftHeld) RemoveBookmark(); else AddBookmark();
             }
         }
         else
@@ -1710,6 +1708,28 @@ sealed partial class Editor : Screen
 
     // [Editor] Bookmarks: the times, comma-separated (the line left out with none, like stable)
     List<int> Bookmarks() => [.. (Kv("Editor", "Bookmarks") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(s => int.TryParse(s, out int t) ? t : -1).Where(t => t >= 0).Order()];
+    // stable's: a bookmark at the snapped time (if there isn't one); the nearest within 2 seconds removed; all removed
+    // after asking (undoable)
+    void AddBookmark()
+    {
+        var marks = Bookmarks();
+        int at = (int)Math.Round(Snap(time));
+        if (!marks.Contains(at)) Change(() => SetBookmarks([.. marks.Append(at).Order()]));
+    }
+    void RemoveBookmark()
+    {
+        var marks = Bookmarks();
+        int near = marks.Where(b => Math.Abs(b - time) < 2000).OrderBy(b => Math.Abs(b - time)).DefaultIfEmpty(-1).First();
+        if (near >= 0) Change(() => SetBookmarks([.. marks.Where(b => b != near)]));
+    }
+    void ResetBookmarksPrompt() => prompt = new("Remove all bookmarks?", null, _ => { if (Bookmarks().Count > 0) Change(() => SetBookmarks([])); }, "OK", "Cancel");
+    void SeekBookmark(int dir)
+    {
+        var marks = Bookmarks();
+        int to = dir < 0 ? marks.LastOrDefault(b => b < time - 1, -1) : marks.FirstOrDefault(b => b > time + 1, -1);
+        if (to >= 0) Seek(to);
+    }
+
     void SetBookmarks(List<int> marks)
     {
         if (sections.FirstOrDefault(x => x.Name == "Editor") is not { } ed) return;
@@ -2920,6 +2940,15 @@ sealed partial class Editor : Screen
         return new Rectangle(x * u - w / 2, y * u - h / 2, w, h);
     }
     static readonly double[] Rates = [0.25, 0.5, 0.75, 1];
+    // stable's bookmark buttons over the song's progress (add, remove, previous, next, reset; mania's after its stage),
+    // fading in over 200ms while the cursor is down there
+    static readonly string[] BookmarkSprites = ["editor-timeline-plus", "editor-timeline-minus", "editor-timeline-left", "editor-timeline-right", "editor-timeline-reset"];
+    static readonly float[] BookmarkX = [150, 170, 190, 210, 242];
+    static readonly string[] BookmarkTips = ["Add new bookmark at current location (Ctrl+B)", "Remove bookmark at current location (Ctrl+Shift+B)", "Seek to previous bookmark (Ctrl-LeftArrow)", "Seek to next bookmark (Ctrl-RightArrow)", "Reset all bookmarks"];
+    Rectangle BookmarkRect(int i) => Centred(BookmarkSprites[i], BookmarkX[i] + (mode == 3 ? 25 + 30 * MKeys : 0), 450);
+    Rectangle BookmarkArea() { float u = U; return new Rectangle(0, 440 * u, Game.W - 270 * u, EH - 440 * u); }
+    (bool On, double At) bookmarkShown;
+    float BookmarkAlpha => Hovered(ref bookmarkShown, CheckCollisionPointRec(EMouse, BookmarkArea()), 0, 1);
     readonly (bool On, double At)[] transportHover = new (bool, double)[4], rateHover = new (bool, double)[4];
     static float Hovered(ref (bool On, double At) s, bool on, float from, float to)
     {
@@ -2932,6 +2961,13 @@ sealed partial class Editor : Screen
     bool UpdateBottomBar(Vector2 mouse)
     {
         if (CheckCollisionPointRec(mouse, ProgressRect())) { var r = ProgressRect(); Seek((mouse.X - r.X) / r.Width * length); return true; }
+        if (BookmarkAlpha > 0.5f)
+            for (int i = 0; i < BookmarkSprites.Length; i++)
+                if (CheckCollisionPointRec(mouse, BookmarkRect(i)))
+                {
+                    if (i == 0) AddBookmark(); else if (i == 1) RemoveBookmark(); else if (i == 4) ResetBookmarksPrompt(); else SeekBookmark(i == 2 ? -1 : 1);
+                    return true;
+                }
         for (int i = 0; i < TransportSprites.Length; i++)
             if (CheckCollisionPointRec(mouse, TransportRect(i)))
             {
@@ -2982,6 +3018,12 @@ sealed partial class Editor : Screen
             if (over && i == 3) tip = "Enter test mode, where you can play through from the current location.\nThis requires saving your beatmap.";
         }
         Picture("editor-rate-bg", Centred("editor-rate-bg", Game.W / u - 77, 470));
+        float ba = BookmarkAlpha;
+        for (int i = 0; i < BookmarkSprites.Length && ba > 0; i++)
+        {
+            Picture(BookmarkSprites[i], BookmarkRect(i), ba);
+            if (CheckCollisionPointRec(mouse, BookmarkRect(i))) tip = BookmarkTips[i];
+        }
         for (int i = 0; i < RateSprites.Length; i++) Picture(RateSprites[i], RateRect(i), Hovered(ref rateHover[i], CheckCollisionPointRec(mouse, RateRect(i)), 0.5f, 1));
         // (stable: the arrow 73 units from the right at 25%, 7 at 100%)
         Picture("editor-rate-arrow", Centred("editor-rate-arrow", Game.W / u - (73 - (float)(rate * 100 - 25) / 75 * 66), 473));
