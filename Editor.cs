@@ -2642,6 +2642,39 @@ sealed partial class Editor : Screen
             else DrawCircleLinesV(ToScreen(ring.From.X, ring.From.Y), ring.Radius * FieldScale, ColorAlpha(Color.White, 0.5f));
         }
         Game.Text($"{selected.Count} selected", 4 * u, 380 * u, 10 * u, Color.LightGray);
+        DrawSnapWarning(u);
+    }
+
+    // stable's word on an unusual beat snap divisor, over the playfield's top left (70,120, wrapped to 140 short of the
+    // right edge): 1/12 and 1/16 in red until the divisor changes, 1/8 for 20 seconds, 1/3 and 1/6 for 6
+    int warnedDivisor = -1;
+    double warnedAt;
+    void DrawSnapWarning(float u)
+    {
+        if (divisor != warnedDivisor) { warnedDivisor = divisor; warnedAt = Game.NowMs; }
+        string? text = divisor switch
+        {
+            12 or 16 => $"1/{divisor} IS NOT RECOMMENDED FOR ANYONE TO USE EVER.",
+            8 => "Using 1/8 snap interval is NOT RECOMMENDED unless you are a very experienced beatmapper.  If you find yourself using this, please consult someone about the timing of your map in the Beatmap Help forum or on chat!",
+            3 => "Using 1/3 implies that your BPM can be divided into 3 and still land on beats.  In musical terms, this is compound timing.  If you are unsure, please ask before using this mode.",
+            6 => "Using 1/6 implies that your BPM can be divided into 3 and still land on beats.  In musical terms, this is compound timing.  If you are unsure, please ask before using this mode.",
+            _ => null,
+        };
+        if (text == null) return;
+        double age = Game.NowMs - warnedAt, hold = divisor == 8 ? 20000 : 6000;
+        bool red = divisor is 12 or 16;
+        float a = red ? (float)Math.Min(1, age / 500) : age < hold ? 1 : 1 - (float)Math.Min(1, (age - hold) / 500);
+        if (a <= 0) return;
+        float size = 10 * u, width = Game.W - 210 * u, y = 120 * u;
+        var colour = red ? ColorAlpha(Color.Red, a) : ColorAlpha(Color.White, a * 180 / 255f);
+        string line = "";
+        foreach (var word in text.Split(' '))
+        {
+            string next = line.Length == 0 ? word : line + " " + word;
+            if (line.Length > 0 && Game.TextWidth(next, size) > width) { Game.Text(line, 70 * u, y, size, colour); y += size * 1.2f; line = word; }
+            else line = next;
+        }
+        if (line.Length > 0) Game.Text(line, 70 * u, y, size, colour);
     }
 
     // ---- mania: stable's own compose view. The map's columns as a stage (30 wide, from x 160) scrolling through the
