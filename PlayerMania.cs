@@ -463,7 +463,7 @@ sealed partial class Player
         look.BodyStyle = [.. Enumerable.Range(0, mKeys).Select(c => skin.Version < 2.5 ? 0 : Style(M($"NoteBodyStyle{c}")) is >= 0 and var s ? s : Style(M("NoteBodyStyle")) is >= 0 and var all ? all : 3)];
         look.Key = Per(c => $"KeyImage{c}", c => $"mania-key{ManiaColumnKind(c)}");
         look.KeyD = Per(c => $"KeyImage{c}D", c => $"mania-key{ManiaColumnKind(c)}D");
-        Color Colour(string k, Color def) => M(k) is { } v && ParseRgba(v) is { } cv ? cv : def;
+        Color Colour(string k, Color def) => M(k) is { } v && Skin.ParseColour(v, alpha: true) is { } cv ? cv : def;
         look.Colour = [.. Enumerable.Range(0, mKeys).Select(c => Colour($"Colour{c + 1}", Color.Black))];
         look.Light = [.. Enumerable.Range(0, mKeys).Select(c => Colour($"ColourLight{c + 1}", Color.White))];
         look.ColumnLine = Colour("ColourColumnLine", look.ColumnLine);
@@ -486,19 +486,13 @@ sealed partial class Player
         look.StageLight = M("StageLight") ?? look.StageLight;
         look.LightingN = M("LightingN") ?? look.LightingN;
         look.WarningArrow = M("WarningArrow") ?? look.WarningArrow;
-        if (M("ColourKeyWarning") is { } kw && ParseRgba(kw) is { } kwc) look.KeyWarning = kwc;
+        look.KeyWarning = Colour("ColourKeyWarning", look.KeyWarning);
         look.LightingL = M("LightingL") ?? look.LightingL;
         look.LightingNW = List("LightingNWidth", mKeys, 0);
         look.LightingLW = List("LightingLWidth", mKeys, 0);
         foreach (var (key, result) in new[] { ("Hit300g", 320), ("Hit300", 300), ("Hit200", 200), ("Hit100", 100), ("Hit50", 50), ("Hit0", 0) })
             if (M(key) is { } img) look.Hit[result] = img;
         return look;
-    }
-
-    static Color? ParseRgba(string v)
-    {
-        var p = v.Split(',').Select(s => int.TryParse(s.Trim(), out int x) ? Math.Clamp(x, 0, 255) : -1).ToArray();
-        return p.Length >= 3 && p.All(x => x >= 0) ? new Color(p[0], p[1], p[2], p.Length > 3 ? p[3] : 255) : null;
     }
 
     void ManiaDraw(int w, int h)

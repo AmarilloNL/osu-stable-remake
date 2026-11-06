@@ -220,11 +220,14 @@ sealed class Skin
         }
     }
 
-    static Color? ParseColour(string v)
+    // stable's: three or four whole numbers, each cut to a byte (256 is 0), else none; [Colours] ignores the fourth
+    internal static Color? ParseColour(string v, bool alpha = false)
     {
         var p = v.Split(',');
-        if (p.Length < 3) return null;
-        return new Color(byte.Parse(p[0].Trim()), byte.Parse(p[1].Trim()), byte.Parse(p[2].Trim()), (byte)255);
+        if (p.Length is not (3 or 4)) return null;
+        var n = new int[p.Length];
+        for (int i = 0; i < p.Length; i++) if (!int.TryParse(p[i].Trim(), out n[i])) return null;
+        return new Color((byte)n[0], (byte)n[1], (byte)n[2], alpha && p.Length == 4 ? (byte)n[3] : (byte)255);
     }
 
     public Sprite? Tex(string name) => mapDir != null && MapTex(name) is { } m ? m : Load(name, userSkin: true);
