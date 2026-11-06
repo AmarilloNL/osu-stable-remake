@@ -2129,6 +2129,9 @@ sealed partial class Editor : Screen
             case 2: DrawSetup(u); break;
             case 3: DrawDesign(u); break;
         }
+        // (stable's dark gradient behind the top 69 units)
+        if (skin.DefaultTex("editor-menu-bg-top") is { } top)
+            DrawTexturePro(top.Tex, new Rectangle(0, 0, top.Tex.Width, top.Tex.Height), new Rectangle(0, 0, Game.W, top.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
         DrawTimeline(u);
         DrawKiaiTag(u);
         var zm = Input.GetMousePosition();
