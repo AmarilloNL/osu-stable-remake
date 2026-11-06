@@ -693,11 +693,50 @@ sealed partial class Editor : Screen
     }
 
     // ---- compose
-    static Rectangle ToolRect(int i) { float u = U; return new Rectangle(4 * u, (90 + i * 34) * u, 62 * u, 30 * u); }
-    Rectangle ToggleRect(int i) { float u = U; return new Rectangle(Game.W - 92 * u, (90 + i * 34) * u, 88 * u, 30 * u); }
+    // stable's compose toolbox: its tools as osu!ui's pictures down the left from 140 (60 apart; mania's hold where the
+    // slider is), the toggles down the right edge, Sampleset and Additions as dropdowns above the tools
     string[] ToolNames => mode == 3 ? ["Select", "Note", "Hold"] : ["Select", "Circle", "Slider", "Spinner"];
-    static readonly string[] ToggleNames = ["New combo", "Whistle", "Finish", "Clap", "Grid snap", "Distance snap", "Sampleset", "Additions"];
+    string[] ToolSprites => mode == 3 ? ["editor-draw-select", "editor-draw-normal", "editor-draw-hold"] : ["editor-draw-select", "editor-draw-normal", "editor-draw-slider", "editor-draw-spinner"];
+    static readonly string[] ToolTips =
+    [
+        "Select and modify existing notes.\nCtrl+Click: Multi-select, Add point on slider\nRight-click: Remove note/point",
+        "Left-click: Place note\nRight-click: New combo/Remove note (paused).",
+        "Left-click: Start slider, Add point on current slider\nRight-click: Remove point, End current slider\nLeft-click twice on same spot to start a new curve section on bezier sliders.",
+        "Left-click: Start spinner at current position\nRight-click: End spinner at current position",
+    ];
+    const string HoldTip = "Left-click: Place note\nClick on end: toggle active";
+    static readonly (string Sprite, float Y, string Tip)[] Toggles =
+    [
+        ("editor-draw-newcombo", 80, "Force the beginning of a new combo.\nShortcut: 'Q', right-click in compose mode"),
+        ("editor-sound-whistle", 140, "Add a whistle sound addition to the selection.\nShortcut: 'W'"),
+        ("editor-sound-finish", 180, "Add a finish (cymbal) sound addition to the selection.\nShortcut: 'E'"),
+        ("editor-sound-clap", 220, "Add a clap sound addition to the selection.\nShortcut: 'R'"),
+        ("editor-draw-beatsnap", 260, "Circles will be snapped to the grid by default.\nShortcut: Hold 'Shift' to temporarily toggle, or hit 'T'\nHold 'Ctrl' to temporarily disable angle snapping."),
+        ("editor-draw-distsnap", 320, "Distance between consecutive circles will be snapped based on their rhythmical difference.\nShortcut: Hold 'Alt' to temporarily toggle, or hit 'Y'\n'Alt'+Mousewheel adjusts snapping multiplier.\nSnapping multiplier can also be changed by holding 'Alt' and dragging the slidebar at the top-right."),
+        ("editor-draw-lock", 380, "You can still select hit objects and apply sound additions, but not change their time or position.\nToggle with 'L'."),
+    ];
+    Rectangle ToolRect(int i) => Picture(ToolSprites[i], 0, 140 + i * 60);
+    Rectangle ToggleRect(int i) => Picture(Toggles[i].Sprite, Game.W / U - 50, Toggles[i].Y);
+    Rectangle Picture(string name, float x, float y)
+    {
+        float u = U, sd = u / 1.6f;
+        var s = skin.DefaultTex(name);
+        return new Rectangle(x * u, y * u, (s?.Width ?? 82) * sd, (s?.Height ?? 86) * sd);
+    }
+    static Rectangle SetBox(bool addition) { float u = U; return new Rectangle(0, (addition ? 119 : 94) * u, 52 * u, 12 * u); }
+    static Rectangle SetRow(bool addition, int i) { var b = SetBox(addition); return new Rectangle(b.X, b.Y + b.Height * (i + 1), b.Width, b.Height); }
     static readonly string[] SetNames = ["Auto", "Normal", "Soft", "Drum"];
+    int setDrop = -1; // the open sample set dropdown (0 Sampleset, 1 Additions)
+    bool noteLock; // stable's note lock: objects keep their time and place
+    // (stable: the chosen tool and the toggles that are on at 0.9, the rest at 0.4, over 100ms)
+    readonly (bool On, double At)[] toolLit = new (bool, double)[4], toggleLit = new (bool, double)[7];
+    static float Lit(ref (bool On, double At) s, bool on)
+    {
+        double now = Game.NowMs;
+        if (on != s.On) s = (on, now);
+        float k = (float)Math.Clamp((now - s.At) / 100, 0, 1);
+        return on ? 1 - 0.1f * k : 0.9f - 0.5f * k;
+    }
     bool distSnap;
     (int Normal, int Addition) setsNext; // for the next placed object (nothing selected)
 
@@ -717,12 +756,10 @@ sealed partial class Editor : Screen
         o.Raw = null;
     }
 
-    void CycleSet(bool addition)
+    void SetSet(bool addition, int to)
     {
-        if (selected.Count == 0) { setsNext = addition ? (setsNext.Normal, (setsNext.Addition + 1) % 4) : ((setsNext.Normal + 1) % 4, setsNext.Addition); return; }
-        var (n0, a0) = SetsOf(selected.First());
-        int next = ((addition ? a0 : n0) + 1) % 4;
-        Change(() => { foreach (var o in selected) { var (n, a) = SetsOf(o); SetSets(o, addition ? n : next, addition ? next : a); } });
+        if (selected.Count == 0) { setsNext = addition ? (setsNext.Normal, to) : (to, setsNext.Addition); return; }
+        Change(() => { foreach (var o in selected) { var (n, a) = SetsOf(o); SetSets(o, addition ? n : to, addition ? to : a); } });
     }
 
     // stable's distance snap: a new object goes the beat-snapped time's worth of slider travel (times the map's
@@ -760,6 +797,7 @@ sealed partial class Editor : Screen
         if (Pressed(Bound("keyClapToggle", KeyboardKey.R)) && !Input.CtrlHeld) ToggleSound(8);
         if (Pressed(Bound("keyGridSnapToggle", KeyboardKey.T))) gridSnap = !gridSnap;
         if (Pressed(Bound("keyDistSnapToggle", KeyboardKey.Y)) && !Input.CtrlHeld) distSnap = !distSnap;
+        if (Pressed(Bound("keyNoteLockToggle", KeyboardKey.L)) && !Input.CtrlHeld) noteLock = !noteLock;
         if (Pressed(Bound("keyGridChange", KeyboardKey.G)) && !Input.CtrlHeld) gridSize = gridSize == 32 ? 4 : gridSize * 2;
         // Nudge Left / Right (J / K): the selection a beat snap earlier / later
         int nudge = Input.CtrlHeld ? 0 : Pressed(Bound("keyNudgeLeft", KeyboardKey.J)) ? -1 : Pressed(Bound("keyNudgeRight", KeyboardKey.K)) ? 1 : 0;
@@ -785,15 +823,24 @@ sealed partial class Editor : Screen
         bool click = Input.IsMouseButtonPressed(MouseButton.Left), held = Input.IsMouseButtonDown(MouseButton.Left);
         if (click)
         {
+            // an open sample set dropdown takes the click (a row sets it; anywhere else just closes it)
+            if (setDrop >= 0)
+            {
+                bool addition = setDrop == 1;
+                setDrop = -1;
+                for (int i = 0; i < SetNames.Length; i++) if (CheckCollisionPointRec(mouse, SetRow(addition, i))) { SetSet(addition, i); return; }
+                if (CheckCollisionPointRec(mouse, SetBox(false)) || CheckCollisionPointRec(mouse, SetBox(true))) return;
+            }
+            else for (int s = 0; s < 2; s++) if (CheckCollisionPointRec(mouse, SetBox(s == 1))) { setDrop = s; return; }
             for (int i = 0; i < ToolNames.Length; i++) if (CheckCollisionPointRec(mouse, ToolRect(i))) { tool = i; sliderDraft = null; return; }
-            for (int i = 0; i < ToggleNames.Length; i++)
+            for (int i = 0; i < Toggles.Length; i++)
                 if (CheckCollisionPointRec(mouse, ToggleRect(i)))
                 {
                     if (i == 0) ToggleCombo();
                     else if (i < 4) ToggleSound(1 << i);
                     else if (i == 4) gridSnap = !gridSnap;
                     else if (i == 5) distSnap = !distSnap;
-                    else CycleSet(addition: i == 7);
+                    else noteLock = !noteLock;
                     return;
                 }
         }
@@ -803,7 +850,7 @@ sealed partial class Editor : Screen
         if (click && CheckCollisionPointRec(mouse, tl))
         {
             // a spinner's end: dragged to a new (snapped) end
-            if (objs.LastOrDefault(o => o.Spinner && Math.Abs(TimelineX(o.End) - mouse.X) < 6 * u) is { } sp)
+            if (!noteLock && objs.LastOrDefault(o => o.Spinner && Math.Abs(TimelineX(o.End) - mouse.X) < 6 * u) is { } sp)
             {
                 undo.Add(Snapshot()); redo.Clear();
                 endDrag = sp;
@@ -814,6 +861,7 @@ sealed partial class Editor : Screen
             if (hit != null)
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
+                if (noteLock) return;
                 undo.Add(Snapshot()); redo.Clear();
                 timeDrag = (TimeAtX(mouse.X), selected.ToDictionary(o => o, o => o.Time));
                 breakDragFit = true;
@@ -1740,6 +1788,7 @@ sealed partial class Editor : Screen
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 else if (Input.CtrlHeld) { selected.Remove(hit); return; }
+                if (noteLock) return;
                 undo.Add(Snapshot()); redo.Clear();
                 drag = (fieldPos, selected.ToDictionary(o => o, o => (o.X, o.Y)));
             }
@@ -2330,8 +2379,19 @@ sealed partial class Editor : Screen
 
     void DrawToolbox(float u)
     {
-        // the toolbox and the toggles
-        for (int i = 0; i < ToolNames.Length; i++) DrawButton(ToolRect(i), $"{i + 1}. {ToolNames[i]}", tool == i);
+        // the toolbox and the toggles (stable's pictures; hovered, their tooltips)
+        var mouse = Input.GetMousePosition();
+        string? tip = null;
+        void Picture(string name, Rectangle r, float a)
+        {
+            if (skin.DefaultTex(name) is { } s) DrawTexturePro(s.Tex, new Rectangle(0, 0, s.Tex.Width, s.Tex.Height), r, Vector2.Zero, 0, ColorAlpha(Color.White, a));
+        }
+        for (int i = 0; i < ToolNames.Length; i++)
+        {
+            var r = ToolRect(i);
+            Picture(ToolSprites[i], r, Lit(ref toolLit[i], tool == i));
+            if (CheckCollisionPointRec(mouse, r)) tip = mode == 3 && i == 2 ? HoldTip : ToolTips[i];
+        }
         bool anySel = selected.Count > 0;
         bool[] on =
         [
@@ -2339,13 +2399,39 @@ sealed partial class Editor : Screen
             anySel ? selected.All(o => (o.HitSound & 2) != 0) : (soundNext & 2) != 0,
             anySel ? selected.All(o => (o.HitSound & 4) != 0) : (soundNext & 4) != 0,
             anySel ? selected.All(o => (o.HitSound & 8) != 0) : (soundNext & 8) != 0,
-            gridSnap, distSnap, false, false,
+            gridSnap, distSnap, noteLock,
         ];
+        for (int i = 0; i < Toggles.Length; i++)
+        {
+            var r = ToggleRect(i);
+            Picture(Toggles[i].Sprite, r, Lit(ref toggleLit[i], on[i]));
+            if (CheckCollisionPointRec(mouse, r)) tip = Toggles[i].Tip;
+        }
+        // Sampleset and Additions: their names over dropdowns of Auto / Normal / Soft / Drum
         var (selN, selA) = anySel ? SetsOf(selected.First()) : setsNext;
-        string[] keys = ["Q", "W", "E", "R", "T", "Y"];
-        for (int i = 0; i < ToggleNames.Length; i++)
-            DrawButton(ToggleRect(i), i < 6 ? $"{ToggleNames[i]} ({keys[i]})" : $"{ToggleNames[i]}: {SetNames[i == 6 ? selN : selA]}", on[i]);
-        Game.Text($"Grid {gridSize} (G)", Game.W - 92 * u, (90 + ToggleNames.Length * 34) * u, 10 * u, Color.LightGray);
+        for (int s = 0; s < 2; s++)
+        {
+            bool addition = s == 1;
+            Game.Text(addition ? "Additions" : "Sampleset", 2 * u, (addition ? 109 : 84) * u, 10 * u, Color.White);
+            var box = SetBox(addition);
+            DrawRectangleRec(box, new Color(0, 0, 0, 128));
+            DrawRectangleLinesEx(box, 1, ColorAlpha(Color.White, 0.6f));
+            Game.Text(SetNames[addition ? selA : selN], box.X + 2 * u, box.Y + 1 * u, 10 * u, Color.White);
+            Options.DrawIcon(0xf078, box.X + box.Width - 5 * u, box.Y + box.Height / 2, 6 * u, Color.White);
+        }
+        if (setDrop >= 0)
+        {
+            bool addition = setDrop == 1;
+            int current = addition ? selA : selN;
+            for (int i = 0; i < SetNames.Length; i++)
+            {
+                var r = SetRow(addition, i);
+                DrawRectangleRec(r, CheckCollisionPointRec(mouse, r) ? new Color(186, 17, 119, 255) : new Color(0, 0, 0, 230));
+                Game.Text(SetNames[i], r.X + 2 * u, r.Y + 1 * u, 10 * u, i == current ? new Color(235, 117, 140, 255) : Color.White);
+            }
+        }
+        Game.Text($"Grid {gridSize} (G)", Game.W - 92 * u, 438 * u, 10 * u, Color.LightGray);
+        if (tip != null && setDrop < 0) Options.DrawScreenTooltip(tip, mouse);
         // the distance snap's ring for an object placed now
         if (distSnap && tool is 1 or 2 && sliderDraft == null && SnapRing(Snap(time)) is { } ring && ring.Radius > 0)
         {
@@ -2353,7 +2439,7 @@ sealed partial class Editor : Screen
                 foreach (int side in new[] { -1, 1 }) DrawLineV(ToScreen(ring.From.X + side * ring.Radius, 0), ToScreen(ring.From.X + side * ring.Radius, 384), ColorAlpha(Color.White, 0.5f));
             else DrawCircleLinesV(ToScreen(ring.From.X, ring.From.Y), ring.Radius * FieldScale, ColorAlpha(Color.White, 0.5f));
         }
-        Game.Text($"{selected.Count} selected", 4 * u, 230 * u, 10 * u, Color.LightGray);
+        Game.Text($"{selected.Count} selected", 4 * u, 380 * u, 10 * u, Color.LightGray);
     }
 
     // ---- mania: stable's own compose view. The map's columns as a stage (30 wide, from x 160) scrolling through the
@@ -2474,6 +2560,7 @@ sealed partial class Editor : Screen
             {
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 else if (Input.CtrlHeld) { selected.Remove(hit); undo.RemoveAt(undo.Count - 1); return; }
+                if (noteLock) { undo.RemoveAt(undo.Count - 1); return; }
                 mDrag = (MTime(my), col, selected.ToDictionary(o => o, o => (o.Time, o.End, MColumn(o, keys))));
                 return;
             }
