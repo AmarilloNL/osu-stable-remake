@@ -728,6 +728,14 @@ sealed partial class Editor : Screen
     ];
     Rectangle ToolRect(int i) => Picture(ToolSprites[i], 0, 140 + i * 60);
     Rectangle ToggleRect(int i) => Picture(Toggles[i].Sprite, Game.W / U - 50, Toggles[i].Y);
+    // stable's combo colour choice: one new combo selected, New combo shows an arrow on its left; that strip opens a
+    // column of the map's colours (from the one it would have, a box each 20 units down, 70 from the right edge), and
+    // picking one sets the object's colour skip
+    bool comboList;
+    EObj? ComboPickable => selected.Count == 1 && selected.First() is { NewCombo: true, Spinner: false } o ? o : null;
+    Rectangle ComboExpandRect() { var r = ToggleRect(0); return new Rectangle(r.X, r.Y, 7.5f * U, r.Height); }
+    static Rectangle ComboItemRect(int i) { float u = U; return new Rectangle(Game.W - 70 * u, (80 + 20 * i) * u, 20 * u, 20 * u); }
+    int ComboItems(EObj o) => objs.FirstOrDefault(x => !x.Spinner) == o ? Colours.Length : Colours.Length - 1;
     Rectangle Picture(string name, float x, float y)
     {
         float u = U, sd = u / 1.6f;
@@ -843,6 +851,15 @@ sealed partial class Editor : Screen
                 if (CheckCollisionPointRec(mouse, SetBox(false)) || CheckCollisionPointRec(mouse, SetBox(true))) return;
             }
             else for (int s = 0; s < 2; s++) if (CheckCollisionPointRec(mouse, SetBox(s == 1))) { setDrop = s; return; }
+            if (comboList)
+            {
+                comboList = false; // (any click closes it)
+                if (ComboPickable is { } co)
+                    for (int i = 0; i < ComboItems(co); i++)
+                        if (CheckCollisionPointRec(mouse, ComboItemRect(i))) { int skip = i; Change(() => { co.Type = co.Type & ~0x70 | skip << 4; co.Raw = null; }); break; }
+                return;
+            }
+            if (ComboPickable != null && CheckCollisionPointRec(mouse, ComboExpandRect())) { comboList = true; return; }
             for (int i = 0; i < ToolNames.Length; i++) if (CheckCollisionPointRec(mouse, ToolRect(i))) { tool = i; sliderDraft = null; return; }
             for (int i = 0; i < Toggles.Length; i++)
                 if (CheckCollisionPointRec(mouse, ToggleRect(i)))
@@ -2568,11 +2585,29 @@ sealed partial class Editor : Screen
             anySel ? selected.All(o => (o.HitSound & 8) != 0) : (soundNext & 8) != 0,
             gridSnap, distSnap, noteLock,
         ];
+        var pickable = ComboPickable;
+        if (pickable == null) comboList = false;
         for (int i = 0; i < Toggles.Length; i++)
         {
             var r = ToggleRect(i);
-            Picture(Toggles[i].Sprite, r, Lit(ref toggleLit[i], on[i]));
+            Picture(i == 0 && pickable != null ? "editor-draw-newcombo-expandable" : Toggles[i].Sprite, r, Lit(ref toggleLit[i], on[i]));
+            if (i == 0 && pickable != null && CheckCollisionPointRec(mouse, ComboExpandRect())) Picture("editor-draw-newcombo-expand", r with { Width = ComboExpandRect().Width }, 1);
             if (CheckCollisionPointRec(mouse, r)) tip = Toggles[i].Tip;
+        }
+        // the colour column: black boxes (the current one teal, the hovered purple) each with a hit circle in its colour
+        if (comboList && pickable != null)
+        {
+            var colours = Colours;
+            int skip = (pickable.Type >> 4) & 7, from = ((pickable.Colour - skip) % colours.Length + colours.Length) % colours.Length;
+            for (int i = 0; i < ComboItems(pickable); i++)
+            {
+                var r = ComboItemRect(i);
+                DrawRectangleRec(r, CheckCollisionPointRec(mouse, r) ? new Color(165, 90, 234, 230) : i == skip ? new Color(0, 85, 85, 85) : new Color(0, 0, 0, 160));
+                var c = new Vector2(r.X + r.Width / 2, r.Y + r.Height / 2);
+                float s = 5 / 32f * u / 1.6f;
+                skin.Tex("hitcircle")?.Draw(c, s, colours[(from + i) % colours.Length]);
+                skin.Tex("hitcircleoverlay")?.Draw(c, s, Color.White);
+            }
         }
         // Sampleset and Additions: their names over dropdowns of Auto / Normal / Soft / Drum
         var (selN, selA) = anySel ? SetsOf(selected.First()) : setsNext;
