@@ -1,19 +1,20 @@
 <div align="center">
 
-# osu!stable remake
+# 🎯 osu!stable remake
 
 **An offline, from-scratch rewrite of osu!stable — same feel, lower frame times.**
 
-![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
-![C#](https://img.shields.io/badge/C%23-raylib--cs%207-239120?logo=csharp&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Windows%20x64-0078D6?logo=windows&logoColor=white)
-![Offline](https://img.shields.io/badge/online-never-lightgrey)
+[![Test build](https://img.shields.io/github/v/release/AmarilloNL/osu-stable-remake?include_prereleases&style=for-the-badge&color=ff66aa&label=test%20build)](https://github.com/AmarilloNL/osu-stable-remake/releases)
+[![Windows x64](https://img.shields.io/badge/Windows-x64-0078d4?style=for-the-badge&logo=windows11&logoColor=white)](#getting-started)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512bd4?style=for-the-badge&logo=dotnet&logoColor=white)](#getting-started)
+[![Offline](https://img.shields.io/badge/online-never-64748b?style=for-the-badge)](#highlights)
+
 ![Replay accuracy](https://img.shields.io/badge/stable%20replay%20accuracy-983%2F1088%20(90.3%25)-ff66aa)
 ![Status](https://img.shields.io/badge/status-work%20in%20progress-orange)
 
-</div>
+[**⬇️ Download**](https://github.com/AmarilloNL/osu-stable-remake/releases) · [✨ Highlights](#highlights) · [🕹️ What's in](#whats-in) · [📋 Roadmap](#roadmap) · [🚀 Getting started](#getting-started) · [🧪 Dev tools](#developer-tools)
 
----
+</div>
 
 osu!stable remake plays your existing **osu!stable** library — songs, skins, replays, scores and settings —
 in a new client written from the ground up in C#. The goal is to judge, look and feel like stable,
@@ -27,6 +28,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 > or osu!. No osu! code or assets are included here: skins, fonts and sounds are read from your own
 > installation at runtime.
 
+<a id="highlights"></a>
+
 ## ✨ Highlights
 
 | | |
@@ -39,6 +42,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 | 🎬 **Storyboards** | Sprites, animations, all commands and 35 easings, loops, triggers, variables, layers and pass/fail states. |
 | 📼 **Replays** | Its own exact replay format, plus import and playback of your stable `.osr` replays, with stable's replay overlay and speed control. |
 | 🎵 **Low-latency audio** | BASS audio with a clock that stays within ~0.15 ms of the music. |
+
+<a id="whats-in"></a>
 
 ## 🕹️ What's in
 
@@ -61,7 +66,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Switch modes like stable (`Ctrl+1`-`4` or the Mode button); every map is listed in every mode, taiko / catch / mania maps with their mode's icon, and play in their own mode; osu! maps convert to the chosen one
 - **osu!taiko**: stable's hit windows and scroll speed per timing point, osu! sliders converted to hits or drumrolls, swells (their count plus one hits, a bonus that leaves the combo alone), big notes for both hands, bar lines, health from empty (a pass needs it over half) and stable's scoring (kiai 1.2x). The drum, hit target and the mascot (idle, kiai, fail, cheering at combo milestones) from your skin, hit notes thrown to the health bar, combo flowers. Keys: `Z` `X` `C` `V` (rim, centre, centre, rim)
 - **osu!catch**: fruits, droplets, tiny droplets and banana showers converted like stable (its seeded randomness included), the catcher's size from CS, walking and dashing, hyperdashes, fruit piling on the plate and thrown off at a combo's end, the catch flashes, dash and hyperdash after-images, `comboburst-fruits`. Keys: `←` `→`, `Shift` to dash
-- **osu!mania**: 1-18 keys (10 and more, and Key Coop, on two stages like stable), notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring (a full combo of MAXes is exactly 1,000,000), mania health, the stage drawn like stable's from your skin (columns and their lines, stage lights, keys, bar lines, the combo in the skin's font, long notes tiled by `NoteBodyStyle`, upside-down stages) and stable's scroll speed (`F3` / `F4`), the hit lighting and combo bursts; osu! maps convert with stable's key count (shown in song select) and its pattern generator, seeded the same way, so they get the same notes as in stable. Your key layouts from stable's settings (`ManiaLayouts`), else stable's defaults (4K: `D` `F` `J` `K`; two stages around `Space` and right `Alt`); a skin's `SpecialStyle` puts the special column on `Shift` (or `Ctrl`)
+- **osu!mania**: 1-18 keys (10 and more, and Key Coop, on two stages like stable), notes and hold notes, stable's hit windows (MAX at 16ms) and ScoreV1 scoring (a full combo of MAXes is exactly 1,000,000), mania health, stable's default stage and scroll speed (`F3` / `F4`), the hit lighting and combo bursts; osu! maps convert with stable's key count (shown in song select) and its pattern generator, seeded the same way, so they get the same notes as in stable. Your key layouts from stable's settings (`ManiaLayouts`), else stable's defaults (4K: `D` `F` `J` `K`; two stages around `Space` and right `Alt`); a skin's `SpecialStyle` puts the special column on `Shift` (or `Ctrl`)
 - Each mode's mod select like stable's: mania's key mods (1K-9K for osu! maps), Key Coop, Fade In, Mirror and Random; no Autopilot or Spun Out in taiko and catch; Relax in taiko (either colour, swells in any order) and catch (the mouse moves the catcher); Hidden, Flashlight and Perfect in every mode; each mode's own score multipliers
 - Ranking screens with each mode's judgements, replays (stable's `.osr` of these modes too), per-mode leaderboards
 </details>
@@ -70,8 +75,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 <summary><b>Beatmap editor</b></summary>
 
 - From the main menu's **Edit** (pick a map in song select) or **Beatmap options** (`F3`) → **Edit**
-- Looks like stable's: the menu as a Windows-style bar (File, Edit, View, Compose, Design, Timing, Web, Help) with its items and keys (what this editor can't do yet is greyed out), and stable's own pictures for the tabs, tools and toggles (with their tooltips), the playback buttons and Playback Rate scale, the seek bar (kiai, breaks, bookmarks, timing points, the preview point), the timeline's zoom buttons (the map's saved zoom), bookmark buttons and the kiai tag; click the time to jump to a time or an osu! timestamp
-- **Compose** (`F1`): the timeline with beat ticks coloured by snap (like stable's: `Ctrl`+wheel doubles / halves the divisor, `Alt`+wheel changes the distance spacing, `Shift`+wheel steps four snaps; `Ctrl+Shift`+wheel zooms) and stable's beat snap slider beside it, *Insert Break Time* (a break between the two objects around the current time), "Break" on the timeline at each break (drag its start or end, right-click it to take it out), breaks kept like stable's (every gap of 5 seconds or more gets one, and they follow the objects as you edit; edges you moved stay), the playfield with its grid; tools `1`-`4` (select, circle, slider, spinner), new combo `Q` (with one selected, its arrow picks the combo's colour) and hitsounds `W` `E` `R`, grid snap `T` and size `G`, note lock `L`; drag-select, move, drag in time, copy / cut / paste, delete, undo / redo (`Ctrl+Z` / `Ctrl+Y`)
+- Stable's menu bar (File, Edit, View, Compose, Design, Timing, Web, Help) with its items and keys; what this editor can't do yet is greyed out
+- **Compose** (`F1`): the timeline with beat ticks coloured by snap (like stable's: `Ctrl`+wheel doubles / halves the divisor, `Alt`+wheel changes the distance spacing, `Shift`+wheel steps four snaps; `Ctrl+Shift`+wheel zooms) and stable's beat snap slider beside it, *Insert Break Time* (a break between the two objects around the current time), "Break" on the timeline at each break (drag its start or end, right-click it to take it out), breaks kept like stable's (every gap of 5 seconds or more gets one, and they follow the objects as you edit; edges you moved stay), the playfield with its grid; tools `1`-`4` (select, circle, slider, spinner), new combo `Q` and hitsounds `W` `E` `R`, grid snap `T` and size `G`; drag-select, move, drag in time, copy / cut / paste, delete, undo / redo (`Ctrl+Z` / `Ctrl+Y`)
 - Sliders: click the head and each point (twice on one spot for a red point), right-click to finish it at the cursor; the length snaps to the beat. A selected slider's points drag, `Ctrl`+click adds one (with only that slider selected), `Ctrl`+click on a point makes it red, right-click removes one
 - Stacked objects show stacked and sliders snake in like in a play (*View → Stacking*, *Snaking sliders*); *View → Volume* and *Grid Level*, *File → Revert to Saved* (`Ctrl+L`, or `Ctrl+Shift+L` to read the images again too) like stable's
 - Stable's Edit menu keys: flip (`Ctrl+H` / `J`), rotate 90° (`Ctrl+<` / `>`), Rotate by / Scale by (`Ctrl+Shift+R` / `S`, previewed as you drag), reverse (`Ctrl+G`), clone (`Ctrl+D`); bookmarks (`Ctrl+B`, `Ctrl+Shift+B`, `Ctrl+←` / `→`); live mapping (`Ctrl+Tab`: tap your taiko or mania keys while the song plays)
@@ -81,7 +86,6 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Each mode like stable's editor: taiko maps red and blue (whistle / clap for kat), catch's distance snap across only, and mania maps in their own compose view: a column stage with the beat snap's lines, the song's note density beside it, Note and Hold tools
 - **Design** (`F2`): the storyboard at the editor's time with stable's layer toggles; add sprites from the **Sprite Library** (`I`) and keyframe them: pick Move, Scale, Fade, Rotate or (with the mouse at the left edge) Vector Scale and drag the sprite (or nudge with `W` `A` `S` `D`) to set its value now, Tweening joins keyframes into a transformation (eased In or Out), Horizontal / Vertical Flip, Colour (from a palette), Keyframe Control's add / remove / previous / next; the timeline shows the picked sprite's transformations. New sprites go to the map's `.osb` like stable's (*Diff Specific* moves one into the difficulty); a sprite's loops and triggers are kept as written while its other transformations are edited, commands with a chain of values become one transformation per step, and storyboard variables are read like the game reads them. *Move all elements in time...* shifts the whole storyboard and the video like stable's
 - **Timing** (`F3`): add, move and delete red and green points, BPM, offset, meter, slider velocity, volume, sample set, custom sample number and kiai; stable's **Tap Here!** (`T`) times a section from your taps, and *Reset Current Section* untimes one to tap again
-- **Timing** (`F6` for the full list): stable's panel with the BPM, offset, slider velocity and tick rate between - and + (`Shift` / `Ctrl` for bigger / smaller steps), *Move already placed notes*, the metronome with *Tap Here!* (or `T`) and *Reset*, BPM and velocity flags along the timeline
 - **Song setup** (`F4`): artist, title, creator, difficulty name, source, tags, the difficulty sliders (mania's Key Count) and the map's mode; combo colours, the countdown (speed, offset), letterbox in breaks, widescreen storyboard, epilepsy warning, samples matching the playback rate, the default sample set, the map-wide sample volume and custom sample set, and stack leniency
 - Playback with hitsounds at 25-100% speed (`Space`, `Z` `X` `C` `V` `B`), the wheel and arrow keys step through the beat snap
 - `F5` test-plays the map as it stands from the current position (like stable) and comes back; `Ctrl+S` saves; `Esc` asks to save. Lines you didn't touch are written back exactly as they were
@@ -103,7 +107,6 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Main menu with the beating cookie, audio visualizer, seasonal backgrounds, tips and music controls
 - Ranking screen with stable's layout, HP graph and replay watching
 - Options panel as stable's: all nine sections with dropdowns, buttons, stable's tooltips and the skin preview (online parts are shown but never connect; changes go to `remake.cfg`)
-- Stable's skin choices: *Use Taiko skin for Taiko mode* (your skin named "taiko"), a map's skin preference for its plays, *Always use default skin* in the editor
 - `Ctrl+Alt+Shift+S` reloads the skin from disk like stable's (queued until you're back in the menus during a play or on a ranking screen)
 - Stable's offset wizard (Options → Audio): ticks scroll to the beat of the song that's playing while you set the universal offset
 - Menu snow, kiai star fountains, break stars, combo bursts and kiai beat pulses, ported from stable
@@ -120,6 +123,8 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 - Stable `.osr` replays from your osu! folder show up in the leaderboards marked `[stable]`
 - Stable's replay overlay with speed control (`F`); `H` hides it and the leaderboard
 </details>
+
+<a id="roadmap"></a>
 
 ## 📋 Roadmap
 
@@ -163,7 +168,14 @@ Progress at a glance. Checked items are done; everything else is still open.
 **Not planned**
 - Online features of any kind (login, multiplayer, online leaderboards, score submission, beatmap uploading)
 
+<a id="getting-started"></a>
+
 ## 🚀 Getting started
+
+> [!TIP]
+> **Just want to play?** Grab the latest `osu-stable-remake-<version>.exe` test build from
+> [**Releases**](https://github.com/AmarilloNL/osu-stable-remake/releases), put it in its own folder and run it.
+> You still need osu!stable installed with your songs. Building it yourself works like this:
 
 **You need**
 - Windows 10 or 11 (x64)
@@ -191,6 +203,8 @@ OsuDir = D:\Games\osu!
 Your osu! settings (`osu!.<username>.cfg`) are read as-is: keys, skin, dim, volumes, offset and so on.
 Anything you change inside osu!stable remake is written to `remake.cfg` next to the executable instead, and
 overrides the osu! value. Your osu! settings and databases are never modified.
+
+<a id="developer-tools"></a>
 
 ## 🧪 Developer tools
 
