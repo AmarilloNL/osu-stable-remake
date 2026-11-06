@@ -723,17 +723,17 @@ sealed partial class Editor : Screen
                         double t = o.Time + (o.End - o.Time) * k / o.Slides;
                         if (!(t > lastSoundTime && t <= time)) continue;
                         var (n, a) = sets[k];
-                        if (k == 0 && n == 0 && FormatVersion < 14) n = SetsOf(o).Item1; // (gameplay's rule)
+                        if (k == 0 && n == 0 && version < 14) n = SetsOf(o).Item1; // (gameplay's rule)
                         Hitsound(e[k], t, n, a);
                     }
                     continue;
                 }
-                bool head = o.Time > lastSoundTime && o.Time <= time, end = o.Spinner && o.End > lastSoundTime && o.End <= time;
+                bool head = !o.Spinner && o.Time > lastSoundTime && o.Time <= time, end = o.Spinner && o.End > lastSoundTime && o.End <= time; // (a spinner sounds at its end only)
                 if (!head && !end) continue; // (only what sounds now is looked at: this runs over every object each frame)
                 var (normal, addition) = SetsOf(o);
                 var smp = o.Sample.Split(':');
                 int index = smp.Length > 2 && int.TryParse(smp[2], out int i) ? i : 0, volume = smp.Length > 3 && int.TryParse(smp[3], out int v) ? v : 0;
-                if (head) Hitsound(o.HitSound, o.Time, normal, addition, index, volume);
+                if (head) Hitsound(o.HitSound, o.Time, normal, addition, index, volume, file: o.Circle && smp.Length > 4 ? smp[4].Trim() : "");
                 if (end) Hitsound(o.HitSound, o.End, normal, addition, index, volume, ahead: 0);
             }
         lastSoundTime = time;
@@ -741,9 +741,10 @@ sealed partial class Editor : Screen
 
     // the game's hitsound mix (Player.PlayHitsound): the object's own sets, index and volume over the timing point's,
     // the additions in the addition set, the normal sound only alone, when asked for or with the skin's LayeredHitSounds
-    void Hitsound(int bits, double at, int normalSet = 0, int additionSet = 0, int index = 0, int volume = 0, double ahead = 5)
+    void Hitsound(int bits, double at, int normalSet = 0, int additionSet = 0, int index = 0, int volume = 0, double ahead = 5, string file = "")
     {
         var tp = info.PointAt(at + ahead);
+        if (samples.File(file) is { } custom) { custom.Play(BeatmapSamples.EffectVolume * (volume > 0 ? volume : tp.Volume) / 100f); return; }
         int set = normalSet > 0 ? normalSet : tp.SampleSet > 0 ? tp.SampleSet : 1;
         int add = additionSet > 0 ? additionSet : set;
         int idx = index > 0 ? index : tp.SampleIndex;
@@ -753,7 +754,6 @@ sealed partial class Editor : Screen
         if ((bits & 4) != 0) samples.Play(add, "hitfinish", idx, vol);
         if ((bits & 8) != 0) samples.Play(add, "hitclap", idx, (int)(vol * 0.85));
     }
-    int FormatVersion => int.TryParse(header.AsSpan(header.LastIndexOf('v') + 1), out int fv) ? fv : 14;
 
     // ---- compose
     // stable's compose toolbox: its tools as osu!ui's pictures down the left from 140 (60 apart; mania's hold where the
@@ -1916,7 +1916,7 @@ sealed partial class Editor : Screen
     }
 
     (EObj Slider, int Index)? pointDrag;
-    Vector2 pointFrom; bool pointMoved, timeMoved; float timeFromX; string dragUndo = ""; // (the undo state once it moves) // (a click on a point that doesn't move leaves it where it is)
+    Vector2 pointFrom; bool pointMoved, timeMoved, dragMoved; float timeFromX; string dragUndo = ""; // (the undo state once it moves) // (a click on a point that doesn't move leaves it where it is)
 
     void UpdateSelect(Vector2 mouse, Vector2 fieldPos, bool click, bool held, bool inField)
     {
@@ -1978,7 +1978,7 @@ sealed partial class Editor : Screen
                 if (!selected.Contains(hit)) { if (!Input.CtrlHeld) selected.Clear(); selected.Add(hit); }
                 else if (Input.CtrlHeld) { selected.Remove(hit); return; }
                 if (noteLock) return;
-                undo.Add(Snapshot()); redo.Clear();
+                (dragUndo, dragMoved) = (Snapshot(), false);
                 drag = (fieldPos, selected.ToDictionary(o => o, o => (o.X, o.Y)));
             }
             else { if (!Input.CtrlHeld) selected.Clear(); boxFrom = fieldPos; }
@@ -1989,6 +1989,7 @@ sealed partial class Editor : Screen
             if (held)
             {
                 var delta = fieldPos - d.From;
+                if (!dragMoved && delta != Vector2.Zero) { dragMoved = true; undo.Add(dragUndo); redo.Clear(); }
                 var anchor = d.Start.First();
                 var snapped = delta == Vector2.Zero ? Vector2.Zero // (a click that doesn't move leaves it where it is)
                     : GridSnap(new Vector2((float)anchor.Value.X, (float)anchor.Value.Y) + delta) - new Vector2((float)anchor.Value.X, (float)anchor.Value.Y);
