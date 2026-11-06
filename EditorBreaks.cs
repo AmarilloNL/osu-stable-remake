@@ -285,12 +285,14 @@ sealed partial class Editor
         Notification.Show("There isn't enough room to place a break here!  Make sure you are between two well-spaced beats.", 3000);
     }
 
-    // stable's breaks on the timeline: a grey band through its middle from the object before to the one after (the
-    // break itself red when under 50ms), "Break" at its start
+    // stable's breaks on the timeline: a band as wide as the objects' (radius 16 units less a pixel) through its
+    // middle, grey 150 over the break and 100 from the object before and to the one after (teal where that edge is the
+    // break's own, red both when it's under 50ms), "Break" at its start
     void DrawBreakLabels(Rectangle r, float u)
     {
-        float cy = r.Y + r.Height / 2 + 3 * u, thick = Math.Max(1, r.Height / 8 - 1);
-        var grey = new Color(100, 100, 100, 150);
+        float cy = r.Y + r.Height / 2 + 3 * u, thick = 2 * (16 * u - 1);
+        var grey = new Color(100, 100, 100, 100);
+        var own = new Color(40, 100, 100, 100);
         foreach (var b in info.Breaks)
         {
             int next = objs.FindIndex(o => o.Time >= b.Start);
@@ -299,9 +301,11 @@ sealed partial class Editor
             if (x3 < r.X || x0 > r.X + r.Width) continue;
             if (breakDrag is var (db, _, _, _) && db.Start == (int)b.Start && db.End == (int)b.End) // (where the dragged edge would go)
                 DrawRectangle((int)TimelineX(Snap(TimeAtX(EMouse.X))) - 1, (int)r.Y, 2, (int)r.Height, Color.White);
-            DrawLineEx(new(x0, cy), new(x1, cy), thick, grey);
-            DrawLineEx(new(x1, cy), new(x2, cy), thick, b.End - b.Start < 50 ? new Color(255, 0, 0, 150) : new Color(100, 100, 100, 100));
-            DrawLineEx(new(x2, cy), new(x3, cy), thick, grey);
+            breakFlags.TryGetValue(((int)b.Start, (int)b.End), out var flags);
+            bool tiny = b.End - b.Start < 50;
+            DrawLineEx(new(x0, cy), new(x1, cy), thick, tiny ? new Color(255, 0, 0, 150) : flags.Item1 ? own : grey);
+            DrawLineEx(new(x1, cy), new(x2, cy), thick, new Color(100, 100, 100, 150));
+            DrawLineEx(new(x2, cy), new(x3, cy), thick, tiny ? new Color(255, 0, 0, 150) : flags.Item2 ? own : grey);
             if (x1 >= r.X - 60 * u && x1 <= r.X + r.Width) Game.Text("Break", x1 + 5 * u, r.Y + 12 * u, 14 * u, Color.White);
         }
     }

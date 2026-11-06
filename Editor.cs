@@ -2395,20 +2395,7 @@ sealed partial class Editor : Screen
             }
         }
         if (tab == 0) DrawBreakLabels(r, u);
-        // the objects
-        var colours = Colours;
-        foreach (var o in tab == 3 ? [] : objs) // (Design: the picked sprite's transformations instead)
-        {
-            float x0 = X(o.Time), x1 = X(o.End);
-            if (x1 < r.X - 20 * u || x0 > r.X + r.Width + 20 * u) continue;
-            float cy = r.Y + r.Height / 2, rad = 9 * u;
-            var col = o.Spinner ? Color.Gray : ObjColour(o, colours);
-            if (o.Slider || o.Spinner) DrawRectangleRounded(new Rectangle(x0 - rad, cy - rad, x1 - x0 + rad * 2, rad * 2), 1, 8, ColorAlpha(col, 0.7f));
-            DrawCircleV(new(x0, cy), rad, col);
-            DrawCircleLinesV(new(x0, cy), rad, selected.Contains(o) ? new Color(255, 200, 0, 255) : Color.White);
-            if (selected.Contains(o)) DrawCircleLinesV(new(x0, cy), rad + 2 * u, new Color(255, 200, 0, 255));
-            if (!o.Spinner) Game.Text(o.Combo.ToString(), x0 - Game.TextWidth(o.Combo.ToString(), 11 * u) / 2, cy - 6 * u, 11 * u, Color.White);
-        }
+        if (tab != 3) DrawTimelineObjects(r, u, from, to); // (Design: the picked sprite's transformations instead)
         if (tab == 3) DrawDesignLanes(r, u);
         if (tab == 1) DrawTimingFlags(r, u);
         EndScissorMode();
@@ -2416,6 +2403,84 @@ sealed partial class Editor : Screen
         // the current time
         DrawRectangle((int)(r.X + r.Width / 2), (int)r.Y, Math.Max(2, (int)(2 * u)), (int)r.Height, new Color(255, 255, 255, 230));
         if (tab == 0) DrawSnapPanel(u);
+    }
+
+    // stable's objects on the timeline: the skin's hit circle in the object's colour under its overlay (both at 0.4)
+    // and its combo number (0.32), on its start, its end and each repeat (with the reverse arrow, black on a bright
+    // colour over stable's own circle); hitcircleselect over a selected one; anything with a length a band in its
+    // colour (170, or solid when selected) between them. Each fades within 40 units of the timeline's ends; ones at
+    // the same time step up 2 units each, under the one before; earlier objects are on top.
+    void DrawTimelineObjects(Rectangle r, float u, double from, double to)
+    {
+        var colours = Colours;
+        float rad = 16 * u - 1, cy = r.Y + 3 * u + r.Height / 2, left = r.X + rad, right = r.X + r.Width - rad;
+        byte Fade(float x, float max = 255) => (byte)Math.Clamp(max * Math.Min(x - r.X, r.X + r.Width - x) / (40 * u), 0, max);
+        int lo = objs.FindIndex(o => o.End >= from), hi = objs.FindLastIndex(o => o.Time <= to);
+        if (lo < 0 || hi < lo) return;
+        // the bands first, under every circle
+        for (int i = lo; i <= hi; i++)
+        {
+            var o = objs[i];
+            if (o.End <= o.Time) continue;
+            float x0 = TimelineX(o.Time), x1 = TimelineX(o.End), mid = r.X + r.Width / 2;
+            byte a = selected.Contains(o) ? (byte)255 : x0 > mid ? Fade(x0, 170) : x1 < mid ? Fade(x1, 170) : (byte)170;
+            x0 = Math.Max(x0, left); x1 = Math.Min(x1, right);
+            if (x0 > x1) continue;
+            var c = ObjColour(o, colours);
+            DrawRectangleRounded(new Rectangle(x0 - rad, cy - rad, x1 - x0 + rad * 2, rad * 2), 1, 16, c with { A = a });
+        }
+        var body = skin.Tex("hitcircle");
+        var overlay = skin.Tex("hitcircleoverlay");
+        var select = skin.Tex("hitcircleselect");
+        var arrow = skin.Tex("reversearrow");
+        bool defaultCircle = !skin.Own("hitcircle");
+        float s = 0.4f * 0.625f * u;
+        void Circle(EObj o, double t, int n, Color col, bool sel, bool number, bool repeat)
+        {
+            if (t < from || t > to) return;
+            float x = TimelineX(t), y = (45 - 2 * n) * u;
+            byte a = Fade(x);
+            var c = new Vector2(x, y);
+            if (body is { } b) b.Draw(c, s, col with { A = a });
+            else DrawCircleV(c, 16 * u, col with { A = a });
+            overlay?.Draw(c, s, new Color(255, 255, 255, (int)a));
+            if (number) DrawComboNumber(o.Combo, new Vector2(x, (45 - 3 * n) * u), 0.32f * 0.625f * u, new Color(255, 255, 255, (int)a));
+            if (repeat) arrow?.Draw(c, s, defaultCircle && col.R + col.G + col.B > 600 ? new Color(0, 0, 0, (int)a) : new Color(255, 255, 255, (int)a));
+            if (sel) select?.Draw(c, s, new Color(255, 255, 255, (int)a));
+        }
+        // stacked indices (objects sharing a start time), then back to front
+        Span<int> stack = hi - lo < 4096 ? stackalloc int[hi - lo + 1] : new int[hi - lo + 1];
+        for (int i = lo; i <= hi; i++) stack[i - lo] = i > lo && objs[i - 1].Time == objs[i].Time ? stack[i - lo - 1] + 1 : 0;
+        for (int i = hi; i >= lo; i--)
+        {
+            var o = objs[i];
+            var col = o.Spinner ? Color.Gray : ObjColour(o, colours);
+            bool sel = selected.Contains(o);
+            int n = stack[i - lo];
+            if (o.End != o.Time) Circle(o, o.End, n, col, sel, false, false);
+            if (o.Slider)
+                for (int k = o.Slides - 1; k >= 1; k--) Circle(o, (int)(o.Time + (o.End - o.Time) * k / o.Slides), n, col, false, false, true);
+            Circle(o, o.Time, n, col, sel, !o.Spinner, false);
+        }
+    }
+
+    // a combo number in the skin's hit circle font (HitCirclePrefix, overlapping by HitCircleOverlap)
+    static void DrawComboNumber(int number, Vector2 centre, float scale, Color tint)
+    {
+        string text = number.ToString();
+        float total = 0, overlap = skin.HitCircleOverlap * scale;
+        foreach (char ch in text)
+        {
+            if (skin.Glyph(skin.HitCirclePrefix, ch) is not { } g) return;
+            total += g.Width * scale;
+        }
+        float x = centre.X - (total - overlap * (text.Length - 1)) / 2;
+        foreach (char ch in text)
+        {
+            var g = skin.Glyph(skin.HitCirclePrefix, ch)!.Value;
+            g.Draw(new Vector2(x + g.Width * scale / 2, centre.Y), scale, tint);
+            x += g.Width * scale - overlap;
+        }
     }
 
     // stable's Timing tab: each timing point flagged along the timeline's bottom (osu!ui's tab, 37 units tall, from 4
@@ -3012,18 +3077,7 @@ sealed partial class Editor : Screen
         if (skin.Tex("hitcircle") is { } body) body.Draw(p, cs, ColorAlpha(col, alpha));
         else DrawCircleV(p, Radius * FieldScale, ColorAlpha(col, alpha));
         skin.Tex("hitcircleoverlay")?.Draw(p, cs, ColorAlpha(Color.White, alpha));
-        if (number)
-        {
-            // the combo number from the skin's default-0..9, overlapping like stable's (HitCircleOverlap)
-            string s = combo.ToString();
-            var digits = s.Select(ch => skin.Tex($"default-{ch}")).ToList();
-            if (digits.All(d => d != null))
-            {
-                float scale = cs * 0.8f, overlap = skin.HitCircleOverlap * scale;
-                float total = digits.Sum(d => d!.Value.Width * scale) - overlap * (digits.Count - 1), x = p.X - total / 2;
-                foreach (var d in digits) { d!.Value.Draw(new(x + d.Value.Width * scale / 2, p.Y), scale, ColorAlpha(Color.White, alpha)); x += d.Value.Width * scale - overlap; }
-            }
-        }
+        if (number) DrawComboNumber(combo, p, cs * 0.8f, ColorAlpha(Color.White, alpha));
         if (sel) (skin.Tex("hitcircleselect") is { } hs ? (Action)(() => hs.Draw(p, cs, ColorAlpha(Color.White, alpha))) : () => DrawCircleLinesV(p, Radius * FieldScale + 2, new Color(255, 200, 0, 255)))();
     }
 
