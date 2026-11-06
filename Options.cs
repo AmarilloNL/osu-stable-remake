@@ -369,8 +369,7 @@ sealed class Options : Screen
             case "Letterboxing": Game.ApplyDisplay(); break;
             case "LetterboxPositionX" or "LetterboxPositionY": Game.PlaceBox(); break;
             case "Skin":
-                Game.Skin.Unload();
-                Game.Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", value));
+                Game.LoadSkin();
                 break;
         }
     }

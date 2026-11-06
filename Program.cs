@@ -29,6 +29,7 @@ static class Game
             Previous = screen;
             screen = value;
             if (skinReloadQueued && value is not (Player or Player.Results)) { skinReloadQueued = false; ReloadSkin(); } // (those hold the old skin)
+            if (value is not Player) UseSkin(null, value is Editor); // (a play picks its own)
             // stable's window title names the map during a play ("osu!  - Artist - Title [Version]")
             if (IsWindowReady()) SetWindowTitle(value is Player p ? $"osu!stable remake - {p.MapName}" : "osu!stable remake");
             value.Entered();
@@ -42,8 +43,7 @@ static class Game
     static void ReloadSkin()
     {
         Notification.Show("Skin reloaded!", 2000);
-        Skin.Unload();
-        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+        LoadSkin();
     }
     static void ReloadSkinKey()
     {
@@ -205,6 +205,27 @@ static class Game
         if (fadeLevel > 0) DrawRectangle(0, 0, W, H, ColorAlpha(Color.Black, (float)Math.Min(100, fadeLevel) / 100));
     }
     public static Skin Skin = null!;
+    static readonly Dictionary<string, Skin> skins = new(StringComparer.OrdinalIgnoreCase); // (each one used, by folder)
+
+    // the configured skin read (again) from disk, every other one let go
+    public static void LoadSkin()
+    {
+        foreach (var s in skins.Values) s.Unload();
+        skins.Clear();
+        UseSkin(null);
+    }
+
+    // stable's skin for what's on screen: the configured one (each change of screen goes back to it), or the one a play
+    // asks for when Skins has it or it's "Default" (false when not). The editor and its test plays take the default skin
+    // with EditorDefaultSkin. One used stays loaded for next time.
+    public static bool UseSkin(string? name, bool editing = false)
+    {
+        bool found = name != null && (name.Equals("Default", StringComparison.OrdinalIgnoreCase) || Directory.Exists(Path.Combine(Config.OsuDir, "Skins", name)));
+        string dir = Path.Combine(Config.OsuDir, "Skins", editing && Config.GetBool("EditorDefaultSkin", false) ? "" : found ? name! : Config.Get("Skin", ""));
+        if (!skins.TryGetValue(dir, out var skin)) skins[dir] = skin = new Skin(dir);
+        Skin = skin;
+        return found || name == null;
+    }
     public static Font Font, Bold, Light, Mono, Icons; // Icons: osu!ui's FontAwesome (options sidebar etc.)
     public static bool Quit;
 
@@ -804,7 +825,7 @@ static class Game
         // search, gear, desktop, circle, volume, brush, gamepad, pencil, globe, wrench, chevron-circle-left, chevron-down
         Icons = LoadUiFont("FontAwesome", @"C:\Windows\Fonts\segmdl2.ttf", [0xf002, 0xf013, 0xf108, 0xf10c, 0xf028, 0xf026, 0xf1fc, 0xf11b, 0xf040, 0xf0ac, 0xf0ad, 0xf137, 0xf078, 0xf048, 0xf04b, 0xf04c, 0xf04d, 0xf051, 0xf129, 0xf0c9, 0xf005, 0xf01b, 0xf054]);
 
-        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+        UseSkin(null);
         var testMods = ModInfo.Parse(Arg("--mods") ?? "") | (args.Contains("--auto") ? Mods.Autoplay : Mods.None);
         var songSelect = new SongSelect(Arg("--search") ?? "", testMods);
         Player.Bot = args.Contains("--bot");
@@ -982,7 +1003,7 @@ static class Game
             Console.Error.WriteLine($"frame work: {work.Count} frames, mean {work.Average():0.000}ms (cpu {cpuSum / work.Count:0.000}ms), p99 {work[(int)(work.Count * 0.99)]:0.000}ms, max {work[^1]:0.000}ms; main thread allocated {GC.GetAllocatedBytesForCurrentThread() / 1048576.0:0} MB");
         }
         AllocProfile.Instance?.Print();
-        Skin.Unload();
+        foreach (var s in skins.Values) s.Unload();
         Bass.BASS_Free();
         CloseWindow();
         timeEndPeriod(1);
@@ -999,7 +1020,7 @@ static class Game
         SetTraceLogLevel(TraceLogLevel.None);
         SetConfigFlags(ConfigFlags.HiddenWindow);
         InitWindow(640, 480, "fuzz");
-        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+        UseSkin(null);
         Player.VirtualClock = true;
         var play = ModInfo.Parse(mods) | Mods.NoFail;
         var back = new SongSelect();
@@ -1145,7 +1166,7 @@ static class Game
         SetTraceLogLevel(TraceLogLevel.None);
         SetConfigFlags(ConfigFlags.HiddenWindow);
         InitWindow(640, 480, "verify");
-        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+        UseSkin(null);
         Player.VirtualClock = true;
 
         string db = Path.Combine(Config.OsuDir, "osu!.db");
@@ -1209,7 +1230,7 @@ static class Game
         SetTraceLogLevel(TraceLogLevel.None);
         SetConfigFlags(ConfigFlags.HiddenWindow);
         InitWindow(640, 480, "auto-check");
-        Skin = new Skin(Path.Combine(Config.OsuDir, "Skins", Config.Get("Skin", "")));
+        UseSkin(null);
         Player.VirtualClock = true;
         int checkMode = int.TryParse(Environment.GetEnvironmentVariable("AUTOCHECK_MODE"), out int cm) ? cm : 0; // taiko / catch / mania (osu! maps converted)
         var maps = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db"))

@@ -68,7 +68,7 @@ sealed partial class Editor : Screen
     double time, rate = 1;
     double lastSoundTime = double.NaN;
     BeatmapSamples samples;
-    readonly Skin skin = Game.Skin;
+    static Skin skin => Game.Skin; // (the default one with EditorDefaultSkin)
     bool modified;
 
     // ---- editing state

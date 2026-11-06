@@ -187,8 +187,7 @@ sealed class BeatmapImport : Screen
             return;
         }
         Config.SetOwn("Skin", name);
-        Game.Skin.Unload();
-        Game.Skin = new Skin(dest);
+        Game.LoadSkin();
         if (songs.Menu is MainMenu menu) Game.Screen = new Options(menu, songs, "SKIN");
     }
 }

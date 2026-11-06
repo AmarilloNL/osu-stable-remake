@@ -23,8 +23,8 @@ sealed partial class Player
     internal sealed class Results : Screen
     {
         readonly Player p;
-        readonly Skin skin = Game.Skin;
-        readonly bool newLayout = Game.Skin.Version > 1;
+        static Skin skin => Game.Skin; // (stable: the configured one again, not a play's own)
+        static bool newLayout => skin.Version > 1;
         readonly string grade, gradeTex, scoreText;
         readonly string[] modIconTex; // the shown mods' sprites, in display order
         readonly bool perfect;
@@ -42,6 +42,7 @@ sealed partial class Player
         public Results(Player p)
         {
             this.p = p;
+            Game.UseSkin(null);
             if (p.Applause) applause = Game.Skin.Sound("applause")?.PlayChannel(BeatmapSamples.EffectVolume) ?? 0;
             start = Game.NowMs + 300;
             grade = p.Grade();

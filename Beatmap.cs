@@ -114,6 +114,7 @@ sealed class Beatmap
 {
     public string Folder = "", File = "";
     public int FormatVersion = 14, Mode;
+    public string SkinPreference = ""; // the skin the mapper asks plays to use
     public string AudioFilename = "", Background = "", Title = "", Artist = "", Version = "", Creator = "", Source = "";
     public string TitleUnicode = "", ArtistUnicode = "", Tags = "";
     public int BeatmapId, SetId = -1;
@@ -227,6 +228,7 @@ sealed class Beatmap
                 switch (k)
                 {
                     case "AudioFilename": AudioFilename = v; break;
+                    case "SkinPreference": SkinPreference = v; break;
                     case "AudioLeadIn": AudioLeadIn = D(v); break;
                     case "SamplesMatchPlaybackRate": SamplesMatchPlaybackRate = v.StartsWith('1'); break;
                     case "Countdown": Countdown = (int)D(v); break;

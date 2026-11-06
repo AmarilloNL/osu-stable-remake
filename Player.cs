@@ -41,7 +41,7 @@ sealed partial class Player : Screen
     readonly double fpFrameMs;
     int fpFirst;
     readonly BeatmapSamples samples;
-    readonly Skin skin = Game.Skin;
+    readonly Skin skin;
     Color[] colours; // per-map Skin toggle can swap these (VisualSettings.cs)
 
     // Clock: a Stopwatch that is continuously (and gently) pulled towards the audio position.
@@ -168,6 +168,14 @@ sealed partial class Player : Screen
         objs = map.Objects;
         mode = watching?.Mode ?? map.PlayMode; // (a replay: the mode it was played in)
         if (watching != null) seed = watching.Seed;
+        // stable: a taiko play takes the skin named "taiko" with UseTaikoSkin, any other the map's SkinPreference (with
+        // its beatmap skin on), when Skins has it - else the configured one
+        bool editing = Game.Screen is Editor || Game.Screen is Player { ReturnTo: Editor };
+        string? own = mode == 1 ? (Config.GetBool("UseTaikoSkin", false) ? "taiko" : null)
+            : map.SkinPreference.Length > 0 && Toggles.Skin && !Config.GetBool("IgnoreBeatmapSkins", false) ? map.SkinPreference : null;
+        if (!Game.UseSkin(own, editing) && mode != 1 && !VirtualClock) // (the taiko one goes unmentioned)
+            Toast.Show($"This beatmap is requesting a skin preference of '{own}'.  Please download this skin for the intended experience", new Color(255, 69, 0, 255), 6000);
+        skin = Game.Skin;
         // (a mania convert under a key mod: its keys against its own count)
         maniaKeyChange = mode == 3 && map.Mode != 3 && mods.Keys() > 0 ? mods.Keys() - ManiaConvertKeys(map) : 0;
         modMul = mods.ScoreMultiplier(mode, maniaKeyChange);
