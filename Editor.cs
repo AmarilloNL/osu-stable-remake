@@ -970,8 +970,9 @@ sealed partial class Editor : Screen
                 breakDragFit = true;
                 return;
             }
-            // (stable's: any of an object's circles there - its start, end or a repeat - as big as they're drawn)
-            var hit = objs.LastOrDefault(o => OnTimelineCircle(o, mouse.X, 16 * u));
+            // (stable's: any of an object's circles there - its start, end or a repeat - as big as they're drawn; the
+            // earliest, drawn on top)
+            var hit = objs.FirstOrDefault(o => OnTimelineCircle(o, mouse.X, 16 * u));
             if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && (hit == null || hit == only))
             {
                 int at = EdgeAtTimeline(only, mouse.X);
