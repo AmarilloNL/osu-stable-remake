@@ -970,7 +970,8 @@ sealed partial class Editor : Screen
                 breakDragFit = true;
                 return;
             }
-            var hit = objs.LastOrDefault(o => Math.Abs(TimelineX(o.Time) - mouse.X) < 10 * u);
+            // (stable's: any of an object's circles there - its start, end or a repeat - as big as they're drawn)
+            var hit = objs.LastOrDefault(o => OnTimelineCircle(o, mouse.X, 16 * u));
             if (!Input.CtrlHeld && selected.Count == 1 && selected.First() is { Slider: true } only && (hit == null || hit == only))
             {
                 int at = EdgeAtTimeline(only, mouse.X);
@@ -1469,7 +1470,7 @@ sealed partial class Editor : Screen
             if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && p.Text.Length > 0) p.Text = p.Text[..^1];
         }
         bool click = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (Input.IsKeyPressed(KeyboardKey.Escape) || click && CheckCollisionPointRec(mouse, XformButton(1))) { prompt = null; p.Cancel?.Invoke(); return; }
+        if (Input.IsKeyPressed(KeyboardKey.Escape) || click && p.No.Length > 0 && CheckCollisionPointRec(mouse, XformButton(1))) { prompt = null; p.Cancel?.Invoke(); return; }
         if (Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.KpEnter) || click && CheckCollisionPointRec(mouse, XformButton(0))) { prompt = null; p.Ok(p.Text ?? ""); }
     }
 
@@ -1486,7 +1487,7 @@ sealed partial class Editor : Screen
             DrawRectangleRec(box, new Color(70, 70, 90, 255));
             Game.Text(p.Text + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : ""), box.X + 4 * u, box.Y + 4 * u, 12 * u, Color.White);
         }
-        for (int i = 0; i < 2; i++) DrawButton(XformButton(i), i == 0 ? p.Yes : p.No, false);
+        for (int i = 0; i < (p.No.Length > 0 ? 2 : 1); i++) DrawButton(XformButton(i), i == 0 ? p.Yes : p.No, false); // (no second label: a notice)
     }
 
     // ---- stable's Polygonal Circle Creation (Ctrl+Shift+D): Points circles round the playfield's centre, Repeat
@@ -2094,6 +2095,12 @@ sealed partial class Editor : Screen
         return -1;
     }
     void PickEdge(EObj o, int edge) { edgeSlider = o; edgeSel = edge; bodySel = edge < 0; }
+    bool OnTimelineCircle(EObj o, float x, float radius)
+    {
+        if (Math.Abs(TimelineX(o.Time) - x) < radius || o.End != o.Time && Math.Abs(TimelineX(o.End) - x) < radius) return true;
+        if (o.Slider) for (int k = 1; k < o.Slides; k++) if (Math.Abs(TimelineX(o.Time + (o.End - o.Time) * k / o.Slides) - x) < radius) return true;
+        return false;
+    }
     bool OnBody(EObj o, Vector2 fieldPos)
     {
         var p = fieldPos - StackShift(o);
