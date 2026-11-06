@@ -52,7 +52,7 @@ sealed partial class Editor
         DrawRectangle((int)s.X, (int)(s.Y + s.Height / 2 - u), (int)(s.Width * f), (int)Math.Max(2, 2 * u), new Color(255, 160, 40, 255));
         DrawCircleV(new(s.X + s.Width * f, s.Y + s.Height / 2), 4.5f * u, Color.White);
         var b = BreakButton();
-        bool hover = CheckCollisionPointRec(Input.GetMousePosition(), b);
+        bool hover = CheckCollisionPointRec(EMouse, b);
         DrawRectangleRounded(b, 0.25f, 6, hover ? new Color(140, 175, 255, 255) : new Color(112, 152, 252, 255));
         const string text = "Insert Break Time";
         Game.Text(text, b.X + b.Width / 2 - Game.TextWidth(text, 10 * u) / 2, b.Y + (b.Height - 10 * u) / 2, 10 * u, Color.White);

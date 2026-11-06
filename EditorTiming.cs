@@ -15,9 +15,9 @@ sealed partial class Editor
     ETiming? tapRed; // the section a run of taps times (the picked red point, else the one in effect at the first tap)
     double tapUndoAt = double.NegativeInfinity;
 
-    // stable's metronome (top right; ours just under the tabs): osu!ui's panel 200 units from the right edge, Reset on
+    // stable's metronome (top right): osu!ui's panel 200 units from the right edge, Reset on
     // its left, four beat lights, Tap Here! under them
-    const float MetronomeY = 17;
+    const float MetronomeY = 0;
     static Rectangle TapButton() { float u = U; return new Rectangle(Game.W - 140 * u, (MetronomeY + 34) * u, 136 * u, 25 * u); }
     static Rectangle MetronomeReset() { float u = U; return new Rectangle(Game.W - 197 * u, (MetronomeY + 4) * u, 58 * u, 58 * u); }
 
@@ -133,7 +133,7 @@ sealed partial class Editor
 
     void DrawMetronome(float u)
     {
-        var mouse = Input.GetMousePosition();
+        var mouse = EMouse;
         float x = Game.W - 200 * u, y = MetronomeY * u;
         if (skin.DefaultTex("editor-metronome-bg") is { } bg)
             DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height), new Rectangle(x, y, bg.Width * u / 1.6f, bg.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
@@ -248,7 +248,7 @@ sealed partial class Editor
 
     void DrawTimingView(float u)
     {
-        var mouse = Input.GetMousePosition();
+        var mouse = EMouse;
         void Picture(string name, Rectangle at, Color tint)
         {
             if (skin.DefaultTex(name) is { } s) DrawTexturePro(s.Tex, new Rectangle(0, 0, s.Tex.Width, s.Tex.Height), at, Vector2.Zero, 0, tint);

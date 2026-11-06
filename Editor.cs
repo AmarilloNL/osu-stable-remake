@@ -98,10 +98,17 @@ sealed partial class Editor : Screen
     double loadedAt = Game.NowMs;
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    static float U => Game.H / 480f;
+    // stable's editor: a native menu strip (24px at 100% scaling) above the game area, which is the rest of the window
+    // (stable takes the strip's height off the game's and makes the window taller); everything else is drawn and
+    // clicked in the game area's coordinates
+    static float Strip => MathF.Round(24 * Math.Max(1, GetWindowScaleDPI().Y));
+    static float EH => Game.H - Strip;
+    static Vector2 RawMouse => Input.GetMousePosition();
+    static Vector2 EMouse => RawMouse - new Vector2(0, Strip);
+    static float U => EH / 480f;
     static KeyboardKey Bound(string key, KeyboardKey def) => Config.Key(key, def); // stable's editor bindings (Options)
     float FieldScale => fieldAsPlay ? U : 0.9f * U;
-    Vector2 FieldOrigin => fieldAsPlay ? new((Game.W - 512 * U) / 2, (Game.H - 384 * U) / 2 + 8 * U) : new((Game.W - 512 * FieldScale) / 2, 78 * U);
+    Vector2 FieldOrigin => fieldAsPlay ? new((Game.W - 512 * U) / 2, (EH - 384 * U) / 2 + 8 * U) : new((Game.W - 512 * FieldScale) / 2, 78 * U);
     bool fieldAsPlay; // (Design's Hit Objects: the playfield where play has it, over the storyboard)
     Vector2 ToScreen(double x, double y) => FieldOrigin + (new Vector2((float)x, (float)y) + stackShift) * FieldScale;
     Vector2 stackShift; // (while an object is drawn: its stack's offset)
@@ -483,15 +490,16 @@ sealed partial class Editor : Screen
 
     public override void Update(double dtMs)
     {
-        var mouse = Input.GetMousePosition();
+        var raw = RawMouse; // (the menu strip and the exit prompt: the screen's; the rest: the game area's)
+        var mouse = EMouse;
         float u = U;
         KeepBreaksAfterDrag();
-        if (exitPrompt != null) { UpdateExitPrompt(mouse); return; }
+        if (exitPrompt != null) { UpdateExitPrompt(raw); return; }
         if (xform != null) { UpdateXform(mouse); return; }
         if (prompt != null) { UpdatePrompt(mouse); return; }
         if (bmsWindow != null) { UpdateBmsImport(mouse); return; }
         if (poly != null) { UpdatePoly(mouse); return; }
-        if (field < 0 && UpdateMenu(mouse)) return;
+        if (field < 0 && UpdateMenu(raw)) return;
         // (the AiMod and Sample import windows: the editor below keeps its keys while they have the mouse)
         // (not during a drag begun in the editor: that keeps the mouse until it's let go)
         bool press = Input.IsMouseButtonPressed(MouseButton.Left);
@@ -501,7 +509,7 @@ sealed partial class Editor : Screen
         {
             windowPress |= press;
             Input.MouseTaken = true;
-            mouse = Input.GetMousePosition();
+            mouse = EMouse;
         }
 
         // the clock
@@ -1221,7 +1229,7 @@ sealed partial class Editor : Screen
     {
         double pre = Preempt, lead = 800 * Math.Min(1, pre / 450), fade = 400 * Math.Min(1, pre / 450);
         int frames = skin.FrameCount("followpoint");
-        float sd = Game.H / 768f * fs / (0.8f * U); // (the editor's playfield is a little bigger than a play's)
+        float sd = EH / 768f * fs / (0.8f * U); // (the editor's playfield is a little bigger than a play's)
         for (int i = 1; i < objs.Count; i++)
         {
             EObj a = objs[i - 1], b = objs[i];
@@ -1540,27 +1548,25 @@ sealed partial class Editor : Screen
     };
 
     // the menu titles' text size: smaller on a narrow screen (4:3), so they end before the tabs
-    float MenuFont()
-    {
-        float u = U, full = 4 * u + MenuTitles.Sum(t => Game.TextWidth(t, 12 * u) + 12 * u), room = TabRect(0).X - 4 * u;
-        return full > room ? 12 * u * room / full : 12 * u;
-    }
+    // (the strip's sizes are Windows' (Segoe UI 9pt, 24px tall at 100%), in screen pixels)
+    static float MenuPx => Strip / 24;
+    static float MenuFont() => 12 * MenuPx;
     Rectangle MenuTitleRect(int i)
     {
-        float u = U, s = MenuFont(), x = 4 * u;
-        for (int k = 0; k < i; k++) x += Game.TextWidth(MenuTitles[k], s) + s;
-        return new Rectangle(x - 4 * u, 0, Game.TextWidth(MenuTitles[i], s) + 8 * u, 17 * u);
+        float m = MenuPx, s = MenuFont(), x = 2 * m;
+        for (int k = 0; k < i; k++) x += Game.TextWidth(MenuTitles[k], s) + 14 * m;
+        return new Rectangle(x, 2 * m, Game.TextWidth(MenuTitles[i], s) + 14 * m, Strip - 4 * m);
     }
 
-    // the dropdown's rows: separators short, items 16 units
+    // the dropdown's rows: separators short, items 22px
     List<(MenuItem Item, Rectangle Rect)> MenuRows(MenuItem[] items, float x, float y)
     {
-        float u = U, w = 200 * u;
-        foreach (var it in items) w = Math.Max(w, Game.TextWidth(it.Label, 11 * u) + Game.TextWidth(it.Keys, 11 * u) + 48 * u);
+        float m = MenuPx, s = MenuFont(), w = 160 * m;
+        foreach (var it in items) w = Math.Max(w, Game.TextWidth(it.Label, s) + Game.TextWidth(it.Keys, s) + 80 * m);
         var rows = new List<(MenuItem, Rectangle)>();
         foreach (var it in items)
         {
-            float h = (it.Separator ? 7 : 16) * u;
+            float h = (it.Separator ? 9 : 22) * m;
             rows.Add((it, new Rectangle(x, y, w, h)));
             y += h;
         }
@@ -1579,7 +1585,7 @@ sealed partial class Editor : Screen
         }
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { menuOpen = -1; return true; }
         if (title >= 0 && title != menuOpen) { menuOpen = title; menuSub = menuSub2 = -1; }
-        var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, 17 * U);
+        var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, Strip - 2 * MenuPx);
         int hover = rows.FindIndex(r => CheckCollisionPointRec(mouse, r.Rect));
         if (hover >= 0 && rows[hover].Item.Sub != null) { if (menuSub != hover) menuSub2 = -1; menuSub = hover; }
         List<(MenuItem Item, Rectangle Rect)> sub = menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s ? MenuRows(s, rows[menuSub].Rect.X + rows[menuSub].Rect.Width, rows[menuSub].Rect.Y) : [];
@@ -1597,33 +1603,45 @@ sealed partial class Editor : Screen
 
     void DrawMenu(float u)
     {
+        // the strip: Windows' light menu bar, a title lit under the cursor or while open
+        var mouse = RawMouse;
+        float m = MenuPx, fs = MenuFont();
+        DrawRectangle(0, 0, Game.W, (int)Strip, new Color(240, 240, 240, 255));
         for (int i = 0; i < MenuTitles.Length; i++)
         {
             var r = MenuTitleRect(i);
-            if (menuOpen == i) DrawRectangleRec(r, new Color(255, 160, 40, 200));
-            Game.Text(MenuTitles[i], r.X + 4 * u, 1 * u + (12 * u - MenuFont()) / 2, MenuFont(), Color.White);
+            if (menuOpen == i || menuOpen < 0 && CheckCollisionPointRec(mouse, r))
+            {
+                DrawRectangleRec(r, menuOpen == i ? new Color(204, 232, 255, 255) : new Color(229, 243, 255, 255));
+                DrawRectangleLinesEx(r, 1, new Color(153, 209, 255, 255));
+            }
+            Game.Text(MenuTitles[i], r.X + 7 * m, r.Y + (r.Height - fs) / 2 - 1 * m, fs, Color.Black);
         }
         if (menuOpen < 0) return;
-        var mouse = Input.GetMousePosition();
         void Panel(List<(MenuItem Item, Rectangle Rect)> rows)
         {
             if (rows.Count == 0) return;
             var a = rows[0].Rect; var z = rows[^1].Rect;
             var box = new Rectangle(a.X, a.Y, a.Width, z.Y + z.Height - a.Y);
-            DrawRectangleRec(box, new Color(25, 25, 30, 240));
-            DrawRectangleLinesEx(box, 1, ColorAlpha(Color.White, 0.3f));
+            DrawRectangleRec(box, new Color(242, 242, 242, 255));
+            DrawRectangleLinesEx(box, 1, new Color(204, 204, 204, 255));
             foreach (var (it, r) in rows)
             {
-                if (it.Separator) { DrawRectangle((int)(r.X + 6 * u), (int)(r.Y + r.Height / 2), (int)(r.Width - 12 * u), 1, ColorAlpha(Color.White, 0.25f)); continue; }
-                if (it.Enabled && CheckCollisionPointRec(mouse, r)) DrawRectangleRec(r, new Color(255, 160, 40, 110));
-                var c = it.Enabled ? Color.White : Color.Gray;
-                if (it.Checked) DrawCircleV(new(r.X + 9 * u, r.Y + r.Height / 2), 2.5f * u, c);
-                Game.Text(it.Label, r.X + 18 * u, r.Y + 2 * u, 11 * u, c);
+                if (it.Separator) { DrawRectangle((int)(r.X + 30 * m), (int)(r.Y + r.Height / 2), (int)(r.Width - 32 * m), 1, new Color(215, 215, 215, 255)); continue; }
+                if (it.Enabled && CheckCollisionPointRec(mouse, r))
+                {
+                    var hl = new Rectangle(r.X + 2 * m, r.Y, r.Width - 4 * m, r.Height);
+                    DrawRectangleRec(hl, new Color(204, 232, 255, 255));
+                    DrawRectangleLinesEx(hl, 1, new Color(153, 209, 255, 255));
+                }
+                var c = it.Enabled ? Color.Black : new Color(109, 109, 109, 255);
+                if (it.Checked) Game.Text("\u2713", r.X + 10 * m, r.Y + (r.Height - fs) / 2 - 1 * m, fs, c);
+                Game.Text(it.Label, r.X + 34 * m, r.Y + (r.Height - fs) / 2 - 1 * m, fs, c);
                 string keys = it.Sub != null ? ">" : it.Keys;
-                Game.Text(keys, r.X + r.Width - 8 * u - Game.TextWidth(keys, 11 * u), r.Y + 2 * u, 11 * u, ColorAlpha(c, 0.7f));
+                Game.Text(keys, r.X + r.Width - 12 * m - Game.TextWidth(keys, fs), r.Y + (r.Height - fs) / 2 - 1 * m, fs, c);
             }
         }
-        var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, 17 * u);
+        var rows = MenuRows(MenuItems(menuOpen), MenuTitleRect(menuOpen).X, Strip - 2 * MenuPx);
         Panel(rows);
         if (menuSub >= 0 && menuSub < rows.Count && rows[menuSub].Item.Sub is { } s)
         {
@@ -2008,7 +2026,7 @@ sealed partial class Editor : Screen
     {
         for (int c; (c = Input.GetCharPressed()) != 0;) if (c >= 32) fieldText += char.ConvertFromUtf32(c);
         if ((Input.IsKeyPressed(KeyboardKey.Backspace) || Input.IsKeyPressedRepeat(KeyboardKey.Backspace)) && fieldText.Length > 0) fieldText = fieldText[..^1];
-        bool done = Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.Tab) || Input.IsMouseButtonPressed(MouseButton.Left) && !CheckCollisionPointRec(Input.GetMousePosition(), FieldRect(field));
+        bool done = Input.IsKeyPressed(KeyboardKey.Enter) || Input.IsKeyPressed(KeyboardKey.Tab) || Input.IsMouseButtonPressed(MouseButton.Left) && !CheckCollisionPointRec(EMouse, FieldRect(field));
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { field = -1; return; }
         if (!done) return;
         var f = Fields[field];
@@ -2076,9 +2094,12 @@ sealed partial class Editor : Screen
     }
 
     // ---- drawing
-    Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }
+    // stable's tabs: osu!ui's picture at the game area's top left (compose, design, timing, song setup, 100 units each)
+    // with its highlight sliding to the open one over 300ms
+    Rectangle TabRect(int i) { float u = U; return new Rectangle(i * 100 * u, 0, 100 * u, 20.6f * u); }
+    float tabFrom, tabTo; double tabAt = double.NegativeInfinity;
     static readonly int[] TabOrder = [0, 3, 1, 2]; // Compose, Design, Timing, Song Setup (tab numbers)
-    Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab is 0 or 1 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right, Timing: the metronome)
+    Rectangle TimelineRect() { float u = U; return new Rectangle(20 * u, 25 * u, Game.W - 220 * u, 35 * u); } // (stable's: the snap panel or metronome on its right)
     float PxPerMs() => TimelineRect().Width / (int)(6000 / (tab == 1 ? zoom * 0.4f : zoom)); // (stable: Timing shows 2.5x as much)
     void Zoom(float by) { zoom = Math.Clamp(zoom + by, 0.1f, 8); zoomChanged = true; }
 
@@ -2116,9 +2137,11 @@ sealed partial class Editor : Screen
 
     public override void Draw()
     {
-        int w = Game.W, h = Game.H;
+        int w = Game.W, h = (int)EH;
         float u = U;
         ClearBackground(Color.Black);
+        Rlgl.PushMatrix();
+        Rlgl.Translatef(0, Strip, 0);
         // the background, dimmed
         if (bg is null) LoadBg();
         if (bg is { } tex && tex.Id != 0)
@@ -2140,7 +2163,7 @@ sealed partial class Editor : Screen
         DrawTimeline(u);
         DrawKiaiTag(u);
         if (tab == 1) { if (!timingPanel) DrawTimingStatus(u); DrawMetronome(u); }
-        var zm = Input.GetMousePosition();
+        var zm = EMouse;
         for (int i = 0; i < 2; i++)
             if (skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus") is { } zs)
             {
@@ -2154,15 +2177,16 @@ sealed partial class Editor : Screen
         if (sampleImport != null) DrawSampleImport();
         if (volumeWindow != null) DrawVolumeWindow();
         if (bmsWindow != null) DrawBmsImport();
-        DrawMenu(u);
         if (xform != null) DrawXform(u);
         if (prompt != null) DrawPrompt(u);
         if (poly != null) DrawPoly(u);
+        Rlgl.PopMatrix();
+        DrawMenu(u);
         if (exitPrompt != null)
         {
             Dialog.Backdrop(1);
             Dialog.Title(exitPrompt, 1);
-            var mouse = Input.GetMousePosition();
+            var mouse = RawMouse;
             double age = Game.NowMs - exitAt;
             Dialog.Button(0, "Yes", new Color(144, 200, 72, 255), PromptY, age, mouse);
             Dialog.Button(1, "No", new Color(240, 80, 80, 255), PromptY + 50, age, mouse);
@@ -2224,29 +2248,24 @@ sealed partial class Editor : Screen
 
     void DrawTopBar(float u)
     {
-        DrawRectangle(0, 0, Game.W, (int)(17 * u), new Color(0, 0, 0, 200));
-        string name = $"{Kv("Metadata", "Artist")} - {Kv("Metadata", "Title")} [{Kv("Metadata", "Version")}]{(modified ? " *" : "")}";
-        // (after the menu, cut short before the tabs)
-        var last = MenuTitleRect(MenuTitles.Length - 1);
-        float nx = last.X + last.Width + 14 * u;
-        BeginScissorMode((int)nx, 0, (int)Math.Max(0, TabRect(0).X - nx - 8 * u), (int)(17 * u));
-        Game.Text(name, nx, 1 * u, 12 * u, Color.LightGray);
-        EndScissorMode();
-        string[] tabs = ["Compose", "Design", "Timing", "Song Setup"];
-        for (int i = 0; i < 4; i++)
+        if (skin.DefaultTex("topmenu-bg") is { } bar)
+            DrawTexturePro(bar.Tex, new Rectangle(0, 0, bar.Tex.Width, bar.Tex.Height), new Rectangle(0, 0, bar.Width * u / 1.6f, bar.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
+        int open = Array.IndexOf(TabOrder, tab);
+        if (open * 100 != tabTo) { tabFrom = TabX(); tabTo = open * 100; tabAt = Game.NowMs; }
+        if (skin.DefaultTex("topmenu-selection") is { } sel)
         {
-            var r = TabRect(i);
-            DrawRectangleRec(r, tab == TabOrder[i] ? new Color(255, 160, 40, 255) : new Color(60, 60, 60, 255));
-            float tw = Game.TextWidth(tabs[i], 12 * u);
-            Game.Text(tabs[i], r.X + (r.Width - tw) / 2, r.Y + 1 * u, 12 * u, Color.White);
+            BeginBlendMode(BlendMode.Additive); // (stable's: lit over the label)
+            DrawTexturePro(sel.Tex, new Rectangle(0, 0, sel.Tex.Width, sel.Tex.Height), new Rectangle(TabX() * u, 0, sel.Width * u / 1.6f, sel.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
+            EndBlendMode();
         }
     }
+    float TabX() => tabFrom + (tabTo - tabFrom) * (float)Easing.Apply(1, Math.Clamp((Game.NowMs - tabAt) / 300, 0, 1));
 
     void DrawTimeline(float u)
     {
         var r = TimelineRect();
         DrawRectangleRec(r, new Color(0, 0, 0, 180));
-        BeginScissorMode((int)r.X, (int)r.Y, (int)r.Width, (int)r.Height);
+        BeginScissorMode((int)r.X, (int)(r.Y + Strip), (int)r.Width, (int)r.Height);
         // beat ticks: the bar's first beat white and tallest, then 1/2 red, 1/4 blue, 1/3 and 1/6 purple, 1/8 yellow, the rest grey
         double from = TimeAtX(r.X), to = TimeAtX(r.X + r.Width);
         // (the scale once a frame: it looks up the timing in effect, and the map can have thousands of objects)
@@ -2374,7 +2393,7 @@ sealed partial class Editor : Screen
                 var c = ToScreen(256, 192);
                 float p = (float)Math.Clamp((time - o.Time) / Math.Max(1, o.End - o.Time), 0, 1);
                 DrawCircleLinesV(c, 180 * fs * (1 - p), ColorAlpha(Color.White, alpha));
-                skin.Tex("spinner-circle")?.Draw(c, 0.5f * fs / U * Game.H / 768f, ColorAlpha(Color.White, alpha * 0.8f));
+                skin.Tex("spinner-circle")?.Draw(c, 0.5f * fs / U * EH / 768f, ColorAlpha(Color.White, alpha * 0.8f));
                 continue;
             }
             if (o.Slider && o.Path.Length > 1)
@@ -2448,14 +2467,14 @@ sealed partial class Editor : Screen
         // the slider being drawn
         if (sliderDraft != null)
         {
-            var mouseField = GridSnap(ToField(Input.GetMousePosition()));
+            var mouseField = GridSnap(ToField(EMouse));
             var pts = sliderDraft.Append(mouseField).ToList();
             for (int i = 1; i < pts.Count; i++) DrawLineEx(ToScreen(pts[i - 1].X, pts[i - 1].Y), ToScreen(pts[i].X, pts[i].Y), 2 * u, new Color(255, 200, 0, 255));
             foreach (var p in pts) DrawCircleV(ToScreen(p.X, p.Y), 3 * u, Color.White);
         }
         if (boxFrom is { } bf)
         {
-            var a = ToScreen(bf.X, bf.Y); var b = Input.GetMousePosition();
+            var a = ToScreen(bf.X, bf.Y); var b = EMouse;
             DrawRectangleLinesEx(new Rectangle(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(b.X - a.X), Math.Abs(b.Y - a.Y)), 1, Color.White);
         }
     }
@@ -2463,7 +2482,7 @@ sealed partial class Editor : Screen
     void DrawToolbox(float u)
     {
         // the toolbox and the toggles (stable's pictures; hovered, their tooltips)
-        var mouse = Input.GetMousePosition();
+        var mouse = EMouse;
         string? tip = null;
         void Picture(string name, Rectangle r, float a)
         {
@@ -2759,7 +2778,7 @@ sealed partial class Editor : Screen
             if (o.Time >= MFrom) { var rn = MNote(c, o.Time, colW); Note(rn with { X = rn.X - MLeft + refLeft }, tint); }
         }
         // the note about to be placed, at the cursor
-        var m = Input.GetMousePosition() / u;
+        var m = EMouse / u;
         if (tool > 0 && holdDraft == null && m.X > MLeft && m.X < MLeft + stageW && m.Y > MTop && m.Y < MBottom)
         {
             var r = MNote(0, time, colW);
@@ -2768,7 +2787,7 @@ sealed partial class Editor : Screen
         if (mBox is { } b)
         {
             var a = new Vector2(b.X, b.X > MStrip && b.X < MStrip + 60 ? b.Y : MY(b.Time)) * u;
-            var e = Input.GetMousePosition();
+            var e = EMouse;
             DrawRectangleLinesEx(new Rectangle(Math.Min(a.X, e.X), Math.Min(a.Y, e.Y), Math.Abs(e.X - a.X), Math.Abs(e.Y - a.Y)), 1, Color.White);
         }
     }
@@ -2861,7 +2880,7 @@ sealed partial class Editor : Screen
             Game.Text(Fields[i].Label, r.X - 4 * u - Game.TextWidth(Fields[i].Label, 11 * u) + 0, r.Y + 4 * u, 11 * u, Color.LightGray);
             DrawRectangleRec(r, field == i ? new Color(70, 70, 90, 255) : new Color(40, 40, 40, 255));
             string text = field == i ? fieldText + ((int)(Game.NowMs / 500) % 2 == 0 ? "|" : "") : Kv(Fields[i].Section, Fields[i].Key) ?? "";
-            BeginScissorMode((int)r.X, (int)r.Y, (int)r.Width, (int)r.Height);
+            BeginScissorMode((int)r.X, (int)(r.Y + Strip), (int)r.Width, (int)r.Height);
             float over = Math.Max(0, Game.TextWidth(text, 12 * u) - (r.Width - 8 * u)); // (typing past the end scrolls)
             Game.Text(text, r.X + 4 * u - (field == i ? over : 0), r.Y + 4 * u, 12 * u, Color.White);
             EndScissorMode();
@@ -2886,7 +2905,7 @@ sealed partial class Editor : Screen
     // ---- the bottom bar: the time, the song's progress (click to seek), and stable's pictures: play / pause / stop /
     // test centred 245, 225, 205 and 175 units from the right at 470 (1.2x hovered, over 100ms), the Playback Rate scale
     // centred 77 from the right with its 25/50/75/100% (half seen, all hovered) and an arrow over the rate
-    Rectangle ProgressRect() { float u = U; return new Rectangle(120 * u, Game.H - 22 * u, Game.W - 384 * u, 14 * u); }
+    Rectangle ProgressRect() { float u = U; return new Rectangle(120 * u, EH - 22 * u, Game.W - 384 * u, 14 * u); }
     static readonly string[] TransportSprites = ["editor-button-play", "editor-button-pause", "editor-button-stop", "editor-button-test"];
     static readonly float[] TransportX = [245, 225, 205, 175];
     static readonly string[] RateSprites = ["editor-rate-25", "editor-rate-50", "editor-rate-75", "editor-rate-100"];
@@ -2938,8 +2957,8 @@ sealed partial class Editor : Screen
     void DrawBottomBar(float u)
     {
         if (skin.DefaultTex("editor-menu-bg-bottom") is { } bg)
-            DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height), new Rectangle(0, Game.H - bg.Height * u / 1.6f, Game.W, bg.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
-        else DrawRectangle(0, (int)(Game.H - 28 * u), Game.W, (int)(28 * u), new Color(0, 0, 0, 210));
+            DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height), new Rectangle(0, EH - bg.Height * u / 1.6f, Game.W, bg.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
+        else DrawRectangle(0, (int)(EH - 28 * u), Game.W, (int)(28 * u), new Color(0, 0, 0, 210));
         // stable's time (size 14 at 10,463) and, beside it, how far into the song ("intro" before it, "outro" after)
         Game.Text(FormatTime(time), 10 * u, 463 * u, 14 * u, Color.White);
         Game.Text(time < 0 ? "intro" : time > length ? "outro" : $"{time / length * 100:0.0}%", 70 * u, 465 * u, 12 * u, Color.White);
@@ -2950,7 +2969,7 @@ sealed partial class Editor : Screen
         foreach (int b in Bookmarks()) DrawRectangle((int)(r.X + r.Width * b / length), (int)(r.Y + r.Height / 2), Math.Max(1, (int)u), (int)(r.Height / 2), new Color(60, 140, 255, 255));
         float x = r.X + r.Width * (float)(time / length);
         DrawRectangle((int)x - (int)u, (int)r.Y, (int)(3 * u), (int)r.Height, Color.White);
-        var mouse = Input.GetMousePosition();
+        var mouse = EMouse;
         void Picture(string name, Rectangle at, float alpha = 1)
         {
             if (skin.DefaultTex(name) is { } s) DrawTexturePro(s.Tex, new Rectangle(0, 0, s.Tex.Width, s.Tex.Height), at, Vector2.Zero, 0, ColorAlpha(Color.White, alpha));

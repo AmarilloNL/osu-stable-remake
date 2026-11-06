@@ -396,7 +396,7 @@ sealed partial class Editor
         var field = BmsRect(92, 12, 244, 21);
         DrawRectangleRec(field, Color.White);
         DrawRectangleLinesEx(field, 1, w.Typing ? new Color(0, 120, 215, 255) : new Color(122, 122, 122, 255));
-        BeginScissorMode((int)field.X + 1, (int)field.Y, (int)field.Width - 2, (int)field.Height);
+        BeginScissorMode((int)field.X + 1, (int)(field.Y + Strip), (int)field.Width - 2, (int)field.Height);
         string shown = w.File + (w.Typing && (int)(Game.NowMs / 500) % 2 == 0 ? "|" : "");
         float tw = Game.TextWidth(shown, fs);
         Game.Text(shown, field.X + 3 * s - Math.Max(0, tw - field.Width + 8 * s), field.Y + (field.Height - fs) / 2, fs, text);

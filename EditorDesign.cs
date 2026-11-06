@@ -439,7 +439,7 @@ sealed partial class Editor
     }
 
     // ---- where things are: the storyboard's 640 x 480 (854 wide for a widescreen one) fitted to the screen's height
-    float SbScale => Game.H / 480f;
+    float SbScale => EH / 480f;
     Vector2 SbOrigin => new((Game.W - 640 * SbScale) / 2, 0);
     Vector2 SbToScreen(double x, double y) => SbOrigin + new Vector2((float)x, (float)y) * SbScale;
     Vector2 SbFromScreen(Vector2 p) => (p - SbOrigin) / SbScale;
@@ -735,11 +735,11 @@ sealed partial class Editor
 
     void DrawDesign(float u)
     {
-        int w = Game.W, h = Game.H;
+        int w = Game.W, h = (int)EH;
         sbView?.Draw(time, w, h, 1, overlay: false);
         if (sbHitObjects && mode != 3) { fieldAsPlay = true; DrawPlayfield(u, objectsOnly: true); fieldAsPlay = false; }
         sbView?.Draw(time, w, h, 1, overlay: true);
-        var mouse = Input.GetMousePosition();
+        var mouse = EMouse;
         // the picked and the hovered sprite
         void Outline(SbSprite sp, Color c) { if (SbCorners(sp) is { } q) for (int i = 0; i < 4; i++) DrawLineEx(q[i], q[(i + 1) % 4], 2, c); }
         if (sbHover != null && sbHover != sbSel) Outline(sbHover, ColorAlpha(Color.White, 0.5f));
@@ -840,7 +840,7 @@ sealed partial class Editor
         string[] labels = sbLanesAlt ? ["Scale", "Fade", "Rotation", "Colour"] : ["Movement", "Scale", "Fade", "Rotation"];
         float laneH = r.Height / 4;
         for (int i = 0; i < 4; i++) Game.Text(labels[i], r.X - 4 * u - Game.TextWidth(labels[i], 7 * u), r.Y + laneH * i + (laneH - 7 * u) / 2, 7 * u, Color.White);
-        float sd = Game.H / 768f;
+        float sd = EH / 768f;
         for (int i = 0; i < 2; i++) // (stable's: the play button turned down and up)
             skin.DefaultTex("editor-button-play")?.Draw(SbLaneButton(i, u), 0.7f * sd, ColorAlpha(Color.White, sbLanesAlt == (i == 0) ? 0.4f : 1), i == 0 ? 90 : -90);
         string[] buttons = ["editor-timeline-plus", "editor-timeline-minus", "editor-timeline-left", "editor-timeline-right"];

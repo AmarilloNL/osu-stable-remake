@@ -295,7 +295,7 @@ sealed partial class Editor
             float x0 = TimelineX(before), x1 = TimelineX(b.Start), x2 = TimelineX(b.End), x3 = TimelineX(after);
             if (x3 < r.X || x0 > r.X + r.Width) continue;
             if (breakDrag is var (db, _, _, _) && db.Start == (int)b.Start && db.End == (int)b.End) // (where the dragged edge would go)
-                DrawRectangle((int)TimelineX(Snap(TimeAtX(Input.GetMousePosition().X))) - 1, (int)r.Y, 2, (int)r.Height, Color.White);
+                DrawRectangle((int)TimelineX(Snap(TimeAtX(EMouse.X))) - 1, (int)r.Y, 2, (int)r.Height, Color.White);
             DrawLineEx(new(x0, cy), new(x1, cy), thick, grey);
             DrawLineEx(new(x1, cy), new(x2, cy), thick, b.End - b.Start < 50 ? new Color(255, 0, 0, 150) : new Color(100, 100, 100, 100));
             DrawLineEx(new(x2, cy), new(x3, cy), thick, grey);

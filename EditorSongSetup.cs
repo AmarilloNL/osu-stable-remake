@@ -127,7 +127,7 @@ sealed partial class Editor
 
     void DrawSetupExtras(float u)
     {
-        var mouse = Input.GetMousePosition();
+        var mouse = EMouse;
         void Header(string text, float y) => Game.TextBold(text, SetupX * u, y * u, 11 * u, Color.White);
         void Row(string text, float y, bool? on = null)
         {
