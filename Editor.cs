@@ -14,7 +14,7 @@ namespace OsuStableRemake;
 // Ctrl+Shift+R / S rotate / scale by; Ctrl+B / Ctrl+Shift+B add / remove a bookmark, Ctrl+Left / Right seek to them;
 // Ctrl+Tab live mapping; a selected slider's points drag, a
 // Ctrl+click on its body adds one and a right click on one removes it;
-// the wheel steps through the beat snap (Ctrl zooms the timeline, Alt changes the divisor);
+// the wheel steps through the beat snap (Ctrl changes the divisor, Alt the distance spacing, Ctrl+Shift zooms);
 // Z / X / C / V / B and Space for playback. The .osu file is kept as written, only the edited sections rewritten.
 // Like stable's, a taiko map's circles are red (blue with a whistle or clap) and its sliders yellow, a catch map's
 // distance snap only measures across, and a mania map gets its own compose view (Select / Note / Hold).
@@ -80,7 +80,8 @@ sealed partial class Editor : Screen
     internal bool TakesAltWheel => tab == 0; // (Compose: Alt+wheel changes the distance spacing, not the volume)
     int gridSize = 32;
     bool gridSnap = true;
-    float zoom = 1; // timeline: 1 = a beat 50 units wide
+    float zoom = 1; // stable's timeline zoom ([Editor] TimelineZoom, 0.1 - 8): the timeline spans 6000 / zoom ms
+    bool zoomChanged; // (written back on save only then, keeping an unchanged save as it was)
     readonly HashSet<EObj> selected = [];
     bool newComboNext; int soundNext; // for the next placed object (nothing selected)
     readonly List<string> undo = [], redo = [];
@@ -121,6 +122,7 @@ sealed partial class Editor : Screen
         else length = Math.Max(1, objs.Count > 0 ? objs[^1].End + 2000 : 60000);
         if (Kv("Editor", "BeatDivisor") is { } bd && int.TryParse(bd, out int d) && Divisors.Contains(d)) divisor = d;
         if (Kv("Editor", "GridSize") is { } gs && int.TryParse(gs, out int g) && g is 4 or 8 or 16 or 32) gridSize = g;
+        if (float.TryParse(Kv("Editor", "TimelineZoom"), NumberStyles.Float, Inv, out float tz)) zoom = Math.Clamp(tz, 0.1f, 8);
         time = objs.Count > 0 ? objs[0].Time : 0;
         music?.Seek(time);
         Rebuild();
@@ -256,6 +258,7 @@ sealed partial class Editor : Screen
     {
         SetKv("Editor", "BeatDivisor", divisor.ToString(Inv));
         SetKv("Editor", "GridSize", gridSize.ToString(Inv));
+        if (zoomChanged) SetKv("Editor", "TimelineZoom", zoom.ToString("G7", Inv));
         try
         {
             File.WriteAllLines(path, Write(), new UTF8Encoding(false));
@@ -580,7 +583,7 @@ sealed partial class Editor : Screen
         {
             // stable's: Ctrl doubles / halves the beat snap divisor, Alt changes the distance spacing (0.1, Shift 0.01), Shift
             // steps 4 snaps; (Ctrl+Shift zooms the timeline: stable's wheel doesn't)
-            if (Input.CtrlHeld && Input.ShiftHeld) zoom = Math.Clamp(zoom * (wheel > 0 ? 1.25f : 0.8f), 0.1f, 8);
+            if (Input.CtrlHeld && Input.ShiftHeld) Zoom(wheel > 0 ? 0.1f : -0.1f);
             else if (Input.CtrlHeld) divisor = wheel > 0 ? Math.Min(16, divisor * 2) : Math.Max(1, divisor / 2);
             else if (Input.AltHeld) // (outside Compose the volume takes it)
             {
@@ -595,6 +598,7 @@ sealed partial class Editor : Screen
         {
             for (int i = 0; i < 4; i++) if (CheckCollisionPointRec(mouse, TabRect(i))) { SetTab(TabOrder[i]); return; }
             if (UpdateBottomBar(mouse)) return;
+            for (int i = 0; i < 2; i++) if (CheckCollisionPointRec(mouse, ZoomRect(i))) { Zoom(i == 0 ? 0.1f : -0.1f); zoomClickAt[i] = Game.NowMs; return; }
         }
         if (UpdateSnapPanel(mouse)) return;
 
@@ -2070,7 +2074,12 @@ sealed partial class Editor : Screen
     Rectangle TabRect(int i) { float u = U; return new Rectangle(Game.W - (4 - i) * 92 * u, 0, 90 * u, 16 * u); }
     static readonly int[] TabOrder = [0, 3, 1, 2]; // Compose, Design, Timing, Song Setup (tab numbers)
     Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab == 0 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right)
-    float PxPerMs() => 50 * U * zoom / (float)RedAt(time).Beat;
+    float PxPerMs() => TimelineRect().Width / (int)(6000 / zoom);
+    void Zoom(float by) { zoom = Math.Clamp(zoom + by, 0.1f, 8); zoomChanged = true; }
+    // stable's zoom buttons left of the timeline (osu!ui's plus and minus, centred at 10,37 and 10,53; a click springs
+    // them from 1.1x), 0.1 a click
+    Rectangle ZoomRect(int i) { float u = U, sd = u / 1.6f * (Game.NowMs - zoomClickAt[i] < 200 ? 1.1f - 0.1f * (float)((Game.NowMs - zoomClickAt[i]) / 200) : 1); var s = skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus"); float w = (s?.Width ?? 26) * sd, h = (s?.Height ?? 24) * sd; return new Rectangle(10 * u - w / 2, (i == 0 ? 37 : 53) * u - h / 2, w, h); }
+    readonly double[] zoomClickAt = [double.NegativeInfinity, double.NegativeInfinity];
     float TimelineX(double t) { var r = TimelineRect(); return r.X + r.Width / 2 + (float)((t - time) * PxPerMs()); }
     double TimeAtX(float x) { var r = TimelineRect(); return time + (x - r.X - r.Width / 2) / PxPerMs(); }
 
@@ -2095,6 +2104,14 @@ sealed partial class Editor : Screen
             case 3: DrawDesign(u); break;
         }
         DrawTimeline(u);
+        var zm = Input.GetMousePosition();
+        for (int i = 0; i < 2; i++)
+            if (skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus") is { } zs)
+            {
+                var r = ZoomRect(i);
+                DrawTexturePro(zs.Tex, new Rectangle(0, 0, zs.Tex.Width, zs.Tex.Height), r, Vector2.Zero, 0, Color.White);
+                if (CheckCollisionPointRec(zm, r)) Options.DrawScreenTooltip(i == 0 ? "Increase timeline zoom" : "Decrease timeline zoom", zm);
+            }
         DrawTopBar(u);
         DrawBottomBar(u);
         if (aimod != null) DrawAiMod(u);
