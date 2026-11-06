@@ -2560,8 +2560,10 @@ sealed partial class Editor : Screen
             {
                 bool red = i > 0 && pts[i] == pts[i - 1] || i + 1 < pts.Count && pts[i] == pts[i + 1];
                 var s = ToScreen(pts[i].X, pts[i].Y);
-                DrawRectangleV(s - new Vector2(3 * u), new Vector2(6 * u), red ? Color.Red : Color.White);
-                DrawRectangleLinesEx(new Rectangle(s.X - 3 * u, s.Y - 3 * u, 6 * u, 6 * u), 1, Color.Black);
+                // (stable's: a soft black square under it; white at 150, the dragged one solid, red where two meet)
+                bool dragged = pointDrag is { } pd && pd.Slider == o && pd.Index == i - 1;
+                DrawRectangleV(s - new Vector2(4 * u), new Vector2(8 * u), new Color(0, 0, 0, 100));
+                DrawRectangleV(s - new Vector2(3 * u), new Vector2(6 * u), red ? new Color(255, 40, 40, 255) : dragged ? Color.White : new Color(255, 255, 255, 150));
             }
         }
         stackShift = Vector2.Zero;
