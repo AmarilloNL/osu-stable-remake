@@ -1384,23 +1384,6 @@ sealed partial class Editor : Screen
         Change(() => { foreach (var o in objs) { o.Time += ms; o.End += ms; o.Raw = null; } });
     });
 
-    // File > Create a new Difficulty...: its name, then this map as that difficulty's file (Artist - Title (Creator)
-    // [Name].osu), stable's question whether to start it empty, saved
-    void NewDifficultyPrompt() => prompt = new("Enter a name for the new difficulty:", "", name =>
-    {
-        name = name.Trim();
-        if (name.Length == 0) return;
-        string file = $"{Kv("Metadata", "Artist")} - {Kv("Metadata", "Title")} ({Kv("Metadata", "Creator")}) [{name}].osu";
-        foreach (char c in Path.GetInvalidFileNameChars()) file = file.Replace(c.ToString(), "");
-        string full = Path.Combine(info.Folder, file);
-        if (File.Exists(full)) { Notification.Show("A difficulty with that name already exists.", 3000); return; }
-        path = full;
-        SetKv("Metadata", "Version", name);
-        if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
-        undo.Clear(); redo.Clear();
-        prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); if (KeepBreaks()) info = ReloadInfo(); Save(); }, "Yes", "No", Save);
-    });
-
     void UpdatePrompt(Vector2 mouse)
     {
         var p = prompt!;
@@ -1583,7 +1566,7 @@ sealed partial class Editor : Screen
     {
         0 => [new("Clear All Notes", "", objs.Count > 0 ? () => Change(() => { objs.Clear(); selected.Clear(); }) : null),
             new("Open Difficulty...", Sub: [new("For Editing", Sub: OtherDifficulties() is { Length: > 0 } diffs ? diffs : null), new("For Reference", Sub: mode == 3 ? ReferenceItems() : null)]), Sep,
-            new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", NewDifficultyPrompt), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod", "Ctrl+Shift+A", OpenAiMod), Sep,
+            new("Save", "Ctrl+S", Save), new("Create a new Difficulty...", "", () => OpenSetup(true)), Sep, new("Test Beatmap", "F5", TestPlay), new("Open AiMod", "Ctrl+Shift+A", OpenAiMod), Sep,
             new("Upload Beatmap..."), new("Extract Map Package", "", () => Notification.Show("Your beatmap is already extracted!", 3000)), new("Export Package", "", ExportPackage), new("Import from...", Sub: [new("bms/bme", "", OpenBmsImport)]), Sep,
             new("Open Song Folder", "", () => System.Diagnostics.Process.Start("explorer.exe", info.Folder)),
             new("Open .osu in Notepad", "", () => System.Diagnostics.Process.Start("notepad.exe", path)),

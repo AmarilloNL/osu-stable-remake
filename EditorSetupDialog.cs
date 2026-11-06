@@ -17,6 +17,7 @@ sealed partial class Editor
     sealed class SetupDialog : WinUi
     {
         public int Tab, Pick = -1;
+        public bool NewDifficulty; // (File > Create a new Difficulty...: the name typed here, artist and title kept)
         public string[] Text = new string[8]; // artist, romanised artist, title, romanised title, creator, difficulty, source, tags
         public int HP, CS, AR, OD, Volume, Stack, Mode, OldMode, Speed, CountdownOffset, Set; // (Speed: the countdown's, 1 normal, 2 half, 3 double)
         public bool Countdown, Coop, Overrides, MatchRate, CustomColours, Letterbox, Widescreen, Epilepsy, NPlus1, SetsDiffer, VolumesDiffer;
@@ -36,7 +37,8 @@ sealed partial class Editor
     static bool Ascii(string s) { foreach (char c in s) if (c > 127) return false; return true; }
     static string Romanise(string s) => new([.. s.Where(c => c <= 127)]);
 
-    void OpenSetup()
+    void OpenSetup() => OpenSetup(false);
+    void OpenSetup(bool newDifficulty)
     {
         var d = new SetupDialog();
         string K(string section, string key) => Kv(section, key) ?? "";
@@ -79,6 +81,13 @@ sealed partial class Editor
         var skinDir = Path.Combine(Config.OsuDir, "Skins");
         d.Skins = ["User's preference (No Change)", .. (Directory.Exists(skinDir) ? Directory.GetDirectories(skinDir) : []).Select(Path.GetFileName).OfType<string>().Order(StringComparer.OrdinalIgnoreCase)];
         d.Focus = 0;
+        if (newDifficulty)
+        {
+            d.NewDifficulty = true;
+            d.Text[5] = "";
+            d.Focus = 5;
+            d.Widescreen = true;
+        }
         setupDlg = d;
     }
 
@@ -99,6 +108,7 @@ sealed partial class Editor
     {
         var d = setupDlg!;
         if (!d.Changed) { setupDlg = null; return; }
+        if (d.NewDifficulty && File.Exists(NewDifficultyPath(d))) { Notification.Show("A difficulty with that name already exists.", 3000); return; }
         if ((d.Mode == 3 || d.OldMode == 3) && d.Mode != d.OldMode)
         {
             prompt = new("You changed play mode, do you want to save changes and clear all notes?", null, _ => ApplySetup(true));
@@ -183,7 +193,23 @@ sealed partial class Editor
         });
         info = ReloadInfo();
         Rebuild();
+        if (d.NewDifficulty)
+        {
+            path = NewDifficultyPath(d);
+            if (Kv("Metadata", "BeatmapID") != null) SetKv("Metadata", "BeatmapID", "0");
+        }
         Save();
+        if (!d.NewDifficulty) return;
+        undo.Clear(); redo.Clear(); // (a new file's own history)
+        if (objs.Count > 0) prompt = new("Would you like to clear all objects and start fresh?", null, _ => { objs.Clear(); selected.Clear(); Rebuild(); if (KeepBreaks()) info = ReloadInfo(); Save(); }, "Yes", "No");
+    }
+
+    // a difficulty's file: Artist - Title (Creator) [Difficulty].osu in the map's folder
+    string NewDifficultyPath(SetupDialog d)
+    {
+        string file = $"{d.Text[1]} - {d.Text[3]} ({d.Text[4]}) [{d.Text[5].Trim()}].osu";
+        foreach (char c in Path.GetInvalidFileNameChars()) file = file.Replace(c.ToString(), "");
+        return Path.Combine(info.Folder, file);
     }
 
     Rectangle SetupRect(float x, float y, float w, float h) => setupDlg!.R(x, y, w, h);
@@ -218,7 +244,7 @@ sealed partial class Editor
         return true;
     }
 
-    static bool BoxOn(SetupDialog d, int i) => i switch { 1 => !Ascii(d.Text[0]), 3 => !Ascii(d.Text[2]), _ => true };
+    static bool BoxOn(SetupDialog d, int i) => i switch { 0 or 2 => !d.NewDifficulty, 1 => !Ascii(d.Text[0]), 3 => !Ascii(d.Text[2]), _ => true };
     static bool SetupOkOn(SetupDialog d) => d.Text[2].Length > 0 && d.Text[0].Length > 0 && d.Text[5].Length > 0 && d.Text[4].Length > 0 && d.Text[1].Length > 0 && d.Text[3].Length > 0;
 
     static void TextChanged(SetupDialog d, int i)
