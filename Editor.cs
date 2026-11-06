@@ -2925,7 +2925,8 @@ sealed partial class Editor : Screen
     // ---- the bottom bar: the time, the song's progress (click to seek), and stable's pictures: play / pause / stop /
     // test centred 245, 225, 205 and 175 units from the right at 470 (1.2x hovered, over 100ms), the Playback Rate scale
     // centred 77 from the right with its 25/50/75/100% (half seen, all hovered) and an arrow over the rate
-    Rectangle ProgressRect() { float u = U; return new Rectangle(120 * u, EH - 22 * u, Game.W - 384 * u, 14 * u); }
+    // stable's seek bar: (110,460), 20 units tall, to 260 from the right edge
+    Rectangle ProgressRect() { float u = U; return new Rectangle(110 * u, 460 * u, Game.W - 370 * u, 20 * u); }
     static readonly string[] TransportSprites = ["editor-button-play", "editor-button-pause", "editor-button-stop", "editor-button-test"];
     static readonly float[] TransportX = [245, 225, 205, 175];
     static readonly string[] RateSprites = ["editor-rate-25", "editor-rate-50", "editor-rate-75", "editor-rate-100"];
@@ -2946,9 +2947,9 @@ sealed partial class Editor : Screen
     static readonly float[] BookmarkX = [150, 170, 190, 210, 242];
     static readonly string[] BookmarkTips = ["Add new bookmark at current location (Ctrl+B)", "Remove bookmark at current location (Ctrl+Shift+B)", "Seek to previous bookmark (Ctrl-LeftArrow)", "Seek to next bookmark (Ctrl-RightArrow)", "Reset all bookmarks"];
     Rectangle BookmarkRect(int i) => Centred(BookmarkSprites[i], BookmarkX[i] + (mode == 3 ? 25 + 30 * MKeys : 0), 450);
-    Rectangle BookmarkArea() { float u = U; return new Rectangle(0, 440 * u, Game.W - 270 * u, EH - 440 * u); }
+    Rectangle BookmarkArea() { float u = U; return new Rectangle(110 * u, 430 * u, Game.W - 440 * u, 40 * u); }
     (bool On, double At) bookmarkShown;
-    float BookmarkAlpha => Hovered(ref bookmarkShown, CheckCollisionPointRec(EMouse, BookmarkArea()), 0, 1);
+    float BookmarkAlpha => Hovered(ref bookmarkShown, CheckCollisionPointRec(EMouse, ProgressRect()) || bookmarkShown.On && CheckCollisionPointRec(EMouse, BookmarkArea()), 0, 1);
     readonly (bool On, double At)[] transportHover = new (bool, double)[4], rateHover = new (bool, double)[4];
     static float Hovered(ref (bool On, double At) s, bool on, float from, float to)
     {
@@ -2998,13 +2999,29 @@ sealed partial class Editor : Screen
         // stable's time (size 14 at 10,463) and, beside it, how far into the song ("intro" before it, "outro" after)
         Game.Text(FormatTime(time), 10 * u, 463 * u, 14 * u, Color.White);
         Game.Text(time < 0 ? "intro" : time > length ? "outro" : $"{time / length * 100:0.0}%", 70 * u, 465 * u, 12 * u, Color.White);
+        // stable's seek bar: kiai sections (orange) and breaks (white) as bands, a line along it, the preview point
+        // (yellow), bookmarks (blue, lower half), timing points (red / green, upper half), the position marker
         var r = ProgressRect();
-        DrawRectangle((int)r.X, (int)(r.Y + r.Height / 2 - 1 * u), (int)r.Width, (int)(2 * u), Color.Gray);
-        // bookmarks of the timing: red and green ticks; kiai in orange
-        foreach (var t in timing) DrawRectangle((int)(r.X + r.Width * t.Time / length), (int)r.Y, Math.Max(1, (int)u), (int)(r.Height / 2), t.Red ? Color.Red : Color.Green);
-        foreach (int b in Bookmarks()) DrawRectangle((int)(r.X + r.Width * b / length), (int)(r.Y + r.Height / 2), Math.Max(1, (int)u), (int)(r.Height / 2), new Color(60, 140, 255, 255));
-        float x = r.X + r.Width * (float)(time / length);
-        DrawRectangle((int)x - (int)u, (int)r.Y, (int)(3 * u), (int)r.Height, Color.White);
+        float X(double t) => r.X + r.Width * (float)(t / length);
+        var points = timing.OrderBy(t => t.Time).ToList();
+        for (int i = 0; i < points.Count; i++)
+            if ((points[i].Effects & 1) != 0)
+            {
+                float x0 = X(points[i].Time), x1 = X(i + 1 < points.Count ? points[i + 1].Time : length);
+                DrawRectangleRec(new Rectangle(x0, r.Y + r.Height * 0.36f, x1 - x0, r.Height * 0.28f), new Color(255, 146, 18, 140));
+            }
+        foreach (var b in ReadBreaks())
+            DrawRectangleRec(new Rectangle(X(b.Start), r.Y + r.Height * 0.4f, X(b.End) - X(b.Start), r.Height * 0.2f), new Color(255, 255, 255, 140));
+        DrawLineEx(new(r.X, r.Y + r.Height / 2), new(r.X + r.Width, r.Y + r.Height / 2), 1, new Color(255, 255, 255, 128));
+        if (double.TryParse(Kv("General", "PreviewTime"), NumberStyles.Float, Inv, out double preview) && preview >= 0)
+            DrawLineEx(new(X(preview), r.Y), new(X(preview), r.Y + r.Height), 1, new Color(255, 247, 17, 150));
+        foreach (int b in Bookmarks()) DrawLineEx(new(X(b), r.Y + r.Height / 2), new(X(b), r.Y + r.Height), 1, new Color(58, 110, 170, 240));
+        foreach (var t in points) DrawLineEx(new(X(t.Time), r.Y), new(X(t.Time), r.Y + r.Height / 2), 1, t.Red ? new Color(180, 20, 20, 150) : new Color(156, 255, 0, 100));
+        if (skin.DefaultTex("seekbar-over") is { } marker)
+        {
+            float mw = marker.Width * u / 1.6f, mh = marker.Height * u / 1.6f, mx = X(Math.Clamp(time, 0, length));
+            DrawTexturePro(marker.Tex, new Rectangle(0, 0, marker.Tex.Width, marker.Tex.Height), new Rectangle(mx - mw / 2, r.Y + r.Height / 2 - mh / 2, mw, mh), Vector2.Zero, 0, Color.White);
+        }
         var mouse = EMouse;
         void Picture(string name, Rectangle at, float alpha = 1)
         {
