@@ -320,7 +320,17 @@ sealed partial class Editor
         void Colour(int i, float x, float y, float w, float h, string t, Color c)
         {
             var r = R(x, y, w, h);
-            if (act) { if (Hit(r)) d.Pick = i; return; }
+            if (act)
+            {
+                if (!Hit(r)) return;
+                if (IsWindowFullscreen()) { d.Pick = i; return; }
+                if (WinColourDialog.Pick(c) is { } picked && (picked.R, picked.G, picked.B) != (c.R, c.G, c.B))
+                {
+                    if (i == 8) d.Background = picked; else d.Combos[i] = picked;
+                    d.Changed = true;
+                }
+                return;
+            }
             DrawRectangleRec(r, c);
             DrawRectangleLinesEx(r, 1, Hover(r) ? blue : new Color(100, 100, 100, 255));
             float big = 16 * s;
@@ -443,7 +453,10 @@ sealed partial class Editor
                 d.Group(gx, gy, 365, 202, "Hitcircle/Slider Combos");
                 for (int i = 0; i < d.Combos.Count; i++) Colour(i, gx + (i % 2 == 0 ? 7 : 185), gy + 19 + i / 2 * 34, 172, 32, $"Combo {i + 1}", d.Combos[i]);
                 if (d.Combos.Count < 8 && d.Button(gx + (d.Combos.Count % 2 == 0 ? 7 : 185), gy + 19 + d.Combos.Count / 2 * 34, 172, 32, "New Combo Colour"))
-                    d.Pick = d.Combos.Count; // (added once a colour is picked)
+                {
+                    if (IsWindowFullscreen()) d.Pick = d.Combos.Count; // (added once a colour is picked)
+                    else if (WinColourDialog.Pick(d.Combos[^1]) is { } added) { d.Combos.Add(added); d.Changed = true; }
+                }
                 if (d.Button(gx + 185, gy + 164, 172, 32, "Remove Combo Colour", d.Combos.Count > 2)) { d.Combos.RemoveAt(d.Combos.Count - 1); d.Changed = true; }
                 d.Check(ref d.CustomColours, gx + 12, gy + 171, "Enable Custom Colours");
                 gy = oy + 208;

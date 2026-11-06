@@ -348,7 +348,10 @@ sealed partial class Editor
         var thread = new Thread(() => picked = PickBmsFile(owner));
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
-        thread.Join();
+        // (the game window's messages go on meanwhile: the dialog disables and talks to its owner, and a window that
+        // doesn't answer hangs it - the game froze here in a window)
+        while (!thread.Join(15)) PollInputEvents();
+        Input.Muted = true;
         return picked;
     }
 
