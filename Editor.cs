@@ -2076,6 +2076,32 @@ sealed partial class Editor : Screen
     Rectangle TimelineRect() { float u = U; return new Rectangle(70 * u, 20 * u, Game.W - (tab == 0 ? 280 : 150) * u, 44 * u); } // (Compose: the snap panel on its right)
     float PxPerMs() => TimelineRect().Width / (int)(6000 / zoom);
     void Zoom(float by) { zoom = Math.Clamp(zoom + by, 0.1f, 8); zoomChanged = true; }
+
+    // stable's kiai tag (osu!ui's) under the timeline's left end while the time is in kiai: it slides in from 40 units
+    // left and fades in (to 0.9) over 160ms, with a lit copy pulsing down from 0.4 each beat; out, both fade over 100ms
+    // as it slides back
+    bool kiaiOn;
+    double kiaiAt = double.NegativeInfinity;
+    void DrawKiaiTag(float u)
+    {
+        ETiming? at = null;
+        foreach (var p in timing) if (p.Time <= time && (at == null || p.Time > at.Time || p.Time == at.Time && !p.Red)) at = p;
+        bool kiai = at != null && (at.Effects & 1) != 0;
+        if (kiai != kiaiOn) { kiaiOn = kiai; kiaiAt = Game.NowMs; }
+        double t = Game.NowMs - kiaiAt;
+        if (skin.DefaultTex("editor-kiai") is not { } tag || !kiaiOn && t >= 160) return;
+        float slide = (float)Easing.Apply(1, Math.Min(1, t / 160)), x = (kiaiOn ? -40 + 40 * slide : -40 * slide) * u;
+        float fade = (float)Math.Min(1, t / (kiaiOn ? 160 : 100)), a = kiaiOn ? 0.9f * (float)Easing.Apply(1, fade) : 0.9f * (1 - fade);
+        var r = new Rectangle(x, 66 * u, tag.Width * u / 1.6f, tag.Height * u / 1.6f);
+        var src = new Rectangle(0, 0, tag.Tex.Width, tag.Tex.Height);
+        DrawTexturePro(tag.Tex, src, r, Vector2.Zero, 0, ColorAlpha(Color.White, a));
+        var red = RedAt(time);
+        float beat = (float)(((time - red.Time) % red.Beat + red.Beat) % red.Beat / red.Beat);
+        float lit = kiaiOn ? (t < 160 ? 0.4f * (float)Math.Min(1, t / 100) : Math.Max(0, 0.4f - beat * 0.6f)) : 0.4f * (1 - fade);
+        BeginBlendMode(BlendMode.Additive);
+        DrawTexturePro(tag.Tex, src, r, Vector2.Zero, 0, ColorAlpha(Color.White, lit));
+        EndBlendMode();
+    }
     // stable's zoom buttons left of the timeline (osu!ui's plus and minus, centred at 10,37 and 10,53; a click springs
     // them from 1.1x), 0.1 a click
     Rectangle ZoomRect(int i) { float u = U, sd = u / 1.6f * (Game.NowMs - zoomClickAt[i] < 200 ? 1.1f - 0.1f * (float)((Game.NowMs - zoomClickAt[i]) / 200) : 1); var s = skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus"); float w = (s?.Width ?? 26) * sd, h = (s?.Height ?? 24) * sd; return new Rectangle(10 * u - w / 2, (i == 0 ? 37 : 53) * u - h / 2, w, h); }
@@ -2104,6 +2130,7 @@ sealed partial class Editor : Screen
             case 3: DrawDesign(u); break;
         }
         DrawTimeline(u);
+        DrawKiaiTag(u);
         var zm = Input.GetMousePosition();
         for (int i = 0; i < 2; i++)
             if (skin.DefaultTex(i == 0 ? "editor-timeline-plus" : "editor-timeline-minus") is { } zs)
@@ -2873,7 +2900,9 @@ sealed partial class Editor : Screen
         if (skin.DefaultTex("editor-menu-bg-bottom") is { } bg)
             DrawTexturePro(bg.Tex, new Rectangle(0, 0, bg.Tex.Width, bg.Tex.Height), new Rectangle(0, Game.H - bg.Height * u / 1.6f, Game.W, bg.Height * u / 1.6f), Vector2.Zero, 0, Color.White);
         else DrawRectangle(0, (int)(Game.H - 28 * u), Game.W, (int)(28 * u), new Color(0, 0, 0, 210));
-        Game.TextBold(FormatTime(time), 6 * u, Game.H - 24 * u, 16 * u, Color.White);
+        // stable's time (size 14 at 10,463) and, beside it, how far into the song ("intro" before it, "outro" after)
+        Game.Text(FormatTime(time), 10 * u, 463 * u, 14 * u, Color.White);
+        Game.Text(time < 0 ? "intro" : time > length ? "outro" : $"{time / length * 100:0.0}%", 70 * u, 465 * u, 12 * u, Color.White);
         var r = ProgressRect();
         DrawRectangle((int)r.X, (int)(r.Y + r.Height / 2 - 1 * u), (int)r.Width, (int)(2 * u), Color.Gray);
         // bookmarks of the timing: red and green ticks; kiai in orange
