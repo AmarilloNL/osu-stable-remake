@@ -368,14 +368,20 @@ sealed partial class Editor
 
     SbCmd? SbRunning(SbSprite sp) { int t = (int)Math.Round(time); return sp.Cmds.FirstOrDefault(c => c.Type == sbTool && c.Start <= t && t <= c.End); }
 
-    // ---- Keyframe Control: + a keyframe now (Colour: picked from a palette), - the keyframe now taken out (the two
+    // ---- Keyframe Control: + a keyframe now (Colour: picked in Windows' colour dialog), - the keyframe now taken out (the two
     // transformations meeting there joined), < > to the previous / next keyframe of the transformation
     void SbAddKeyframe()
     {
         if (sbSel is not { Editable: true } sp) return;
-        if (sbTool == "C") { sbColourPick = true; return; }
         int t = (int)Math.Round(time);
         var value = SbValue(sp, sbTool, t);
+        if (sbTool == "C")
+        {
+            if (IsWindowFullscreen()) { sbColourPick = true; return; } // (a Windows dialog would take the focus from the fullscreen game)
+            var now = new Color((int)Math.Clamp(value[0], 0, 255), (int)Math.Clamp(value[1], 0, 255), (int)Math.Clamp(value[2], 0, 255), 255);
+            if (WinColourDialog.Pick(now) is not { } picked) return;
+            value = [picked.R, picked.G, picked.B];
+        }
         SbChange(sp, () => SbKeyframe(sp, sbTool, t, value));
     }
     void SbRemoveKeyframe()
@@ -415,7 +421,7 @@ sealed partial class Editor
     static Vector2 SbKeyButton(int i, float u) => new((250 + 15 * i) * u, 70 * u);
     Vector2 SbLaneButton(int i, float u) => new(TimelineRect().X + (5 + 15 * i) * u, 70 * u);
 
-    // the Colour transformation's colours: Windows' 48 basic colours (stable asks with Windows' own colour dialog)
+    // the Colour transformation's colours in fullscreen: Windows' 48 basic colours (in a window, Windows' own colour dialog, like stable's)
     bool sbColourPick;
     static readonly uint[] BasicColours =
     [
