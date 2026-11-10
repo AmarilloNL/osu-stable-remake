@@ -19,7 +19,8 @@ sealed partial class Player
         public bool Done;
         public int Result = -1;
         public double JudgedAt;
-        public bool Pending; public double FirstHitAt; public int FirstKey; // a big note waiting for the other hand (30ms)
+        public bool Pending; public double FirstHitAt; public int FirstKey; public bool FirstLeft; // a big note waiting for the other hand (30ms)
+        public double SwellLock; // (stable: a swell hit on the same side twice ignores everything for 30ms)
         public double TickSpacing; public int TicksHit, TicksScored; public readonly List<double> Ticks = []; // drumroll (TicksHit: the next one; TicksScored: those hit)
         public int HitsNeeded, Hits, LastSwellRim = -1; // swell
         public int AutoNext; // Auto's next tick / swell hit
@@ -190,13 +191,15 @@ sealed partial class Player
         else if (playback == null)
         {
             byte bits = 0;
+            int pressed = 0, held = 0;
             for (int k = 0; k < 4; k++)
             {
                 bool down = Down(tKeys[k]);
-                if (down && !tHeld[k]) TaikoPress(k, time);
+                if (down && !tHeld[k]) pressed |= 1 << k;
                 tHeld[k] = down;
-                if (down) bits |= TaikoBit[k];
+                if (down) { bits |= TaikoBit[k]; held |= 1 << k; }
             }
+            TaikoInput(pressed, held, time);
             if (bits != tRecorded) { recording.Add(new ReplayFrame(time, 0, 0, bits)); tRecorded = bits; } // (changes only)
         }
         else
@@ -205,12 +208,15 @@ sealed partial class Player
             {
                 var f = playback[pbIndex++];
                 TaikoMisses(f.Time);
+                int pressed = 0, held = 0;
                 for (int k = 0; k < 4; k++)
                 {
                     bool down = (f.Keys & TaikoBit[k]) != 0;
-                    if (down && !tHeld[k]) TaikoPress(k, f.Time);
+                    if (down && !tHeld[k]) pressed |= 1 << k;
                     tHeld[k] = down;
+                    if (down) held |= 1 << k;
                 }
+                TaikoInput(pressed, held, f.Time);
             }
 
         TaikoMisses(time);
@@ -249,33 +255,118 @@ sealed partial class Player
             {
                 case TKind.Don or TKind.Kat when !n.Pending:
                     int a = n.Kind == TKind.Don ? 1 : 0, b = 3 - a;
-                    if (n.Big) { TaikoPress(a, n.Time); TaikoPress(b, n.Time); }
-                    else TaikoPress((tAutoHand++ & 1) == 0 ? a : b, n.Time);
+                    int keys = n.Big ? 1 << a | 1 << b : 1 << ((tAutoHand++ & 1) == 0 ? a : b);
+                    TaikoInput(keys, keys, n.Time);
                     break;
                 case TKind.Roll:
                     for (; n.AutoNext < n.Ticks.Count && n.Ticks[n.AutoNext] <= time; n.AutoNext++)
-                        TaikoPress((tAutoHand++ & 1) == 0 ? 1 : 2, n.Ticks[n.AutoNext]);
+                        TaikoInput(1 << ((tAutoHand++ & 1) == 0 ? 1 : 2), 0, n.Ticks[n.AutoNext]);
                     break;
                 case TKind.Swell:
                     // stable's Auto: centre and rim in turn, the count plus one hits from the swell's start, (int)(duration /
                     // (count + 1)) apart
                     int gap = Math.Max(1, (int)(n.End - n.Time) / (n.HitsNeeded + 1));
                     for (; n.AutoNext <= n.HitsNeeded && n.Time + gap * n.AutoNext < n.End && n.Time + gap * n.AutoNext <= time; n.AutoNext++)
-                        TaikoPress((n.AutoNext % 4) switch { 0 => 1, 1 => 0, 2 => 2, _ => 3 }, n.Time + gap * n.AutoNext);
+                        TaikoInput(1 << (n.AutoNext % 4) switch { 0 => 1, 1 => 0, 2 => 2, _ => 3 }, 0, n.Time + gap * n.AutoNext);
                     break;
             }
         }
     }
 
-    void TaikoPress(int key, double at)
+    // the keys going down at one moment (bits: left rim, left centre, right centre, right rim) and those held
+    void TaikoInput(int pressed, int held, double at)
+    {
+        if (pressed == 0) return;
+        if (OldModeRules) { for (int k = 0; k < 4; k++) if ((pressed >> k & 1) != 0) TaikoPress(k, at); return; } // (older own replays: key by key)
+        for (int k = 0; k < 4; k++) if ((pressed >> k & 1) != 0) TaikoKeySound(k, at);
+        TaikoFrame(pressed, held, at);
+    }
+
+    void TaikoKeySound(int key, double at)
     {
         tDrumAt[key] = Game.NowMs;
         bool rim = key is 0 or 3;
         var tp = map.PointAt(at + 5);
         samples.Play(tp.SampleSet, rim ? "hitclap" : "hitnormal", tp.SampleIndex, Math.Max(8, tp.Volume), SamplePitch, key < 2 ? -0.2f : 0.2f); // (stable pans by side)
         if (!Resting(at) && !paused) keyCounts[key is 1 or 2 ? key - 1 : key == 0 ? 2 : 3]++;
+    }
 
-        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - (OldModeRules ? tMiss : Math.Max(tMiss, 250)) <= at; i++) // (a drumroll from a tick before)
+    // stable takes a frame's keys together: the first note within reach takes them all. A circle hit with both colours
+    // down is a miss; a big one hit with both keys of its colour is both hands at once, else the other one within 30ms
+    // (both then held) adds the second hand. A drumroll gets one try a frame, a swell one hit (centre before rim).
+    void TaikoFrame(int pressed, int held, double at)
+    {
+        bool lr = (pressed & 1) != 0, lc = (pressed & 2) != 0, rc = (pressed & 4) != 0, rr = (pressed & 8) != 0;
+        bool centre = lc || rc, rimDown = lr || rr;
+        // (stable checks the centre keys, then the rim's over them; Relax takes either colour)
+        bool Left(bool kat) => rimDown && (kat || relax) ? lr : centre && (!kat || relax) && lc;
+        bool Both(bool kat) => rimDown && (kat || relax) ? lr && rr : centre && (!kat || relax) && lc && rc;
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - Math.Max(tMiss, 250) <= at; i++) // (a drumroll from a tick before)
+        {
+            var n = tNotes[i];
+            bool kat = n.Kind == TKind.Kat;
+            switch (n.Kind)
+            {
+                case TKind.Swell when !n.Done && at >= n.Time && at <= n.End:
+                    TaikoSwellHit(n, centre, rimDown, at);
+                    return;
+                case TKind.Roll when !n.Done && at >= n.Time - (int)n.TickSpacing && at <= n.ActiveEnd:
+                    TaikoRollHit(n, at);
+                    return;
+                case TKind.Don or TKind.Kat when n.Pending && n.Done:
+                    if ((relax || (kat ? rimDown : centre)) && (centre ? (held & 6) == 6 : (held & 9) == 9) && at - n.FirstHitAt < 30 && Left(kat) != n.FirstLeft)
+                    {
+                        n.Pending = false;
+                        TaikoBigBonus(n, together: false);
+                        return;
+                    }
+                    continue;
+                case TKind.Don or TKind.Kat when !n.Done:
+                {
+                    double err = at - n.Time;
+                    if (Math.Abs(err) > tMiss) continue;
+                    bool wrong = !relax && (kat ? centre : rimDown);
+                    int result = wrong ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
+                    TaikoJudge(n, result, at);
+                    if (result > 0) hitErrors.Add(err / rate); // (real milliseconds, like osu!'s)
+                    if (result > 0 && n.Big)
+                    {
+                        if (Both(kat)) TaikoBigBonus(n, together: true);
+                        else { n.Pending = true; n.FirstHitAt = at; n.FirstLeft = Left(kat); }
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    // stable's swell: centre and rim in turn (Relax: either); the same side twice ignores every key for 30ms (not under
+    // Score V2)
+    void TaikoSwellHit(TNote n, bool centre, bool rimDown, double at)
+    {
+        bool hit = relax && (centre || rimDown);
+        if ((at - n.SwellLock >= 30 || ModeV2) && !relax)
+        {
+            int side = centre ? 0 : rimDown ? 1 : -1;
+            if (side >= 0)
+            {
+                if (n.LastSwellRim == side) { if (!ModeV2) n.SwellLock = at; return; }
+                hit = true;
+                n.LastSwellRim = side;
+            }
+        }
+        if (!hit) return;
+        n.Hits++;
+        if (!ModeV2) score += 300; // (V2: nothing)
+        if (n.Hits > n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; } // (stable: one more than its count)
+    }
+
+    // older own replays: key by key
+    void TaikoPress(int key, double at)
+    {
+        TaikoKeySound(key, at);
+        bool rim = key is 0 or 3;
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= at; i++)
         {
             var n = tNotes[i];
             switch (n.Kind)
@@ -288,36 +379,7 @@ sealed partial class Player
                     if (!ModeV2) score += 300; // (V2: nothing)
                     if (n.Hits > n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; } // (stable: one more than its count)
                     return;
-                case TKind.Roll when !n.Done && !OldModeRules && at >= n.Time - (int)n.TickSpacing && at <= n.ActiveEnd:
-                {
-                    // stable: one try a frame however many keys went down; outside Score V2 and Relax a hit has to keep the
-                    // rhythm (a spacing after the last, or two or four of them, else it resyncs to the next even tick and
-                    // counts nothing); the hit takes a tick not hit yet within half a spacing
-                    if (at == n.LastTryAt) return;
-                    n.LastTryAt = at;
-                    double sp = n.TickSpacing;
-                    if (!ModeV2 && !relax)
-                    {
-                        if (n.RhythmAt == 0) n.RhythmAt = n.Time;
-                        else if (Math.Abs(at - (n.RhythmAt + sp)) < sp / 2) n.RhythmAt += sp;
-                        else if (Math.Abs(at - (n.RhythmAt + sp * 2)) < sp) n.RhythmAt += sp * 2;
-                        else if (Math.Abs(at - (n.RhythmAt + sp * 4)) < sp) n.RhythmAt += sp * 4;
-                        else
-                        {
-                            double resync = n.Time;
-                            while (resync < at) resync += sp * 2;
-                            n.RhythmAt = (int)resync;
-                            return;
-                        }
-                    }
-                    int k = -1;
-                    for (int j = 0; j < n.Ticks.Count; j++) if (!n.TickHit[j] && Math.Abs(n.Ticks[j] - at) < sp / 2) { k = j; break; }
-                    if (k < 0) return;
-                    n.TickHit[k] = true;
-                    TaikoTick(n);
-                    return;
-                }
-                case TKind.Roll when !n.Done && OldModeRules && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
+                case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
                     while (n.TicksHit < n.Ticks.Count && n.Ticks[n.TicksHit] < at - n.TickSpacing / 2 - 1) n.TicksHit++; // (ticks gone by unhit)
                     if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
                     {
@@ -345,6 +407,35 @@ sealed partial class Player
                     return;
             }
         }
+    }
+
+    void TaikoRollHit(TNote n, double at)
+    {
+        // stable: one try a frame however many keys went down; outside Score V2 and Relax a hit has to keep the
+        // rhythm (a spacing after the last, or two or four of them, else it resyncs to the next even tick and
+        // counts nothing); the hit takes a tick not hit yet within half a spacing
+        if (at == n.LastTryAt) return;
+        n.LastTryAt = at;
+        double sp = n.TickSpacing;
+        if (!ModeV2 && !relax)
+        {
+            if (n.RhythmAt == 0) n.RhythmAt = n.Time;
+            else if (Math.Abs(at - (n.RhythmAt + sp)) < sp / 2) n.RhythmAt += sp;
+            else if (Math.Abs(at - (n.RhythmAt + sp * 2)) < sp) n.RhythmAt += sp * 2;
+            else if (Math.Abs(at - (n.RhythmAt + sp * 4)) < sp) n.RhythmAt += sp * 4;
+            else
+            {
+                double resync = n.Time;
+                while (resync < at) resync += sp * 2;
+                n.RhythmAt = (int)resync;
+                return;
+            }
+        }
+        int k = -1;
+        for (int j = 0; j < n.Ticks.Count; j++) if (!n.TickHit[j] && Math.Abs(n.Ticks[j] - at) < sp / 2) { k = j; break; }
+        if (k < 0) return;
+        n.TickHit[k] = true;
+        TaikoTick(n);
     }
 
     internal int TaikoTicksMissed => tNotes.Where(n => n.Kind == TKind.Roll).Sum(n => n.Ticks.Count - n.TicksScored); // (--auto-check)
