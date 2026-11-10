@@ -310,7 +310,7 @@ sealed partial class SongSelect : Screen
                 DrainSeconds = objs.Count > 0 ? ((int)objs[^1].Time - (int)objs[0].Time - m.Breaks.Sum(b => (int)b.End - (int)b.Start)) / 1000 : 0,
                 TotalMs = (int)end, MinBpm = bpms.Count > 0 ? bpms.Min(t => 60000 / t.BeatLength) : 0,
                 MaxBpm = bpms.Count > 0 ? bpms.Max(t => 60000 / t.BeatLength) : 0, MainBpm = mainBpm,
-                LastModified = DateTime.Now.Ticks, Unplayed = true, Status = (byte)(m.SetId <= 0 ? 1 : 0),
+                LastModified = DateTime.Now.Ticks, Unplayed = true, Status = (byte)(m.SetId <= 0 ? 1 : 0), Scanned = true,
             };
             if (stars) RateStars(entry, m);
             return entry;
@@ -2616,7 +2616,9 @@ sealed partial class SongSelect : Screen
 
     void DeleteVisible()
     {
-        var visible = view.SelectMany(v => v.Diffs).ToList();
+        // what the list shows: with grouping, the open group's maps (none when every group is closed)
+        var shown = !Grouped ? view : expanded >= 0 && expanded < groups.Count ? groups[expanded].Entries : [];
+        var visible = shown.SelectMany(v => v.Diffs).ToList();
         if (visible.Count == 0) Toast.Show("There are no maps visible!");
         else if (visible.Count == sets.Sum(s => s.Diffs.Count)) Toast.Show("You can't delete all your beatmaps at once!");
         else OpenDialog($"Are you sure you want to delete {visible.Count} beatmaps?", ("Let's do it!", YellowGreen, () => DeleteMaps(visible)), ("Cancel", OrangeRed, null));
@@ -2644,12 +2646,13 @@ sealed partial class SongSelect : Screen
 
     // Options > Maintenance > Delete all unranked maps (stable's): maps not submitted or pending (status 1 or 2) that
     // someone else made, in sets with no ranked map and none of the player's own; each one's whole set goes to the
-    // Recycle Bin
+    // Recycle Bin. Sets with a map osu!.db doesn't list are kept: the remake can't tell whether those are ranked (old
+    // ranked maps have no set id in their .osu).
     internal List<DbBeatmap> UnrankedMaps()
     {
         string me = Config.Get("Username", "");
         bool Mine(DbBeatmap d) => me.Length > 0 && d.Creator == me;
-        return [.. sets.Where(s => !s.Diffs.Any(d => d.Status == 4 || Mine(d))).SelectMany(s => s.Diffs).Where(d => d.Status is 1 or 2 && !Mine(d))];
+        return [.. sets.Where(s => !s.Diffs.Any(d => d.Status == 4 || Mine(d) || d.Scanned)).SelectMany(s => s.Diffs).Where(d => d.Status is 1 or 2 && !Mine(d))];
     }
 
     internal void DeleteSetsOf(List<DbBeatmap> maps)

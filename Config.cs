@@ -60,7 +60,12 @@ static class Config
     {
         own[key] = value;
         values[key] = value;
-        File.WriteAllLines(OwnPath, own.Select(kv => $"{kv.Key} = {kv.Value}"));
+        try // (whole or not at all: a write cut short would lose every setting in it)
+        {
+            File.WriteAllLines(OwnPath + ".tmp", own.Select(kv => $"{kv.Key} = {kv.Value}"));
+            File.Move(OwnPath + ".tmp", OwnPath, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Console.Error.WriteLine($"remake.cfg not saved: {e.Message}"); }
     }
 
     public static KeyboardKey Key(string key, KeyboardKey def) => ParseKey(Get(key, "")) ?? def;

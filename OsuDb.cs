@@ -45,9 +45,11 @@ sealed class DbBeatmap
     public long LastModified, LastPlayed;
     public bool Unplayed;
     public long UnplayedAt; // where osu!.db keeps that flag (0: not from osu!.db)
+    public int FromLoad; // which osu!.db read it came from (the offset only means something in that file)
     public byte ManiaSpeed;
     public double MinBpm, MaxBpm, MainBpm; // MainBpm: the one held longest (stable's "(147)")
     public byte Mode, Status;
+    public bool Scanned; // read from its .osu by the remake (not listed in osu!.db): its ranked status isn't known
     // stable stores star ratings per game mode (an osu! map has its converts' too) and per difficulty-changing mod
     // combination (EZ/HR/DT/HT: 16 slots a mode, NaN = none).
     float[]? stars;
@@ -131,12 +133,14 @@ static class OsuDb
     static DateTime loadedWrite;
     static List<long> unplayedAt = []; // every unplayed map's flag in that file, all modes (Mark all maps as played)
     static List<long> reading = []; // (filled while a load runs, kept once it succeeds)
+    static int loadSerial, readingLoad, currentLoad;
 
     public static List<DbBeatmap> Load(string path)
     {
         var info = new FileInfo(path);
         loadedPath = null; // (set again once this read succeeds)
         reading = [];
+        readingLoad = Interlocked.Increment(ref loadSerial);
         using var stream = new BufferedStream(File.OpenRead(path), 1 << 20);
         using var r = new BinaryReader(stream);
         var rd = new Reader(r);
@@ -150,7 +154,7 @@ static class OsuDb
         for (int i = 0; i < count; i++) list.Add(ReadBeatmap(rd, version));
         r.ReadInt32();            // user permissions
         if (stream.Position != stream.Length) throw new InvalidDataException($"osu!.db: {stream.Length - stream.Position} unread bytes");
-        (loadedPath, loadedLength, loadedWrite, unplayedAt) = (path, info.Length, info.LastWriteTimeUtc, reading);
+        (loadedPath, loadedLength, loadedWrite, unplayedAt, currentLoad) = (path, info.Length, info.LastWriteTimeUtc, reading, readingLoad);
         return list;
     }
 
@@ -215,6 +219,7 @@ static class OsuDb
         b.OnlineOffset = r.ReadInt16();   // online offset
         rd.Skip();                        // title font
         b.UnplayedAt = r.BaseStream.Position;
+        b.FromLoad = readingLoad;
         b.Unplayed = r.ReadBoolean();
         if (b.Unplayed) reading.Add(b.UnplayedAt);
         b.LastPlayed = r.ReadInt64();     // DateTime ticks (UTC)
@@ -256,7 +261,7 @@ static class OsuDb
                     PreviewMs = r.ReadInt32(), BeatmapId = r.ReadInt32(), SetId = r.ReadInt32(), Circles = r.ReadInt32(),
                     Sliders = r.ReadInt32(), Spinners = r.ReadInt32(), DrainSeconds = r.ReadInt32(), TotalMs = r.ReadInt32(),
                     MinBpm = r.ReadDouble(), MaxBpm = r.ReadDouble(), MainBpm = r.ReadDouble(), LastModified = r.ReadInt64(),
-                    Status = r.ReadByte(), Unplayed = true,
+                    Status = r.ReadByte(), Unplayed = true, Scanned = true,
                 };
                 foreach (var m in CachedStars) if (r.ReadSingle() is var s && !float.IsNaN(s)) b.SetStars((int)m, s);
                 cache[key] = (length, ticks, b);
@@ -312,7 +317,10 @@ static class OsuDb
                 result.Add((name, md5s));
             }
         }
-        catch (Exception e) when (e is IOException or EndOfStreamException or InvalidDataException) { }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            collectionsRead = (-2, default); // (read only partly, or not at all: never saved over the real file)
+        }
         return result;
     }
 
@@ -351,7 +359,7 @@ static class OsuDb
     // (it writes its own copy when it closes) and while the file is still the one the list was read from; the file
     // keeps its time, which the library load compares with the Songs folders.
     // Returns how many flags it cleared, or -1 when it may not write (stable running, or osu!.db changed since).
-    internal static int SetPlayed(DbBeatmap b) => ClearFlags([b.UnplayedAt]);
+    internal static int SetPlayed(DbBeatmap b) => b.FromLoad == currentLoad ? ClearFlags([b.UnplayedAt]) : -1;
     internal static int SetAllPlayed() => ClearFlags(unplayedAt);
 
     static int ClearFlags(IEnumerable<long> offsets)

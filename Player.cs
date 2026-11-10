@@ -1190,7 +1190,7 @@ sealed partial class Player : Screen
             savedReplay = Replays.Save(CurrentInfo(), recording);
             back.AddScore(savedReplay);
         }
-        catch (IOException e) { Console.Error.WriteLine($"replay not saved: {e.Message}"); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notification.Show($"Replay not saved: {e.Message}", 3000); }
     }
 
     // stable's fail screen keys for a live play: F1 watches the attempt, F2 saves its replay.
@@ -1202,7 +1202,7 @@ sealed partial class Player : Screen
         if (Input.IsKeyPressed(KeyboardKey.F1)) Leave(new Player(map, back, mods, recording.ToArray(), CurrentInfo()));
         else if (Input.IsKeyPressed(KeyboardKey.F2) && !failSaved)
             try { Toast.Show($"Saved replay to {Replays.Save(CurrentInfo(), recording, "Failed").Path}.", new Color(138, 43, 226, 255), 6000); failSaved = true; }
-            catch (IOException e) { Notification.Show($"Replay not saved: {e.Message}", 3000); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notification.Show($"Replay not saved: {e.Message}", 3000); }
     }
     bool failSaved;
     static bool mouseWarned;

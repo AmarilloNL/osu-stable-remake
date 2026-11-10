@@ -17,7 +17,7 @@ sealed class BeatmapImport : Screen
     readonly SongSelect songs;
     readonly Task<string?> work;
     double start = Game.NowMs;
-    readonly ConcurrentQueue<string> incoming = new();
+    readonly ConcurrentQueue<string> incoming = new(), toasts = new(); // (from the extracting thread)
     readonly List<(string Text, double At)> lines = [];
     bool reloading;
     readonly bool reload, minimum; // minimum: shown at least 300ms (imports; F5 and the way in from the menu pass straight through, as on stable)
@@ -46,31 +46,52 @@ sealed class BeatmapImport : Screen
         {
             string name = Path.GetFileName(file);
             incoming.Enqueue($"Importing {(name.Length > 50 ? name.Remove(50) + "..." : name)}");
-            var dest = Path.Combine(Config.SongsDir, Path.GetFileNameWithoutExtension(file));
-            bool existed = Directory.Exists(dest);
+            var dest = Path.Combine(Config.SongsDir, FolderName(file));
             try
             {
-                ZipFile.ExtractToDirectory(file, dest, overwriteFiles: true); // refuses entries that would land outside dest
+                Extract(file, dest);
                 select ??= Directory.EnumerateFiles(dest, "*.osu").Order(StringComparer.OrdinalIgnoreCase)
                     .Select(f => SongSelect.ReadMap(f, stars: false)).FirstOrDefault(m => m is { Mode: 0 })?.Md5;
             }
-            catch (InvalidDataException)
+            catch (Exception e) when (e is InvalidDataException or NotSupportedException)
             {
                 // stable moves a broken archive into the Songs folder's "Failed" folder
-                Toast.Show("The beatmap file is corrupt or incomplete. Moving to Failed folder.");
+                toasts.Enqueue("The beatmap file is corrupt or incomplete. Moving to Failed folder.");
                 try
                 {
-                    if (!existed && Directory.Exists(dest)) Directory.Delete(dest, true); // what this import half extracted
                     string failed = Path.Combine(Config.SongsDir, "Failed");
                     Directory.CreateDirectory(failed);
                     File.Move(file, Path.Combine(failed, name), overwrite: true);
                 }
-                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                catch (Exception e2) when (e2 is IOException or UnauthorizedAccessException) { }
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Unable to move file {name}. It is probably in use by another application."); }
+            catch (Exception e) when (e is not OutOfMemoryException) { toasts.Enqueue($"Unable to move file {name}. It is probably in use by another application."); }
         }
         SongSelect.IgnoreSongsUntil = Game.NowMs + 2000;
         return select;
+    }
+
+    // the folder an archive goes into: its file name (an empty or dots-only one would leave Songs / Skins)
+    static string FolderName(string file) => Path.GetFileNameWithoutExtension(file).Trim().TrimEnd('.') is { Length: > 0 } n ? n : "Imported";
+
+    // Extracts into a temporary folder next to dest first, so a broken archive leaves an existing set or skin as it
+    // was; then its files go over dest's (entries that would land outside the folder are refused by ZipFile).
+    static void Extract(string archive, string dest)
+    {
+        string tmp = dest.TrimEnd(Path.DirectorySeparatorChar) + " (importing)";
+        if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+        try
+        {
+            ZipFile.ExtractToDirectory(archive, tmp);
+            if (!Directory.Exists(dest)) { Directory.Move(tmp, dest); return; }
+            foreach (var f in Directory.EnumerateFiles(tmp, "*", SearchOption.AllDirectories))
+            {
+                string to = Path.Combine(dest, Path.GetRelativePath(tmp, f));
+                Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+                File.Move(f, to, overwrite: true);
+            }
+        }
+        finally { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); }
     }
 
     public override void Entered() => start = Game.NowMs; // (after a fade, the screen only shows from here)
@@ -79,6 +100,7 @@ sealed class BeatmapImport : Screen
     {
         songs.Ambient(); // the music and background carry on
         while (incoming.TryDequeue(out var text)) lines.Add((text, Game.NowMs));
+        while (toasts.TryDequeue(out var toast)) Toast.Show(toast);
         if (!work.IsCompleted) return;
         if (!reloading) { reloading = true; if (reload) songs.Reload(work.Result); return; }
         if (!songs.LibraryLoading && (!minimum || Game.NowMs - start >= 300)) Game.Screen = songs; // shown at least 300ms (stable took about that for one small archive)
@@ -170,10 +192,10 @@ sealed class BeatmapImport : Screen
     static void ImportSkin(SongSelect songs, string file)
     {
         if (Game.Screen is Player) return;
-        string name = Path.GetFileNameWithoutExtension(file), dest = Path.Combine(Config.OsuDir, "Skins", name);
+        string name = FolderName(file), dest = Path.Combine(Config.OsuDir, "Skins", name);
         try
         {
-            ZipFile.ExtractToDirectory(file, dest, overwriteFiles: true);
+            Extract(file, dest);
             for (int i = 0; i < 5 && Directory.GetFiles(dest).Length == 0 && Directory.GetDirectories(dest) is [var inner]; i++)
             {
                 foreach (var f in Directory.GetFiles(inner)) File.Move(f, Path.Combine(dest, Path.GetFileName(f)), overwrite: true);
@@ -181,7 +203,7 @@ sealed class BeatmapImport : Screen
                 Directory.Delete(inner);
             }
         }
-        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException)
         {
             Toast.Show($"Couldn't import {Path.GetFileName(file)}.");
             return;

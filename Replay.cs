@@ -259,7 +259,7 @@ static class Replays
                 if (!index.TryGetValue(info.BeatmapMd5, out var list)) index[info.BeatmapMd5] = list = [];
                 list.Add(info);
             }
-            catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { }
+            catch (Exception e) when (e is not OutOfMemoryException) { } // (a damaged file is left out, never fatal)
         }
         // Stable's replays (exported + local scores); osu!standard only, deduplicated by file content stats.
         // Headers are cached by path/size/mtime: opening ~2000 small files on every launch took 10-25s.
@@ -284,11 +284,11 @@ static class Replays
                 if (list.Any(o => o.FromStable && o.Score == info.Score && o.Date == info.Date)) continue; // same play exported twice
                 list.Add(info);
             }
-            catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException) { }
+            catch (Exception e) when (e is not OutOfMemoryException) { } // (a damaged file is left out, never fatal)
         }
         if (fresh.Count != cache.Count || fresh.Any(kv => !cache.ContainsKey(kv.Key)) || cache.Any(kv => fresh.TryGetValue(kv.Key, out var e) && e.Modified != kv.Value.Modified))
             try { File.WriteAllText(IndexCachePath, System.Text.Json.JsonSerializer.Serialize(fresh, JsonFields)); }
-            catch (IOException) { } // a stale or missing cache only costs speed
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } // a stale or missing cache only costs speed
         foreach (var list in index.Values) list.Sort((a, b) => b.Score.CompareTo(a.Score));
         return index;
     }
