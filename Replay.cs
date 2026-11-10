@@ -135,7 +135,9 @@ static class Replays
     // deltas, keys stable's bits (K1 = 5, K2 = 10, M1 = 1, M2 = 2).
     // exact: frame times as recorded (stable reads them after its -1ms lead-in frame). The fuzz tests keep the
     // older, 1ms-early layout so their recorded stable results stay valid.
-    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames, bool exact = false)
+    // lifeBar: the play's (time, hp 0..1) graph, written like stable's: a point whenever 2s have passed since the last
+    // one, plus the first and last, as "time|hp," with both rounded to 2 decimals
+    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames, bool exact = false, IReadOnlyList<System.Numerics.Vector2>? lifeBar = null, string? player = null)
     {
         var text = new System.Text.StringBuilder("0|256|-500|0,-1|256|-500|0,");
         var inv = System.Globalization.CultureInfo.InvariantCulture;
@@ -153,7 +155,7 @@ static class Replays
         w.Write((byte)info.Mode);
         w.Write(20250101);
         Str(info.BeatmapMd5);
-        Str(info.Player);
+        Str(player ?? info.Player);
         Str(Convert.ToHexStringLower(MD5.HashData(System.Text.Encoding.ASCII.GetBytes(text.ToString()))));
         w.Write((ushort)info.N300); w.Write((ushort)info.N100); w.Write((ushort)info.N50);
         w.Write((ushort)info.NGeki); w.Write((ushort)info.NKatu); w.Write((ushort)info.NMiss);
@@ -161,7 +163,15 @@ static class Replays
         w.Write((ushort)info.MaxCombo);
         w.Write(info.Perfect);
         w.Write((int)info.Mods);
-        Str("");
+        var bar = new System.Text.StringBuilder();
+        float lastPoint = 0;
+        for (int i = 0; lifeBar != null && i < lifeBar.Count; i++)
+            if (lifeBar[i].X - lastPoint > 2000f || i == lifeBar.Count - 1 || i == 0)
+            {
+                lastPoint = lifeBar[i].X;
+                bar.Append(inv, $"{Math.Round(lifeBar[i].X, 2)}|{Math.Round(lifeBar[i].Y, 2)},");
+            }
+        Str(bar.ToString());
         w.Write(info.Date.ToUniversalTime().Ticks);
         var data = Lzma.Encode(System.Text.Encoding.ASCII.GetBytes(text.ToString()));
         w.Write(data.Length);

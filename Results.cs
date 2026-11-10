@@ -172,8 +172,11 @@ sealed partial class Player
             Leave(() => new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
         }
 
+        string PlayerName => p.watching is { Player.Length: > 0 } r ? r.Player : AutoPlay ? "osu!" : Config.Get("Username", Environment.UserName);
+
         // stable's F2: the replay as "{player} - {Artist - Title [Version]} ({UTC date}) Osu.osr" (" (n)" when taken),
-        // here in Exports next to the remake (never stable's or this client's Replays), with a blue-violet notice.
+        // here in Exports next to the remake (never stable's or this client's Replays), with a blue-violet notice; the
+        // player and the life bar written in like stable's
         void Export()
         {
             if (Replay is not { } r) return;
@@ -181,12 +184,12 @@ sealed partial class Player
             {
                 var dir = Path.Combine(AppContext.BaseDirectory, "Exports");
                 Directory.CreateDirectory(dir);
-                string name = $"{r.Player} - {p.map.Artist} - {p.map.Title} [{p.map.Version}] ({r.Date.ToUniversalTime():yyyy-MM-dd}) Osu";
+                string name = $"{PlayerName} - {p.map.Artist} - {p.map.Title} [{p.map.Version}] ({r.Date.ToUniversalTime():yyyy-MM-dd}) Osu";
                 name = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
                 string path = Path.Combine(dir, name + ".osr");
                 for (int n = 1; File.Exists(path); n++) path = Path.Combine(dir, $"{name} ({n}).osr");
                 if (r.FromStable) File.Copy(r.Path, path);
-                else Replays.SaveOsr(path, r, Replays.Frames(r), exact: true);
+                else Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: p.hpGraph, player: PlayerName);
                 Toast.Show($"Saved replay to {path}.", new Color(138, 43, 226, 255), 6000);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Replay not saved: {e.Message}"); }
@@ -391,7 +394,7 @@ sealed partial class Player
         {
             DrawRectangle(0, 0, w, (int)(60 * u), new Color(0, 0, 0, 204));
             var map = p.map;
-            string player = p.watching is { Player.Length: > 0 } r ? r.Player : AutoPlay ? "osu!" : Config.Get("Username", Environment.UserName);
+            string player = PlayerName;
             var date = p.watching?.Date ?? DateTime.Now;
             // Measured against stable: its header sits ~3 units in and renders ~3.5% wider than its nominal sizes.
             Game.Text($"{map.Artist} - {map.Title} [{map.Version}]", 3.3f * u, 0.1f * u, 22.8f * u, Color.White); // stable: no source here (song select shows "Source (Artist)")
