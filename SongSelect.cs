@@ -2602,16 +2602,16 @@ sealed partial class SongSelect : Screen
 
     void DeleteSet(DbBeatmap b, string name)
     {
-        Toast.Show($"{name} has been moved to Recycle Bin!", Xna.Red, 3000);
         ReleaseMusic();
-        Recycle([Path.Combine(Config.SongsDir, b.Folder)]);
-        Forget(sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs.ToList() ?? [b]);
+        bool ok = Recycle([Path.Combine(Config.SongsDir, b.Folder)]);
+        Toast.Show(ok ? $"{name} has been moved to Recycle Bin!" : $"{name} couldn't be moved to the Recycle Bin.", Xna.Red, 3000);
+        Forget(Gone(sets.FirstOrDefault(s => s.Diffs.Contains(b))?.Diffs.ToList() ?? [b]));
     }
 
     void DeleteMaps(List<DbBeatmap> maps)
     {
-        Recycle(maps.Select(m => m.FilePath));
-        Forget(maps);
+        if (!Recycle(maps.Select(m => m.FilePath))) Toast.Show("Some beatmaps couldn't be moved to the Recycle Bin.", Xna.Red, 3000);
+        Forget(Gone(maps));
     }
 
     void DeleteVisible()
@@ -2647,12 +2647,22 @@ sealed partial class SongSelect : Screen
     // Options > Maintenance > Delete all unranked maps (stable's): maps not submitted or pending (status 1 or 2) that
     // someone else made, in sets with no ranked map and none of the player's own; each one's whole set goes to the
     // Recycle Bin. Sets with a map osu!.db doesn't list are kept: the remake can't tell whether those are ranked (old
-    // ranked maps have no set id in their .osu).
+    // ranked maps have no set id in their .osu), nor whose a difficulty is that osu!.db doesn't know yet (one made in
+    // the editor, say) in a folder it lists.
     internal List<DbBeatmap> UnrankedMaps()
     {
         string me = Config.Get("Username", "");
         bool Mine(DbBeatmap d) => me.Length > 0 && d.Creator == me;
-        return [.. sets.Where(s => !s.Diffs.Any(d => d.Status == 4 || Mine(d) || d.Scanned)).SelectMany(s => s.Diffs).Where(d => d.Status is 1 or 2 && !Mine(d))];
+        bool Unknown(List<DbBeatmap> diffs)
+        {
+            try
+            {
+                var known = diffs.Select(d => d.OsuFile).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                return Directory.EnumerateFiles(Path.Combine(Config.SongsDir, diffs[0].Folder), "*.osu").Any(f => !known.Contains(Path.GetFileName(f)));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return true; }
+        }
+        return [.. sets.Where(s => !s.Diffs.Any(d => d.Status == 4 || Mine(d) || d.Scanned) && !Unknown(s.Diffs)).SelectMany(s => s.Diffs).Where(d => d.Status is 1 or 2 && !Mine(d))];
     }
 
     internal void DeleteSetsOf(List<DbBeatmap> maps)
@@ -2660,8 +2670,8 @@ sealed partial class SongSelect : Screen
         var folders = maps.Select(m => m.Folder).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (folders.Count == 0) return;
         ReleaseMusic();
-        Recycle(folders.Select(f => Path.Combine(Config.SongsDir, f)));
-        Forget([.. sets.Where(s => folders.Contains(s.First.Folder)).SelectMany(s => s.Diffs)]);
+        if (!Recycle(folders.Select(f => Path.Combine(Config.SongsDir, f)))) Toast.Show("Some beatmaps couldn't be moved to the Recycle Bin.", Xna.Red, 3000);
+        Forget(Gone([.. sets.Where(s => folders.Contains(s.First.Folder)).SelectMany(s => s.Diffs)]));
     }
 
     // stable's Clear local scores empties the map's list in its scores.db. The remake's list comes from the replays
@@ -2710,13 +2720,17 @@ sealed partial class SongSelect : Screen
 
     // stable's delete: to the Recycle Bin with no confirmation, progress or error UI (FO_DELETE; FOF_ALLOWUNDO,
     // FOF_SILENT, FOF_NOCONFIRMATION, FOF_NOERRORUI)
-    static void Recycle(IEnumerable<string> paths)
+    // (only maps whose file is really gone leave the list: a delete that failed, all or in part, leaves the rest)
+    static List<DbBeatmap> Gone(List<DbBeatmap> maps) => [.. maps.Where(m => !File.Exists(m.FilePath))];
+
+    static bool Recycle(IEnumerable<string> paths)
     {
         IgnoreSongsUntil = double.MaxValue; // the watcher: our own deletes aren't news (until 2s after they finish)
         var op = new ShFileOp { Func = 3, From = string.Join("\0", paths.Select(Path.GetFullPath)) + "\0", Flags = 0x40 | 0x4 | 0x10 | 0x400 };
         int r = SHFileOperationW(ref op);
         if (r != 0) Console.Error.WriteLine($"Recycle Bin: error {r:x}");
         IgnoreSongsUntil = Game.NowMs + 2000;
+        return r == 0 && op.Aborted == 0;
     }
 
     // stable's mod select: a dialog titled with its blurb, "Score Multiplier" centred 20 units above the content, three

@@ -82,7 +82,7 @@ sealed class BeatmapImport : Screen
         if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
         try
         {
-            ZipFile.ExtractToDirectory(archive, tmp);
+            ZipFile.ExtractToDirectory(archive, tmp, overwriteFiles: true); // (an archive listing a file twice: the last one, as before)
             if (!Directory.Exists(dest)) { Directory.Move(tmp, dest); return; }
             foreach (var f in Directory.EnumerateFiles(tmp, "*", SearchOption.AllDirectories))
             {
