@@ -23,7 +23,8 @@ sealed partial class Player
         public double TickSpacing; public int TicksHit, TicksScored; public readonly List<double> Ticks = []; // drumroll (TicksHit: the next one; TicksScored: those hit)
         public int HitsNeeded, Hits, LastSwellRim = -1; // swell
         public int AutoNext; // Auto's next tick / swell hit
-        public double RollEnd => End + TickSpacing / 2; // (the last tick can sit up to half a tick past the end)
+        public double RollEnd => End + TickSpacing / 2; // (the last tick can sit up to half a tick past the end; older own replays)
+        public double ActiveEnd = double.NaN, RhythmAt, LastTryAt = double.NaN; public bool[] TickHit = []; // stable's drumroll (see TaikoConvert)
     }
 
     readonly List<TNote> tNotes = [];
@@ -62,7 +63,7 @@ sealed partial class Player
         tTravel = hidden ? 600 : (int)Math.Ceiling(widthUnits) - 40;
         // stable: HardRock scrolls 1.4x faster (times the screen's width over 640), Easy 0.8x
         double speedMul = mods.HasFlag(Mods.HardRock) ? 1.4 * (int)Math.Ceiling(widthUnits) / 640.0 : mods.HasFlag(Mods.Easy) ? 0.8 : 1;
-        tNotes.AddRange(TaikoConvert(map, mods, speedMul));
+        tNotes.AddRange(TaikoConvert(map, mods, speedMul, stableRolls: !OldModeRules, v2: ModeV2));
         double Speed(double t) => 100 * map.SliderMultiplier * 1.4 / (map.UninheritedAt(t).BeatLength / map.SliderVelocityAt(t)) * speedMul; // (bar lines)
         int circles = Math.Max(1, tNotes.Count(n => n.Kind is TKind.Don or TKind.Kat));
         tHpMul = 200.0 / (0.36 * circles * Beatmap.Range(map.HP, 0.5, 0.75, 0.98));
@@ -91,7 +92,7 @@ sealed partial class Player
 
     // stable's taiko conversion (an osu! map's sliders become hits or drumrolls, spinners swells), each note with its
     // scroll speed (units a ms, times speedMul)
-    internal static List<TNote> TaikoConvert(Beatmap map, Mods mods, double speedMul = 1)
+    internal static List<TNote> TaikoConvert(Beatmap map, Mods mods, double speedMul = 1, bool stableRolls = false, bool v2 = false)
     {
         var notes = new List<TNote>();
         double sm = map.SliderMultiplier * 1.4;
@@ -135,8 +136,17 @@ sealed partial class Player
                 else
                 {
                     var roll = new TNote { Kind = TKind.Roll, Big = big, Time = o.Time, End = end, Speed = Speed(o.Time) };
-                    roll.TickSpacing = map.UninheritedAt(o.Time).BeatLength / (map.SliderTickRate == 3 ? 3 : 4);
-                    if (roll.TickSpacing > 0)
+                    // stable's ticks: Score V2's a quarter of a beat (a third at tick rate 3); otherwise an eighth (a sixth at
+                    // tick rates 3, 6 and 1.5; maps before v8: of the beat with its slider velocity), doubled or halved into
+                    // 60-120ms (older own replays: a quarter / third either way)
+                    double r = map.SliderTickRate;
+                    roll.TickSpacing = !stableRolls || v2 ? red.BeatLength / (r == 3 ? 3 : 4) : map.FormatVersion < 8 ? beat / 8 : red.BeatLength / (r == 3 || r == 6 || r == 1.5 ? 6 : 8);
+                    if (stableRolls && !v2 && roll.TickSpacing > 0)
+                    {
+                        while (roll.TickSpacing < 60) roll.TickSpacing *= 2;
+                        while (roll.TickSpacing > 120) roll.TickSpacing /= 2;
+                    }
+                    if (!stableRolls && roll.TickSpacing > 0)
                         for (double t = o.Time; t < end + roll.TickSpacing / 2; t += roll.TickSpacing) roll.Ticks.Add(t);
                     notes.Add(roll);
                 }
@@ -151,6 +161,20 @@ sealed partial class Player
             }
         }
         notes.Sort((a, b) => a.Time.CompareTo(b.Time));
+        // stable's drumroll runs on a tick's spacing past its end (not when the next note starts within two of that) and
+        // can be hit from a spacing before its start; its ticks (whole ms) fill it from the start
+        for (int i = 0; i < notes.Count && stableRolls; i++)
+        {
+            var n = notes[i];
+            if (n.Kind != TKind.Roll) continue;
+            int sp = (int)n.TickSpacing;
+            n.ActiveEnd = n.End + sp;
+            if (i + 1 < notes.Count && notes[i + 1] is var next && (next.Kind == TKind.Roll ? next.Time - (int)next.TickSpacing : next.Time) - (n.End + sp) <= sp)
+                n.ActiveEnd = n.End;
+            if (n.TickSpacing > 0)
+                for (double t = n.Time; t < n.ActiveEnd; t += n.TickSpacing) n.Ticks.Add((int)t);
+            n.TickHit = new bool[n.Ticks.Count];
+        }
         return notes;
     }
 
@@ -202,7 +226,7 @@ sealed partial class Player
             var n = tNotes[i];
             if (n.Done) continue;
             if (n.Kind is TKind.Don or TKind.Kat && now > n.Time + tMiss) TaikoJudge(n, 0, n.Time + tMiss);
-            else if (n.Kind == TKind.Roll && now > n.RollEnd)
+            else if (n.Kind == TKind.Roll && now > (OldModeRules ? n.RollEnd : n.ActiveEnd))
             {
                 if (ModeV2) TaikoJudge(n, TaikoRollV2(n), n.End);
                 else { n.Done = true; n.JudgedAt = n.End; }
@@ -251,7 +275,7 @@ sealed partial class Player
         samples.Play(tp.SampleSet, rim ? "hitclap" : "hitnormal", tp.SampleIndex, Math.Max(8, tp.Volume), SamplePitch, key < 2 ? -0.2f : 0.2f); // (stable pans by side)
         if (!Resting(at) && !paused) keyCounts[key is 1 or 2 ? key - 1 : key == 0 ? 2 : 3]++;
 
-        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= at; i++)
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - (OldModeRules ? tMiss : Math.Max(tMiss, 250)) <= at; i++) // (a drumroll from a tick before)
         {
             var n = tNotes[i];
             switch (n.Kind)
@@ -264,18 +288,41 @@ sealed partial class Player
                     if (!ModeV2) score += 300; // (V2: nothing)
                     if (n.Hits > n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; } // (stable: one more than its count)
                     return;
-                case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
+                case TKind.Roll when !n.Done && !OldModeRules && at >= n.Time - (int)n.TickSpacing && at <= n.ActiveEnd:
+                {
+                    // stable: one try a frame however many keys went down; outside Score V2 and Relax a hit has to keep the
+                    // rhythm (a spacing after the last, or two or four of them, else it resyncs to the next even tick and
+                    // counts nothing); the hit takes a tick not hit yet within half a spacing
+                    if (at == n.LastTryAt) return;
+                    n.LastTryAt = at;
+                    double sp = n.TickSpacing;
+                    if (!ModeV2 && !relax)
+                    {
+                        if (n.RhythmAt == 0) n.RhythmAt = n.Time;
+                        else if (Math.Abs(at - (n.RhythmAt + sp)) < sp / 2) n.RhythmAt += sp;
+                        else if (Math.Abs(at - (n.RhythmAt + sp * 2)) < sp) n.RhythmAt += sp * 2;
+                        else if (Math.Abs(at - (n.RhythmAt + sp * 4)) < sp) n.RhythmAt += sp * 4;
+                        else
+                        {
+                            double resync = n.Time;
+                            while (resync < at) resync += sp * 2;
+                            n.RhythmAt = (int)resync;
+                            return;
+                        }
+                    }
+                    int k = -1;
+                    for (int j = 0; j < n.Ticks.Count; j++) if (!n.TickHit[j] && Math.Abs(n.Ticks[j] - at) < sp / 2) { k = j; break; }
+                    if (k < 0) return;
+                    n.TickHit[k] = true;
+                    TaikoTick(n);
+                    return;
+                }
+                case TKind.Roll when !n.Done && OldModeRules && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
                     while (n.TicksHit < n.Ticks.Count && n.Ticks[n.TicksHit] < at - n.TickSpacing / 2 - 1) n.TicksHit++; // (ticks gone by unhit)
                     if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
                     {
                         n.TicksHit++;
-                        n.TicksScored++;
-                        // stable: 300 a tick, 1.2x in kiai (the roll's start), a big roll's a fifth more; V2: a bonus 200 (800 big)
-                        int tick = map.PointAt(n.Time).Kiai ? 360 : 300;
-                        if (ModeV2) V2Bonus(n.Big ? 800 : 200);
-                        else score += n.Big ? tick + tick / 5 : tick;
-                        SetSliderFail(false);
-                        health.Add(0.0001);
+                        TaikoTick(n);
                     }
                     return;
                 case TKind.Don or TKind.Kat when n.Pending && n.Done:
@@ -298,6 +345,20 @@ sealed partial class Player
                     return;
             }
         }
+    }
+
+    internal int TaikoTicksMissed => tNotes.Where(n => n.Kind == TKind.Roll).Sum(n => n.Ticks.Count - n.TicksScored); // (--auto-check)
+
+    // a drumroll tick hit: stable's 300 (1.2x in kiai at the roll's start, a big roll's a fifth more), Score V2's bonus
+    // 200 (800 big)
+    void TaikoTick(TNote n)
+    {
+        n.TicksScored++;
+        int tick = map.PointAt(n.Time).Kiai ? 360 : 300;
+        if (ModeV2) V2Bonus(n.Big ? 800 : 200);
+        else score += n.Big ? tick + tick / 5 : tick;
+        SetSliderFail(false);
+        health.Add(0.0001);
     }
 
     void TaikoJudge(TNote n, int result, double at)
