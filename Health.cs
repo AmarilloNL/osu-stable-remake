@@ -169,7 +169,8 @@ sealed class Health
                 if (o.Type == ObjType.Slider)
                 {
                     for (int k = 0; k < o.Slides + 1; k++) Change(mul * 4);
-                    for (int k = 0; k < o.Checkpoints.Count(c => c.Kind == CheckpointKind.Tick); k++) Change(mul * 3);
+                    int ticks = o.Checkpoints.Count(c => c.Kind == CheckpointKind.Tick); // (counted once: a slider with 100k ticks froze the load)
+                    for (int k = 0; k < ticks; k++) Change(mul * 3);
                 }
                 else if (o.Type == ObjType.Spinner)
                 {

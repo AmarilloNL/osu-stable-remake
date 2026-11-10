@@ -214,7 +214,15 @@ sealed class Beatmap
         HP = Math.Min(10f, (float)HP * (float)rest);
     }
 
-    Vector2 ReadPoint(string x, string y) => new((float)D(x), flipY ? 384 - (float)D(y) : (float)D(y));
+    // stable's hit object numbers: whole ms and whole pixels; an object's own position kept on 0-512 (both axes), a
+    // slider's points within +-131072, HardRock's flip applied before the whole-pixel cut
+    static int Whole(double v, double limit) => (int)Math.Clamp(v, -limit, limit);
+    Vector2 ReadPosition(string x, string y)
+    {
+        int px = (int)Math.Max(0f, Math.Min(512f, (float)D(x))), py = (int)Math.Max(0f, Math.Min(512f, (float)D(y)));
+        return new(px, flipY ? 384 - py : py);
+    }
+    Vector2 ReadPoint(string x, string y) => new(Whole(D(x), 131072), Whole(flipY ? 384 - D(y) : D(y), 131072));
 
     void ParseLine(string section, string line)
     {
@@ -298,8 +306,8 @@ sealed class Beatmap
         int type = I(f[3]);
         var o = new HitObject
         {
-            Pos = ReadPoint(f[0], f[1]),
-            Time = D(f[2]),
+            Pos = ReadPosition(f[0], f[1]),
+            Time = Whole(D(f[2]), int.MaxValue),
             NewCombo = (type & 4) != 0,
             ComboSkip = (type >> 4) & 7,
             HitSound = I(f[4]),
@@ -335,7 +343,7 @@ sealed class Beatmap
         {
             o.Type = ObjType.Spinner;
             o.Pos = new Vector2(256, 192);
-            o.EndTime = Math.Max(o.Time, D(f[5])); // aspire maps use negative/backwards spinners
+            o.EndTime = Math.Max(o.Time, Whole(D(f[5]), int.MaxValue)); // aspire maps use negative/backwards spinners
             o.NewCombo = true;
             if (f.Length > 6) sample = f[6];
         }
@@ -343,7 +351,7 @@ sealed class Beatmap
         {
             o.Type = ObjType.Hold;
             var p = f[5].Split(':');
-            o.EndTime = Math.Max(o.Time, D(p[0]));
+            o.EndTime = Math.Max(o.Time, Whole(D(p[0]), int.MaxValue));
             if (p.Length > 1) sample = string.Join(':', p.Skip(1));
         }
         else return;
