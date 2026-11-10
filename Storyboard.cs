@@ -155,8 +155,9 @@ sealed class Storyboard
         _ => new(0.5f, 0.5f),
     };
 
-    static float F(string s) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
-    static double D(string s) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0;
+    // (NaN / infinity read as 0: a NaN time froze the play's clock)
+    static float F(string s) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && float.IsFinite(v) ? v : 0;
+    static double D(string s) => double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && double.IsFinite(v) ? v : 0;
 
     void Parse(List<string> lines, List<(string Name, string Value)> vars)
     {
@@ -173,7 +174,10 @@ sealed class Storyboard
             {
                 double first = parsed.Min(c => c.Item3), last = parsed.Max(c => c.Item4);
                 double length = last - first;
-                for (int i = 0; i < Math.Max(1, l.Count); i++)
+                // (a loop of no length runs once; a huge count stops at 100,000 runs: it built them all up front and ran
+                // out of memory)
+                int count = length <= 0 ? 1 : Math.Clamp(l.Count, 1, 100_000);
+                for (int i = 0; i < count; i++)
                     foreach (var (kind, easing, s, e, values) in parsed)
                     {
                         double offset = l.Start + i * length;
@@ -307,7 +311,7 @@ sealed class Storyboard
 
     List<Element> triggered = [];
     static readonly System.Text.RegularExpressions.Regex HitSoundName =
-        new(@"^HitSound(All|Normal|Soft|Drum)?(All|Normal|Soft|Drum)?(Whistle|Finish|Clap)?(\d+)?$");
+        new(@"^HitSound(All|Normal|Soft|Drum)?(All|Normal|Soft|Drum)?(Whistle|Finish|Clap)?([0-9]{1,9})?$"); // (plain digits that fit an int)
     static int SetOf(string s) => s switch { "Normal" => 1, "Soft" => 2, "Drum" => 3, _ => 0 };
 
     // A hitsound played: fires HitSound[set][additionSet][addition][index] triggers that match it.
@@ -351,6 +355,14 @@ sealed class Storyboard
     void LoadTextures()
     {
         static string FileOf(Element e, int i) => e.Frames == 1 ? e.Path : System.IO.Path.ChangeExtension(e.Path, null) + i + System.IO.Path.GetExtension(e.Path);
+        // an animation claiming over 10,000 frames runs over the ones that are there (up to the first missing one): a
+        // count like 2^31 built that many names and hung
+        foreach (var e in elements.Where(e => e.Frames > 10_000))
+        {
+            int n = 0;
+            while (n < e.Frames && File.Exists(System.IO.Path.Combine(folder, FileOf(e, n)))) n++;
+            e.Frames = Math.Max(2, n); // (two at least: a single frame's name has no number)
+        }
         var files = elements.SelectMany(e => Enumerable.Range(0, e.Frames).Select(i => FileOf(e, i))).Distinct(StringComparer.OrdinalIgnoreCase).Where(f => !textures.ContainsKey(f)).ToArray();
         // Decoding was most of the time a play took to start on a big storyboard: it's done on all cores while the
         // images are uploaded here as they come (a few waiting at most, to keep memory down).
@@ -396,7 +408,7 @@ sealed class Storyboard
     // started by t, interpolated while running and held at its end value afterwards.
     static float Value(List<Cmd>? track, double t, float def)
     {
-        if (track == null) return def;
+        if (track is not { Count: > 0 }) return def; // (a trigger's commands taken out can leave it empty)
         int lo = 0, hi = track.Count - 1, found = -1;
         while (lo <= hi)
         {

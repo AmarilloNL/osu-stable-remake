@@ -299,7 +299,7 @@ sealed partial class Editor : Screen
     }
 
     // ---- derived data: slider paths and ends, combo numbers and colours
-    double SliderMultiplier => double.TryParse(Kv("Difficulty", "SliderMultiplier"), NumberStyles.Float, Inv, out double v) ? v : 1.4;
+    double SliderMultiplier => double.TryParse(Kv("Difficulty", "SliderMultiplier"), NumberStyles.Float, Inv, out double v) && double.IsFinite(v) ? Math.Max(0.4, Math.Min(3.6, v)) : 1.4; // (in range, as the game reads it)
     Color[] Colours => info.ComboColours.Count > 0 ? info.ComboColours.Select(c => new Color(c.R, c.G, c.B, (byte)255)).ToArray() : skin.ComboColours;
 
     ETiming RedAt(double t) => timing.Where(p => p.Red && p.Beat > 0).OrderBy(p => p.Time).LastOrDefault(p => p.Time <= t)

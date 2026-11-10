@@ -160,7 +160,7 @@ sealed class Beatmap
     }
 
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    static double D(string s) => double.Parse(s.Trim(), Inv);
+    static double D(string s) => double.Parse(s.Trim(), Inv) is var v && double.IsFinite(v) ? v : throw new FormatException($"not a number: {s}"); // (NaN froze the play's clock)
     static double Diff(string s) => Math.Min(10f, Math.Max(0f, float.Parse(s.Trim(), Inv)));
     static int I(string s) => (int)double.Parse(s.Trim(), Inv);
 
@@ -184,8 +184,7 @@ sealed class Beatmap
                 continue;
             }
             try { map.ParseLine(section, line); }
-            catch (FormatException) { }
-            catch (IndexOutOfRangeException) { }
+            catch (Exception e) when (e is FormatException or IndexOutOfRangeException or OverflowException or ArgumentException) { } // (a bad line is skipped, like stable)
         }
         if (map.AR < 0) map.AR = map.OD; // old maps had no separate AR
         if (map.Objects.Count > 0) // stable's score multiplier: unmodded values, drain = whole seconds of first to last start minus breaks
@@ -254,8 +253,8 @@ sealed class Beatmap
                     case "CircleSize": CS = Diff(v); break;
                     case "OverallDifficulty": OD = Diff(v); break;
                     case "ApproachRate": AR = Diff(v); break;
-                    case "SliderMultiplier": SliderMultiplier = D(v); break;
-                    case "SliderTickRate": SliderTickRate = D(v); break;
+                    case "SliderMultiplier": SliderMultiplier = Math.Max(0.4, Math.Min(3.6, D(v))); break; // (kept in range, like stable)
+                    case "SliderTickRate": SliderTickRate = Math.Max(0.5, Math.Min(8.0, D(v))); break;
                 }
                 break;
             case "Events":

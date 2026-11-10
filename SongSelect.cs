@@ -714,6 +714,7 @@ sealed partial class SongSelect : Screen
                 themeFromStart = false;
                 preview.Play();
             }
+            else if (menu) { MusicNext(); return; } // (a song that won't play: the main menu goes on to another, like stable)
         }
         if (key != previewKey && Game.NowMs - selectionChangedAt > 150 && previewLoading == null)
         {
@@ -759,7 +760,7 @@ sealed partial class SongSelect : Screen
     static Task<(List<TimingPoint>, int)> LoadTiming(string file) => Task.Run(() =>
     {
         try { var m = Beatmap.Load(file); return (m.TimingPoints, m.FormatVersion); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return (new List<TimingPoint>(), 14); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return (new List<TimingPoint>(), 14); } // (unreadable or malformed: no timing)
     });
 
     // Where the music is in its beat: index within the current red line, phase 0 (on the beat) .. 1.
@@ -2920,7 +2921,7 @@ sealed partial class SongSelect : Screen
             var path = Path.Combine(meta.Folder, meta.Background);
             return (file, meta.Background.Length > 0 && File.Exists(path) ? LoadImage(path) : default);
         }
-        catch (IOException) { return (file, default(Image)); }
+        catch (Exception e) when (e is not OutOfMemoryException) { return (file, default(Image)); } // (a malformed or unreadable map: no background)
     });
 
     internal void DrawBackground(int w, int h)

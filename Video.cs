@@ -132,7 +132,7 @@ sealed unsafe class Video : IDisposable
             }
             if (next != 0) Release(next);
         }
-        catch (Exception e) when (e is COMException or DllNotFoundException or EntryPointNotFoundException)
+        catch (Exception e) // (on its own thread: anything uncaught would end the game; the video just stops)
         {
             Console.Error.WriteLine($"video not played: {e.Message}");
             Failed = true;
@@ -159,8 +159,9 @@ sealed unsafe class Video : IDisposable
             fixed (byte* dst = buffer)
                 for (int y = 0; y < h; y++)
                 {
-                    uint* s = (uint*)(data + (stride < 0 ? (h - 1 - y) : y) * pitch), d = (uint*)(dst + y * rowBytes);
-                    if ((long)(y + 1) * pitch > len) break;
+                    int row = stride < 0 ? h - 1 - y : y;
+                    if ((long)row * pitch + rowBytes > len) continue; // (only rows the sample really holds are read)
+                    uint* s = (uint*)(data + (long)row * pitch), d = (uint*)(dst + y * rowBytes);
                     for (int x = 0; x < w; x++)
                     {
                         uint px = s[x]; // memory B G R X -> R G B A

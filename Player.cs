@@ -260,7 +260,7 @@ sealed partial class Player : Screen
         float dimAlpha = 1 - LightestDim / 100f; // the storyboard can show through at the lightest dim reached
         if (!VirtualClock)
             try { storyboard = Storyboard.Load(map, textures: dimAlpha > 0); }
-            catch (IOException e) { Console.Error.WriteLine($"storyboard not loaded: {e.Message}"); }
+            catch (Exception e) when (e is not OutOfMemoryException) { Console.Error.WriteLine($"storyboard not loaded: {e.Message}"); } // (the play goes on without it)
         if (dimAlpha > 0) LoadBackground();
         sliderRt = LoadRenderTexture(Game.W, Game.H);
         if (!VirtualClock && objs.Any(o => o.Type == ObjType.Slider))

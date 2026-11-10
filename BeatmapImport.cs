@@ -175,7 +175,7 @@ sealed class BeatmapImport : Screen
     // stable: a replay opens its ranking screen with its map selected
     static void OpenReplay(SongSelect songs, string file)
     {
-        if (Game.Screen is Player) return; // stable refuses while playing
+        if (Game.Screen is Player or Player.Results) return; // stable refuses while playing (and here on a play's ranking screen, which still holds the play)
         ReplayInfo info;
         try { info = Replays.ReadAnyInfo(file); }
         catch (Exception e) when (e is IOException or InvalidDataException or EndOfStreamException or ArgumentException or IndexOutOfRangeException)
@@ -191,7 +191,7 @@ sealed class BeatmapImport : Screen
     // menu opens with the options at the skin section
     static void ImportSkin(SongSelect songs, string file)
     {
-        if (Game.Screen is Player) return;
+        if (Game.Screen is Player or Player.Results) return;
         string name = FolderName(file), dest = Path.Combine(Config.OsuDir, "Skins", name);
         try
         {

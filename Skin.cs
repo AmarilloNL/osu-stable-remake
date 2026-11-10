@@ -86,7 +86,7 @@ sealed class Skin
         double ms = AnimationFramerate > 0 ? 1000 / AnimationFramerate : 1000.0 / a.Length;
         return a[(int)(Math.Max(0, elapsed) / ms) % a.Length];
     }
-    public Sprite? Frame(string prefix, int i) => Animation(prefix, true) is var a && i < a.Length ? a[i] : null;
+    public Sprite? Frame(string prefix, int i) => Animation(prefix, true) is var a && i >= 0 && i < a.Length ? a[i] : null;
     public int FrameCount(string prefix) => Animation(prefix, true).Length;
 
     // Where a sprite comes from: 4 the beatmap, 2 the user's skin, 1 stable's default, 0 nowhere.
