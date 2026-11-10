@@ -324,30 +324,56 @@ sealed partial class Player
         {
             var list = mColumns[c];
             while (mNext[c] < list.Count && list[mNext[c]].Done) mNext[c]++;
-            if (mNext[c] >= list.Count) continue;
-            var n = list[mNext[c]];
-            // stable: a note not pressed is a miss once its 100 window has passed late (a later press can't reach it)
-            if (!n.Hold) { if (OldModeRules ? now > n.Time + mW50 : now >= n.Time + mW100) ManiaJudge(n, 0); continue; }
-            ManiaTicks(n, now);
-            // Score V2: a hold's head not pressed by its 100 window is a miss of its own
-            if (ModeV2 && !n.HeadDone && now >= n.Time + mW100) ManiaJudge(n, 0, head: true);
-            // stable's hold: not pressed by its 50 window breaks the combo (once; under V2 its head's miss did); it's judged
-            // once let go within the tail's 50 window, when still held 50 past the end, or (let go too early or never
-            // pressed) once the tail's 100 window has passed (V2: one and a half of it, held or not)
-            if (!n.HeadHit && now <= n.Time + mW50) continue; // (not pressed yet: nothing before the head's window closes)
-            if (!n.HeadHit && !n.Broken && !ModeV2) { n.Broken = true; BreakCombo(); }
-            if (ModeV2) { if ((float)now >= (float)n.End + (float)mW100 * 1.5f) ManiaJudge(n, ManiaTailV2(n)); }
-            else if (n.Holding ? now >= n.End + mW50 : OldModeRules ? now >= n.End - mW50 : (float)now >= (float)(n.End + mW100))
-                ManiaJudge(n, ManiaHoldResult(n, Math.Min(now, n.End + mW50))); // (still held: as at the window's end, whatever the frame)
+            // every note whose time has come, like stable (older own replays: the column's first one only)
+            for (int j = mNext[c]; j < list.Count && (j == mNext[c] || !OldModeRules && list[j].Time <= now); j++)
+                if (!list[j].Done) ManiaTimeout(list[j], now);
         }
+    }
+
+    void ManiaTimeout(MNote n, double now)
+    {
+        // stable: a note not pressed is a miss once its 100 window has passed late (a later press can't reach it)
+        if (!n.Hold) { if (OldModeRules ? now > n.Time + mW50 : now >= n.Time + mW100) ManiaJudge(n, 0); return; }
+        ManiaTicks(n, now);
+        // Score V2: a hold's head not pressed by its 100 window is a miss of its own
+        if (ModeV2 && !n.HeadDone && now >= n.Time + mW100) ManiaJudge(n, 0, head: true);
+        // stable's hold: not pressed by its 50 window breaks the combo (once; under V2 its head's miss did); it's judged
+        // once let go within the tail's 50 window, when still held 50 past the end, or (let go too early or never
+        // pressed) once the tail's 100 window has passed (V2: one and a half of it, held or not)
+        if (!n.HeadHit && now <= n.Time + mW50) return; // (not pressed yet: nothing before the head's window closes)
+        if (!n.HeadHit && !n.Broken && !ModeV2) { n.Broken = true; BreakCombo(); }
+        if (ModeV2) { if ((float)now >= (float)n.End + (float)mW100 * 1.5f) ManiaJudge(n, ManiaTailV2(n)); }
+        else if (n.Holding ? now >= n.End + mW50 : OldModeRules ? now >= n.End - mW50 : (float)now >= (float)(n.End + mW100))
+            ManiaJudge(n, ManiaHoldResult(n, Math.Min(now, n.End + mW50))); // (still held: as at the window's end, whatever the frame)
+    }
+
+    // the note a press goes to: the column's first one not judged yet; under Score V2 (stable: no note lock there) the
+    // latest one whose time has passed while the press is within min(its 50 window, the next one's time - 1) (stretched by
+    // how far the next one is beyond twice the 50 window), else the next one
+    MNote? ManiaTarget(int c, double at)
+    {
+        var list = mColumns[c];
+        while (mNext[c] < list.Count && list[mNext[c]].Done) mNext[c]++; // (a note judged earlier in this step is past)
+        if (mNext[c] >= list.Count) return null;
+        if (!ModeV2) return list[mNext[c]];
+        int last = mNext[c];
+        while (last + 1 < list.Count && list[last + 1].Time <= at + 300) last++;
+        if (last + 1 < list.Count) last++; // (stable looks one beyond its 300ms too)
+        MNote? pick = null;
+        for (int j = last; j >= mNext[c]; j--)
+        {
+            var o = list[j];
+            if (o.Done) break;
+            if (pick == null || at < o.Time) { pick = o; continue; }
+            if (at <= Math.Min(o.Time + mW50, pick.Time - 1) + Math.Max(0, pick.Time - o.Time - 2 * mW50)) pick = o;
+            break;
+        }
+        return pick;
     }
 
     void ManiaPress(int c, double at)
     {
-        var list = mColumns[c];
-        while (mNext[c] < list.Count && list[mNext[c]].Done) mNext[c]++; // (a note judged earlier in this step is past)
-        if (mNext[c] >= list.Count) return;
-        var n = list[mNext[c]];
+        if (ManiaTarget(c, at) is not { } n) return;
         double err = at - n.Time, a = Math.Abs(err);
         if (n.Hold)
         {
@@ -372,10 +398,12 @@ sealed partial class Player
 
     void ManiaRelease(int c, double at)
     {
+        // the column's hold being held (under Score V2 a press can skip to a later one)
         var list = mColumns[c];
-        if (mNext[c] >= list.Count) return;
-        var n = list[mNext[c]];
-        if (!n.Hold || !n.Holding || n.Done) return;
+        MNote? held = null;
+        for (int j = mNext[c]; j < list.Count && held == null && list[j].Time <= at + mWMiss; j++)
+            if (list[j] is { Hold: true, Holding: true, Done: false } h) held = h;
+        if (held is not { } n) return;
         ManiaTicks(n, at);
         n.Holding = false;
         n.TickFrom = double.NaN;
