@@ -28,16 +28,17 @@ sealed partial class Player
     readonly int[] keyCounts = new int[4];
     // HUD text, rebuilt only when the value changes.
     readonly CachedText<long> scoreText = new(v => v.ToString("00000000"));
-    readonly CachedText<double> accText = new(v => $"{v:00.00}%"); // stable: two integer digits at least ("00.00%")
+    // (numbers in stable's own format whatever Windows' region: a dot for decimals, commas for thousands)
+    readonly CachedText<double> accText = new(v => FormattableString.Invariant($"{v:00.00}%")); // stable: two integer digits at least ("00.00%")
     readonly CachedText<int> comboText2 = new(v => $"{v}x");
     readonly CachedText<int>[] keyText = [.. Enumerable.Range(0, 4).Select(_ => new CachedText<int>(v => v.ToString()))];
-    readonly NumberText entryNumber = new(v => v.ToString("N0")), entryCombo = new(v => $"{v:N0}x");
+    readonly NumberText entryNumber = new(v => v.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)), entryCombo = new(v => FormattableString.Invariant($"{v:N0}x"));
     readonly List<(Sprite S, float X)> entryGlyphs = [];
     readonly double[] keyChangedAt = [double.MinValue, double.MinValue, double.MinValue, double.MinValue];
     readonly double[] firstPressAt = new double[4];
     int keysShown, keysEverPressed; // labels give way to counts after the first press, counted or not
 
-    float Meter50Width => map.Hit50 * (float)Config.GetDouble("ScoreMeterScale", 1);
+    float Meter50Width => map.Hit50 * (float)Math.Clamp(Config.GetDouble("ScoreMeterScale", 1), 0.5, 5);
 
     void MeterHit(double err, int result)
     {
@@ -162,7 +163,7 @@ sealed partial class Player
             Game.Text(sc, right - Game.TextWidth(sc, 40 * u / 3), 0, 40 * u / 3, HudWhite);
         float glyphH = skin.Glyph(skin.ScorePrefix, '0')?.Height ?? 30;
         float accY = glyphH * scoreScale + (skin.Version > 1 ? 3 * u : 0);
-        string acc = accText.Of(Math.Round(shownAcc, 2));
+        string acc = accText.Of(Math.Round(shownAcc, 2, MidpointRounding.AwayFromZero));
         if (!skin.DrawFont(skin.ScorePrefix, skin.ScoreOverlap, acc, right, accY, accScale, 1, HudWhite, constant: true))
             Game.Text(acc, right - Game.TextWidth(acc, 20 * u / 3), accY, 20 * u / 3, HudWhite);
 
@@ -284,7 +285,7 @@ sealed partial class Player
 
     int ColourSquares(float wu, out float width, out float size, out float gap)
     {
-        float k = (float)Config.GetDouble("ScoreMeterScale", 1);
+        float k = (float)Math.Clamp(Config.GetDouble("ScoreMeterScale", 1), 0.5, 5);
         width = wu / 3 * k; size = 9 * k;
         int n = (int)(width / (size + 1));
         gap = n > 1 ? (width - n * size - (n - 1)) / (n - 1) : 0;
@@ -332,7 +333,7 @@ sealed partial class Player
         meterTicks.RemoveRange(kept, meterTicks.Count - kept);
         alpha *= hudFade;
         if (alpha <= 0) return;
-        float k = (float)Config.GetDouble("ScoreMeterScale", 1);
+        float k = (float)Math.Clamp(Config.GetDouble("ScoreMeterScale", 1), 0.5, 5);
         var c = new Vector2(w / 2f, (480 - 6 * k) * u);
         void Bar(float width, float height, Color colour) =>
             DrawRectangleRec(new Rectangle(c.X - width * u / 2, c.Y - height * u / 2, width * u, height * u), colour);
@@ -527,7 +528,7 @@ sealed partial class Player
             }
             if (r > 0) // every panel shows its rank (stable hides it only on its online personal-best extra panel)
                 EntryText(RankText(r), 82 * u, anchor - 2 * u, 2.2f, false, 3, 1, A(new Color(255, 255, 255, 47))); // measured; a nominal 80 comes out brighter
-            Game.TextLight(PanelName(info?.Player is { Length: > 0 } pl ? pl : info == null ? me : "stable", u), 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
+            Game.TextLight(PanelName(info?.Player is { Length: > 0 } pl ? pl : info is { FromStable: true } ? "stable" : me, u), 2 * u, y + 2.5f * u, 14.4f * u, A(Color.White)); // Aller Light, measured against stable
             // The live panel counts along: current score and max combo (stable's shows the max, measured watching a replay).
             long panelScore = info?.Score ?? score; // stable shows nothing for a zero score or combo (measured)
             if (panelScore > 0) EntryText(entryNumber.Of(panelScore), 2 * u, anchor + 18 * u, 1, true, 2.5f, 0, A(Color.White));

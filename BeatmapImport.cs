@@ -184,6 +184,11 @@ sealed class BeatmapImport : Screen
             return;
         }
         if (songs.FindMap(info.BeatmapMd5) is not { } map) { Toast.Show("You do not have the beatmap this replay was made for."); return; }
+        // (its frames read here too: a damaged or half-downloaded replay is turned away like stable's, not found
+        // broken while the ranking screen is being made)
+        try { Replays.Frames(info); }
+        catch (Exception e) when (e is not OutOfMemoryException) { Toast.Show("Unable to read the requested replay file."); return; }
+        if (!File.Exists(map.FilePath)) { Toast.Show("You do not have the beatmap this replay was made for."); return; }
         Game.FadeTo(() => Player.Summary(Beatmap.Load(map.FilePath, mods: info.Mods), songs, info));
     }
 

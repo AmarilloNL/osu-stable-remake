@@ -91,7 +91,7 @@ sealed partial class Player
                 Row("hit0", 240, 280, p.nMiss);
             }
             list.Add(("ranking-maxcombo", new(5, 320 - lift), $"{p.maxCombo}x", 1, 1, new(15, 330), true));
-            list.Add(("ranking-accuracy", new(182, 320 - lift), $"{p.Accuracy:0.00}%", 1, 1, new(194, 330), true));
+            list.Add(("ranking-accuracy", new(182, 320 - lift), FormattableString.Invariant($"{p.Accuracy:0.00}%"), 1, 1, new(194, 330), true));
             if (perfect) list.Add(("ranking-perfect", new(newLayout ? 260 : 200, 430), null, 1.1f, 1, default, false));
             rows = list.ToArray();
             gradeAt = 300 + 300 * rows.Length;
@@ -109,12 +109,12 @@ sealed partial class Player
             var errs = p.hitErrors;
             var early = errs.Where(e => e < 0).DefaultIfEmpty().Average();
             var late = errs.Where(e => e >= 0).DefaultIfEmpty().Average();
-            tooltip = errs.Count == 0 ? "" : $"Accuracy:\nError: {early:0.00}ms - {late:0.00}ms avg\nUnstable Rate: {p.HitStats().Ur:0.00}";
+            tooltip = errs.Count == 0 ? "" : FormattableString.Invariant($"Accuracy:\nError: {early:0.00}ms - {late:0.00}ms avg\nUnstable Rate: {p.HitStats().Ur:0.00}");
             // stable adds its spinners' speed: the RPM readout's average and maximum, and twice its standard deviation
             if (p.spinRpms.Count > 0)
             {
                 double mean = p.spinRpms.Average(), sd = Math.Sqrt(p.spinRpms.Average(r => (r - mean) * (r - mean)));
-                tooltip += (tooltip.Length > 0 ? "\n" : "") + $"Spin:\nSpeed: {mean:000}(Max:{p.spinRpms.Max():000}rpm)\nUnstable Rate: {sd * 2:0.00}";
+                tooltip += (tooltip.Length > 0 ? "\n" : "") + FormattableString.Invariant($"Spin:\nSpeed: {mean:000}(Max:{p.spinRpms.Max():000}rpm)\nUnstable Rate: {sd * 2:0.00}");
             }
 
             // Gameplay already has the background loaded (decoding it again here cost ~80ms on the transition frame);
@@ -168,8 +168,11 @@ sealed partial class Player
             if (AutoPlay && Replay == null) { skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume); Leave(() => new Player(p.map, p.back, p.mods)); return; } // Auto again: the same replay
             if (Replay is not { } r) return;
             skin.Sound("menuhit")?.Play(BeatmapSamples.EffectVolume);
+            ReplayFrame[] frames;
+            try { frames = Replays.Frames(r); } // (read here: a replay deleted or damaged since is turned away, not found while the play is made)
+            catch (Exception e) when (e is not OutOfMemoryException) { Toast.Show("Unable to read the requested replay file."); return; }
             if (p.summary) p.back.StopPreview();
-            Leave(() => new Player(p.map, p.back, r.Mods, Replays.Frames(r), r));
+            Leave(() => new Player(p.map, p.back, r.Mods, frames, r));
         }
 
         string PlayerName => p.watching is { Player.Length: > 0 } r ? r.Player : AutoPlay ? "osu!" : Config.Get("Username", Environment.UserName);
