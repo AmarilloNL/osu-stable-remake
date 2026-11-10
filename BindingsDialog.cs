@@ -134,6 +134,7 @@ sealed class BindingsDialog
         KeyboardKey.RightControl => "RightControl", KeyboardKey.LeftAlt => "LeftAlt", KeyboardKey.RightAlt => "RightAlt",
         KeyboardKey.PageUp => "PageUp", KeyboardKey.PageDown => "PageDown",
         KeyboardKey.LeftSuper => "LeftWindows", KeyboardKey.RightSuper => "RightWindows", KeyboardKey.ScrollLock => "Scroll", KeyboardKey.KeyboardMenu => "Apps",
+        Config.OemBackslash => "OemBackslash", >= Config.F13 and <= Config.F13 + 11 => $"F{k - Config.F13 + 13}",
         _ => k.ToString(),
     };
 }

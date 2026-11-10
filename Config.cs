@@ -71,10 +71,14 @@ static class Config
     public static KeyboardKey Key(string key, KeyboardKey def) => ParseKey(Get(key, "")) ?? def;
 
     // a key by the .NET name stable's cfg uses: D0-D9, NumPad0-9, the Oem keys ... (null: none or unknown)
+    // keys raylib has no name for, by their GLFW codes: the ISO keyboards' extra key by the left Shift, F13-F24
+    internal const KeyboardKey OemBackslash = (KeyboardKey)162, F13 = (KeyboardKey)302;
+
     public static KeyboardKey? ParseKey(string v)
     {
         if (v.Length == 2 && v[0] == 'D' && char.IsDigit(v[1])) return (KeyboardKey)v[1];
         if (v.Length == 7 && v.StartsWith("NumPad") && char.IsDigit(v[6])) return KeyboardKey.Kp0 + (v[6] - '0');
+        if (v.Length == 3 && v[0] == 'F' && int.TryParse(v[1..], out int f) && f is >= 13 and <= 24) return F13 + (f - 13); // (raylib names only F1-F12)
         KeyboardKey? oem = v switch
         {
             "Back" => KeyboardKey.Backspace, "Multiply" => KeyboardKey.KpMultiply, "Add" => KeyboardKey.KpAdd,
@@ -84,6 +88,7 @@ static class Config
             "OemSemicolon" => KeyboardKey.Semicolon, "OemQuotes" => KeyboardKey.Apostrophe, "OemComma" => KeyboardKey.Comma,
             "OemPeriod" => KeyboardKey.Period, "OemQuestion" => KeyboardKey.Slash, "LeftControl" => KeyboardKey.LeftControl,
             "LeftWindows" => KeyboardKey.LeftSuper, "RightWindows" => KeyboardKey.RightSuper, "Scroll" => KeyboardKey.ScrollLock, "Apps" => KeyboardKey.KeyboardMenu,
+            "OemBackslash" => OemBackslash,
             _ => null,
         };
         if (oem is { } o) return o;
