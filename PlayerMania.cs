@@ -151,21 +151,59 @@ sealed partial class Player
         mColumns = Enumerable.Range(0, mKeys).Select(_ => new List<MNote>()).ToArray();
         mNext = new int[mKeys];
 
-        // stable's windows: a fixed 16ms for MAX, the rest from OD (3ms a point); HardRock / Easy divide / multiply by 1.4
-        double od = map.RawOD, f = mods.HasFlag(Mods.HardRock) ? 1 / 1.4 : mods.HasFlag(Mods.Easy) ? 1.4 : 1;
-        mW300g = 16 * f;
-        mW300 = (64 - 3 * od) * f;
-        mW200 = (97 - 3 * od) * f;
-        mW100 = (127 - 3 * od) * f;
-        mW50 = (151 - 3 * od) * f;
-        mWMiss = (188 - 3 * od) * f;
+        // stable's windows: a mania map's from its OD (3ms a point, OD kept in 0-10), a converted map's fixed (two
+        // sets, by OD rounded), Score V2's from OD with MAX too. Each one: HardRock / Easy divide / multiply by 1.4,
+        // DoubleTime / HalfTime multiply by 1.5 / 0.75 (the same windows in real time), whole ms.
+        float od = (float)map.RawOD;
+        int W(double w)
+        {
+            w = mods.HasFlag(Mods.HardRock) ? w / 1.4 : mods.HasFlag(Mods.Easy) ? w * 1.4 : w;
+            return (int)(mods.HasFlag(Mods.DoubleTime) ? w * 1.5 : mods.HasFlag(Mods.HalfTime) ? w * 0.75 : w);
+        }
+        double[] w;
+        // (an own replay from before format 6 was played with the remake's earlier windows and column order: kept for it)
+        bool legacy = watching is { FromStable: false, FormatVersion: < 6 };
+        if (legacy)
+        {
+            double f = mods.HasFlag(Mods.HardRock) ? 1 / 1.4 : mods.HasFlag(Mods.Easy) ? 1.4 : 1;
+            w = [16 * f, (64 - 3 * map.RawOD) * f, (97 - 3 * map.RawOD) * f, (127 - 3 * map.RawOD) * f, (151 - 3 * map.RawOD) * f, (188 - 3 * map.RawOD) * f];
+        }
+        else if (mods.HasFlag(Mods.ScoreV2))
+            w = [W(Beatmap.Range(od, 22.4, 19.4, 13.9)), W(Beatmap.Range(od, 64, 49, 34)), W(Beatmap.Range(od, 97, 82, 67)),
+                W(Beatmap.Range(od, 127, 112, 97)), W(Beatmap.Range(od, 151, 136, 121)), (int)Beatmap.Range(od, 188, 173, 158)]; // (miss: no mods, like stable's)
+        else if (native)
+        {
+            float k = Math.Min(10f, Math.Max(0f, 10f - od));
+            w = [W(16), W(34f + 3f * k), W(67f + 3f * k), W(97f + 3f * k), W(121f + 3f * k), W(158f + 3f * k)];
+        }
+        else w = Math.Round((double)od) > 4 ? [W(16), W(34), W(67), W(97), W(121), W(158)] : [W(16), W(47), W(77), W(97), W(121), W(158)];
+        (mW300g, mW300, mW200, mW100, mW50, mWMiss) = (w[0], w[1], w[2], w[3], w[4], w[5]);
 
         // a mania map's notes go to the column under their x; an osu! map is converted (stable's patterns)
         var notes = ManiaConvert.Convert(map, mKeys, native);
-        // Mirror: the columns the other way round; Random: shuffled (the play's seed, kept in its replay)
+        // stable's column order: Random shuffles with the play's seed (kept in its replay), each column drawn until it's
+        // one not taken yet, a stage of an even count over 4 keeping its first (special) column at its side; without
+        // Random a skin's special column on the right moves the first column there. Mirror then turns it round.
         int[] order = Enumerable.Range(0, mKeys).ToArray();
-        if (mods.HasFlag(Mods.Random)) { var rng = new Random(seed); order = [.. order.OrderBy(_ => rng.Next())]; }
-        if (mods.HasFlag(Mods.Mirror)) order = [.. order.Reverse()];
+        bool special = !mSplit && mKeys > 4 && mKeys % 2 == 0, right = special && SpecialStyle(mKeys) == 2;
+        if (legacy)
+        {
+            if (mods.HasFlag(Mods.Random)) { var rng = new Random(seed); order = [.. order.OrderBy(_ => rng.Next())]; }
+            if (mods.HasFlag(Mods.Mirror)) order = [.. order.Reverse()];
+        }
+        else if (mods.HasFlag(Mods.Random))
+        {
+            var rng = new Random(seed);
+            var taken = new bool[mKeys];
+            for (int i = 0; i < mKeys; i++)
+            {
+                int k = special && i == 0 ? (right ? mKeys - 1 : 0) : rng.Next(0, mKeys);
+                while (taken[k]) k = rng.Next(0, mKeys);
+                (order[i], taken[k]) = (k, true);
+            }
+        }
+        else if (right) order = [.. order.Select(c => c != 0 ? c - 1 : mKeys - 1)];
+        if (!legacy && mods.HasFlag(Mods.Mirror)) order = [.. order.Select(c => mKeys - 1 - c)];
         notes = [.. notes.Select(n => n with { Column = order[Math.Clamp(n.Column, 0, mKeys - 1)] })];
         foreach (var (col, t, end) in notes.OrderBy(x => x.Time))
         {
@@ -231,11 +269,15 @@ sealed partial class Player
 
     void ManiaStep()
     {
+        // what ran out before a press first (a live frame's time, a replay frame's own): a late press can't land on a note
+        // whose window closed earlier in the frame, live and in its replay alike
+        if (playback == null && !auto) ManiaTimeouts(time);
         if (playback != null)
             // a replay: stable's held columns as bits in x
             while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
             {
                 var f = playback[pbIndex++];
+                ManiaTimeouts(f.Time);
                 int held = (int)f.X;
                 for (int c = 0; c < mKeys; c++)
                 {
@@ -271,25 +313,30 @@ sealed partial class Player
             for (int c = 0; c < mKeys; c++) if (mDown[c]) mask |= 1 << c;
             if (mask != mRecorded) { recording.Add(new ReplayFrame(time, mask, 0, 0)); mRecorded = mask; }
         }
+        ManiaTimeouts(time);
+    }
 
+    void ManiaTimeouts(double now)
+    {
         for (int c = 0; c < mKeys; c++)
         {
             var list = mColumns[c];
             while (mNext[c] < list.Count && list[mNext[c]].Done) mNext[c]++;
             if (mNext[c] >= list.Count) continue;
             var n = list[mNext[c]];
-            if (!n.Hold) { if (time > n.Time + mW50) ManiaJudge(n, 0); continue; } // never pressed
+            if (!n.Hold) { if (now > n.Time + mW50) ManiaJudge(n, 0); continue; } // never pressed
             // stable's hold: not pressed by its 50 window breaks the combo (once); it's judged once let go within the
             // tail's 50 window (or never pressed by then), or when still held 50 past the end
-            if (!n.HeadHit && time <= n.Time + mW50) continue; // (not pressed yet: nothing before the head's window closes)
+            if (!n.HeadHit && now <= n.Time + mW50) continue; // (not pressed yet: nothing before the head's window closes)
             if (!n.HeadHit && !n.Broken) { n.Broken = true; BreakCombo(); }
-            if (!n.Holding && time >= n.End - mW50 || n.Holding && time >= n.End + mW50) ManiaJudge(n, ManiaHoldResult(n, time));
+            if (!n.Holding && now >= n.End - mW50 || n.Holding && now >= n.End + mW50) ManiaJudge(n, ManiaHoldResult(n, Math.Min(now, n.End + mW50))); // (still held: as at the window's end, whatever the frame)
         }
     }
 
     void ManiaPress(int c, double at)
     {
         var list = mColumns[c];
+        while (mNext[c] < list.Count && list[mNext[c]].Done) mNext[c]++; // (a note judged earlier in this step is past)
         if (mNext[c] >= list.Count) return;
         var n = list[mNext[c]];
         double err = at - n.Time, a = Math.Abs(err);
@@ -301,11 +348,11 @@ sealed partial class Player
             n.PressAt = at;
             n.Holding = true;
             n.HoldFrom = at;
-            if (a <= mW50) hitErrors.Add(err);
+            if (a <= mW50) hitErrors.Add(err / rate); // (real milliseconds, like osu!'s)
             return;
         }
         if (a > mWMiss) return;
-        hitErrors.Add(err);
+        hitErrors.Add(err / rate);
         ManiaJudge(n, a <= mW300g ? 320 : a <= mW300 ? 300 : a <= mW200 ? 200 : a <= mW100 ? 100 : a <= mW50 ? 50 : 0);
     }
 

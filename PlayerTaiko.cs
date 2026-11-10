@@ -158,6 +158,9 @@ sealed partial class Player
 
     void TaikoStep()
     {
+        // what ran out before a press first (a live frame's time, a replay frame's own): a late press goes on to the next
+        // note instead of landing on one whose window closed earlier in the frame, live and in its replay alike
+        if (playback == null && !auto) TaikoMisses(time);
         // input: a key going down hits; Auto presses at each note's time
         if (auto) TaikoAuto();
         else if (playback == null)
@@ -177,6 +180,7 @@ sealed partial class Player
             while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
             {
                 var f = playback[pbIndex++];
+                TaikoMisses(f.Time);
                 for (int k = 0; k < 4; k++)
                 {
                     bool down = (f.Keys & TaikoBit[k]) != 0;
@@ -185,20 +189,25 @@ sealed partial class Player
                 }
             }
 
-        // misses and ends
-        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= time; i++)
+        TaikoMisses(time);
+        // (a big note hit with one hand stays in reach of the other for its 30ms)
+        while (tNext < tNotes.Count && tNotes[tNext].Done && !(tNotes[tNext].Pending && time - tNotes[tNext].FirstHitAt < 30)) tNext++;
+    }
+
+    // misses and ends
+    void TaikoMisses(double now)
+    {
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - tMiss <= now; i++)
         {
             var n = tNotes[i];
             if (n.Done) continue;
-            if (n.Kind is TKind.Don or TKind.Kat && time > n.Time + tMiss) TaikoJudge(n, 0, n.Time + tMiss);
-            else if (n.Kind == TKind.Roll && time > n.RollEnd) { n.Done = true; n.JudgedAt = n.End; }
-            else if (n.Kind == TKind.Swell && time > n.End)
+            if (n.Kind is TKind.Don or TKind.Kat && now > n.Time + tMiss) TaikoJudge(n, 0, n.Time + tMiss);
+            else if (n.Kind == TKind.Roll && now > n.RollEnd) { n.Done = true; n.JudgedAt = n.End; }
+            else if (n.Kind == TKind.Swell && now > n.End)
             {
                 TaikoJudge(n, 0, n.End); // (not cleared in time)
             }
         }
-        // (a big note hit with one hand stays in reach of the other for its 30ms)
-        while (tNext < tNotes.Count && tNotes[tNext].Done && !(tNotes[tNext].Pending && time - tNotes[tNext].FirstHitAt < 30)) tNext++;
     }
 
     void TaikoAuto()
@@ -277,7 +286,7 @@ sealed partial class Player
                     bool right = relax || rim == (n.Kind == TKind.Kat); // (Relax: either colour)
                     int result = !right ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
                     TaikoJudge(n, result, at);
-                    if (result > 0) hitErrors.Add(err);
+                    if (result > 0) hitErrors.Add(err / rate); // (real milliseconds, like osu!'s)
                     if (result > 0 && n.Big) { n.Pending = true; n.FirstHitAt = at; n.FirstKey = key; } // (both keys in one frame: the second at once)
                     return;
             }

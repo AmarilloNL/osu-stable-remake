@@ -51,7 +51,7 @@ sealed partial class Player
                 .Where(x => p.mods.HasFlag(x.Flag) && !(x.Flag == Mods.DoubleTime && p.mods.HasFlag(Mods.Nightcore)) && !(x.Flag == Mods.SuddenDeath && p.mods.HasFlag(Mods.Perfect)))
                 .Select(x => "selection-mod-" + x.Icon)];
             scoreText = p.score.ToString("00000000");
-            perfect = p.summary && p.watching is { } sw ? sw.Perfect : p.maxCombo == p.MapMaxCombo;
+            perfect = p.summary && p.watching is { } sw ? sw.Perfect : p.FullCombo;
 
             int lift = newLayout ? 20 : 8, textDy = newLayout ? -16 : -25;
             var list = new List<(string, Vector2, string?, float, float, Vector2, bool)>();
@@ -189,7 +189,11 @@ sealed partial class Player
                 string path = Path.Combine(dir, name + ".osr");
                 for (int n = 1; File.Exists(path); n++) path = Path.Combine(dir, $"{name} ({n}).osr");
                 if (r.FromStable) File.Copy(r.Path, path);
-                else Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: p.hpGraph, player: PlayerName);
+                else
+                {
+                    // (the .osr's full combo flag: this play's; a leaderboard score's ranking screen didn't replay it)
+                    Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: p.hpGraph, player: PlayerName, perfect: p.summary ? r.Perfect : p.FullCombo);
+                }
                 Toast.Show($"Saved replay to {path}.", new Color(138, 43, 226, 255), 6000);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Replay not saved: {e.Message}"); }

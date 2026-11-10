@@ -15,6 +15,7 @@ sealed class ReplayInfo
     public int MaxCombo, N300, N100, N50, NMiss, NGeki, NKatu;
     public int Mode; // 0 osu!, 1 taiko, 2 catch, 3 mania
     public int Seed; // the play's random seed (mania's Random mod)
+    public int FormatVersion = 6; // an own replay's format (6: catch frames on every step that judged something)
     public bool Perfect; // full combo (the .osr flag)
     public double Accuracy;
     public DateTime Date;
@@ -24,7 +25,8 @@ sealed class ReplayInfo
 static class Replays
 {
     const int Magic = 0x50525253; // "SRRP"
-    const int Version = 5; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed
+    const int Version = 6; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
+    // 6: catch plays record a frame on every step that judged something (judged at that frame's spot on playback)
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
@@ -70,7 +72,7 @@ static class Replays
     static ReplayInfo ReadHeader(BinaryReader r, string path)
     {
         int version;
-        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or Version)) throw new InvalidDataException($"not a replay: {path}");
+        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or Version)) throw new InvalidDataException($"not a replay: {path}");
         var info = new ReplayInfo
         {
             Path = path, BeatmapMd5 = r.ReadString(), Artist = r.ReadString(), Title = r.ReadString(), Version = r.ReadString(),
@@ -80,6 +82,7 @@ static class Replays
         };
         if (version >= 4) { info.Mode = r.ReadInt32(); info.NGeki = r.ReadInt32(); info.NKatu = r.ReadInt32(); }
         if (version >= 5) info.Seed = r.ReadInt32();
+        info.FormatVersion = version;
         return info;
     }
 
@@ -137,7 +140,7 @@ static class Replays
     // older, 1ms-early layout so their recorded stable results stay valid.
     // lifeBar: the play's (time, hp 0..1) graph, written like stable's: a point whenever 2s have passed since the last
     // one, plus the first and last, as "time|hp," with both rounded to 2 decimals
-    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames, bool exact = false, IReadOnlyList<System.Numerics.Vector2>? lifeBar = null, string? player = null)
+    public static void SaveOsr(string path, ReplayInfo info, IReadOnlyList<ReplayFrame> frames, bool exact = false, IReadOnlyList<System.Numerics.Vector2>? lifeBar = null, string? player = null, bool? perfect = null)
     {
         var text = new System.Text.StringBuilder("0|256|-500|0,-1|256|-500|0,");
         var inv = System.Globalization.CultureInfo.InvariantCulture;
@@ -149,7 +152,7 @@ static class Replays
             text.Append(inv, $"{t - last}|{f.X:R}|{f.Y:R}|{z},");
             last = t;
         }
-        text.Append("-12345|0|0|0,");
+        text.Append(inv, $"-12345|0|0|{info.Seed},"); // (the play's random seed: mania's Random)
         using var w = new BinaryWriter(File.Create(path));
         void Str(string s) { w.Write((byte)0x0b); w.Write(s); } // BinaryWriter's length prefix is the same ULEB128
         w.Write((byte)info.Mode);
@@ -161,7 +164,7 @@ static class Replays
         w.Write((ushort)info.NGeki); w.Write((ushort)info.NKatu); w.Write((ushort)info.NMiss);
         w.Write((int)info.Score);
         w.Write((ushort)info.MaxCombo);
-        w.Write(info.Perfect);
+        w.Write(perfect ?? info.Perfect);
         w.Write((int)info.Mods);
         var bar = new System.Text.StringBuilder();
         float lastPoint = 0;
@@ -208,7 +211,8 @@ static class Replays
 
     public static string OsrText(string path) => System.Text.Encoding.ASCII.GetString(Lzma.Decode(ReadOsr(path, withData: true).Data));
 
-    public static ReplayFrame[] ReadOsrFrames(string path, bool rawKeys = false)
+    // info: gets the play's random seed from the trailing seed frame (mania's Random)
+    public static ReplayFrame[] ReadOsrFrames(string path, bool rawKeys = false, ReplayInfo? info = null)
     {
         var text = OsrText(path);
         var frames = new List<ReplayFrame>();
@@ -219,7 +223,7 @@ static class Replays
             var p = entry.Split('|');
             if (p.Length < 4) continue;
             long w = long.Parse(p[0], inv);
-            if (w == -12345) continue; // trailing RNG seed frame
+            if (w == -12345) { if (info != null && int.TryParse(p[3], inv, out int seed)) info.Seed = seed; continue; } // trailing RNG seed frame
             t += w;
             int z = int.Parse(p[3], inv);
             // stable: M1=1, M2=2, K1=4 (+M1), K2=8 (+M2). Ours: K1, K2, M1, M2 as bits 0-3.
@@ -230,7 +234,7 @@ static class Replays
         return frames.ToArray();
     }
 
-    public static ReplayFrame[] Frames(ReplayInfo info) => info.FromStable ? ReadOsrFrames(info.Path, rawKeys: info.Mode != 0) : ReadFrames(info.Path);
+    public static ReplayFrame[] Frames(ReplayInfo info) => info.FromStable ? ReadOsrFrames(info.Path, rawKeys: info.Mode != 0, info) : ReadFrames(info.Path);
 
     public static ReplayInfo ReadAnyInfo(string path) =>
         path.EndsWith(".osr", StringComparison.OrdinalIgnoreCase) ? ReadOsr(path, withData: false).Info : ReadInfo(path);

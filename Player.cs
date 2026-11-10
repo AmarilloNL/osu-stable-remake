@@ -182,8 +182,10 @@ sealed partial class Player : Screen
         if (!Game.UseSkin(own, editing) && mode != 1 && !VirtualClock) // (the taiko one goes unmentioned; said once the play shows, not for a
             missingSkin = own;                                          // replay's ranking screen)
         skin = Game.Skin;
-        // (a mania convert under a key mod: its keys against its own count)
-        maniaKeyChange = mode == 3 && map.Mode != 3 && mods.Keys() > 0 ? mods.Keys() - ManiaConvertKeys(map) : 0;
+        // (a mania convert: the keys played - the key mod's or its own, doubled by Key Coop - against its own count, like
+        // stable's; a mania map's own keys never change)
+        int ownKeys = mode == 3 && map.Mode != 3 ? ManiaConvertKeys(map) : 0;
+        maniaKeyChange = ownKeys > 0 ? (mods.Keys() > 0 ? mods.Keys() : ownKeys) * (mods.HasFlag(Mods.KeyCoop) ? 2 : 1) - ownKeys : 0;
         modMul = mods.ScoreMultiplier(mode, maniaKeyChange);
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
@@ -366,6 +368,10 @@ sealed partial class Player : Screen
         if (target - Math.Min(0, clockOrigin) > 1200 + map.Preempt) skipTarget = target;
     }
     internal int MapMaxCombo => objs.Sum(o => o.Type == ObjType.Slider ? 1 + o.Checkpoints.Count : 1);
+    // full combo: osu!'s the map's whole combo; taiko's, catch's and mania's never broken (their combos don't count
+    // the osu! objects: rolls, bananas, converted notes)
+    internal bool FullCombo => mode == 0 ? maxCombo == MapMaxCombo : !comboBroke && maxCombo > 0;
+    bool comboBroke;
 
     public void Dispose()
     {
@@ -791,7 +797,8 @@ sealed partial class Player : Screen
 
     void Continue()
     {
-        if (playback == null && !auto && !relax && !autopilot && !InBreak(time))
+        // (stable: only osu! asks for a click on the cursor; taiko, catch and mania carry on at once)
+        if (mode == 0 && playback == null && !auto && !relax && !autopilot && !InBreak(time))
         {
             resumePending = true;
             resumeShownAt = Game.NowMs;
@@ -1056,7 +1063,7 @@ sealed partial class Player : Screen
         if (endNow || ModeDone && (musicEnded || music == null || time > objs[^1].EndTime + 3000 && time >= SbEnd - 500))
         {
             // stable's taiko: a play ending with the bar under half is failed
-            if (mode == 1 && health.Value <= Health.Max / 2 && !mods.HasFlag(Mods.NoFail) && !auto && !endNow) { Fail(); return; }
+            if (mode == 1 && health.Value <= Health.Max / 2 && !mods.HasFlag(Mods.NoFail) && !auto) { Fail(); return; } // (also when the play is ended early after completion: a replay ends the same way)
             finished = true;
             passStates.Add(health.Value >= Health.Max / 2);
             SaveReplay();
@@ -1662,6 +1669,7 @@ sealed partial class Player : Screen
         if (VerifyLog) Console.Error.WriteLine($"  combo break at {time:0} after {combo}");
         if (combo > 20 && !mods.HasFlag(Mods.Relax) && !mods.HasFlag(Mods.Autopilot)) skin.Sound("combobreak")?.Play(BeatmapSamples.EffectVolume); // stable: over 20, not with Relax / Autopilot
         combo = 0;
+        comboBroke = true;
         if (mods.HasFlag(Mods.SuddenDeath)) Fail();
     }
 
@@ -3154,18 +3162,18 @@ sealed partial class Player : Screen
         if (mode == 3) // mania: by accuracy
         {
             double acc = Accuracy / 100;
-            bool silv = mods.HasFlag(Mods.Hidden) || mods.HasFlag(Mods.Flashlight);
+            bool silv = (mods & (Mods.Hidden | Mods.Flashlight | Mods.FadeIn)) != 0; // (stable: Fade In too)
             return acc >= 1 ? silv ? "XH" : "X" : acc > 0.95 ? silv ? "SH" : "S" : acc > 0.9 ? "A" : acc > 0.8 ? "B" : acc > 0.7 ? "C" : "D";
         }
         if (mode == 2) // catch: by accuracy
         {
             double acc = Accuracy / 100;
-            bool silv = mods.HasFlag(Mods.Hidden) || mods.HasFlag(Mods.Flashlight);
+            bool silv = (mods & (Mods.Hidden | Mods.Flashlight | Mods.FadeIn)) != 0; // (stable: Fade In too)
             return acc >= 1 ? silv ? "XH" : "X" : acc > 0.98 ? silv ? "SH" : "S" : acc > 0.94 ? "A" : acc > 0.9 ? "B" : acc > 0.85 ? "C" : "D";
         }
         if (total == 0) return "D";
         double r300 = n300 / (double)total, r50 = n50 / (double)total;
-        bool silver = mods.HasFlag(Mods.Hidden) || mods.HasFlag(Mods.Flashlight);
+        bool silver = (mods & (Mods.Hidden | Mods.Flashlight | Mods.FadeIn)) != 0; // (stable: Fade In too)
         if (n300 == total) return silver ? "XH" : "X";
         if (r300 > 0.9 && r50 < 0.01 && nMiss == 0) return silver ? "SH" : "S";
         if (r300 > 0.8 && nMiss == 0 || r300 > 0.9) return "A";

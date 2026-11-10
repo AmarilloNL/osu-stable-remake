@@ -234,19 +234,31 @@ sealed partial class Player
             // a hyperdash ends on reaching its fruit's spot
             if (cHyperDir != 0 && cHyperTarget != null && (cHyperDir > 0 ? cX >= cHyperTarget.X : cX <= cHyperTarget.X)) { cX = cHyperTarget.X; cHyperDir = 0; }
             cX = MathF.Round(Math.Clamp(cX, 0, 512) * Replays.PosScale) / Replays.PosScale; // (on the replay's grid, so playback is exact)
-            if (cX != cRecorded.X || dash != cRecorded.Dash) { recording.Add(new ReplayFrame(time, cX, 0, (byte)(dash ? 1 : 0))); cRecorded = (cX, dash); }
+            // a frame on every change, and on every step that catches or drops something (so a replay judges those at
+            // this frame's spot, as this play did)
+            bool judging = cNext < cFruits.Count && cFruits[cNext].Time <= time;
+            if (cX != cRecorded.X || dash != cRecorded.Dash || judging) { recording.Add(new ReplayFrame(time, cX, 0, (byte)(dash ? 1 : 0))); cRecorded = (cX, dash); }
         }
         else if (playback != null)
-            // a replay: the catcher where its latest frame put it
+        {
+            // a replay: the catcher where its latest frame put it; what's due by a frame is judged at that frame's spot
             while (pbIndex < playback.Length && playback[pbIndex].Time <= time)
             {
                 cDashing = (playback[pbIndex].Keys & 1) != 0;
-                float x = Math.Clamp(playback[pbIndex++].X, 0, 512);
+                float x = Math.Clamp(playback[pbIndex].X, 0, 512);
                 if (x != cX) cDir = x > cX ? 1 : -1;
                 cX = x;
+                double at = playback[pbIndex++].Time;
+                if (watching is not { FromStable: false, FormatVersion: < 6 }) CatchFruitsTo(at); // (older own replays: judged by time below)
             }
+            if (pbIndex < playback.Length && watching is not { FromStable: false, FormatVersion: < 6 }) return; // (the rest waits for the frame that judged it)
+        }
+        CatchFruitsTo(time);
+    }
 
-        for (int i = cNext; i < cFruits.Count && cFruits[i].Time <= time; i++)
+    void CatchFruitsTo(double until)
+    {
+        for (int i = cNext; i < cFruits.Count && cFruits[i].Time <= until; i++)
         {
             var f = cFruits[i];
             if (f.Done) continue;
@@ -272,6 +284,8 @@ sealed partial class Player
         if (x != cX) cDir = x > cX ? 1 : -1;
         cX = x;
     }
+
+    int cComboMisses; // fruits missed in the current combo
 
     void CatchJudge(CFruit f)
     {
@@ -305,12 +319,18 @@ sealed partial class Player
                 CatchFlash(f.X - cX, new Color(255, 240, 0, 255), banana: true);
                 cThrown.Add((f.X, 340 - 5, (f.X - cX) * 4, -120, "fruit-bananas", new Color(255, 240, 0, 255), 0.5f, Game.NowMs, 2000));
             }
-            if (f.LastInCombo) ClearPlate(thrown: true, shower: f.Kind == CKind.Banana);
+            if (f.LastInCombo)
+            {
+                // stable: a combo's last fruit caught with no fruit missed in the combo is a geki (its HP bonus too)
+                if (f.Kind == CKind.Fruit && cComboMisses == 0) { nGeki++; health.Add(health.mulGeki * 14); }
+                cComboMisses = 0;
+                ClearPlate(thrown: true, shower: f.Kind == CKind.Banana);
+            }
             // catching a hyperdash fruit flings the catcher towards the next one, arriving 16.7ms early
             if (f.Hyper && f.HyperTarget is { } target && !auto)
             {
                 cHyperTarget = target;
-                cHyperSpeed = Math.Abs(target.X - cX) / Math.Max(1f, (float)(target.Time - time) - 16.666666f);
+                cHyperSpeed = Math.Abs(target.X - cX) / Math.Max(1f, (float)(target.Time - f.Time) - 16.666666f); // (from the fruit's time, not the frame's)
                 cHyperDir = target.X > cX ? 1 : -1;
             }
             else if (f.Kind is CKind.Fruit or CKind.Droplet) cHyperDir = 0;
@@ -319,11 +339,11 @@ sealed partial class Player
         {
             switch (f.Kind)
             {
-                case CKind.Fruit: nMiss++; health.Apply(HpEvent.Miss); BreakCombo(); cFailUntil = time + 1000; break;
+                case CKind.Fruit: nMiss++; cComboMisses++; health.Apply(HpEvent.Miss); BreakCombo(); cFailUntil = time + 1000; break;
                 case CKind.Droplet: nMiss++; health.Apply(HpEvent.SliderBreak); BreakCombo(); cFailUntil = time + 1000; break;
                 case CKind.Tiny: nKatu++; if (mods.HasFlag(Mods.Perfect)) Fail(); break; // (Perfect: not even a tiny droplet)
             }
-            if (f.LastInCombo) ClearPlate(thrown: false, shower: f.Kind == CKind.Banana);
+            if (f.LastInCombo) { cComboMisses = 0; ClearPlate(thrown: false, shower: f.Kind == CKind.Banana); }
             if (f.Kind is CKind.Fruit or CKind.Droplet) cHyperDir = 0;
         }
     }

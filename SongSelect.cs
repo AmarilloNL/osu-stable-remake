@@ -2819,7 +2819,8 @@ sealed partial class SongSelect : Screen
         float fade = (float)Math.Clamp(age / 200, 0, 1);
         Dialog.Backdrop(fade);
         modContentY = Dialog.Title(ModBlurb, fade);
-        int keyChange = PlayMode == 3 && Selected is { Mode: 0 } sb && mods.Keys() > 0 ? mods.Keys() - ManiaKeys(sb) : 0;
+        int ownKeys = PlayMode == 3 && Selected is { Mode: 0 } sb ? ManiaKeys(sb) : 0; // (a convert: Key Coop doubles the keys played, like stable)
+        int keyChange = ownKeys > 0 ? (mods.Keys() > 0 ? mods.Keys() : ownKeys) * (mods.HasFlag(Mods.KeyCoop) ? 2 : 1) - ownKeys : 0;
         string mult = $"Score Multiplier: {mods.Multiplier(PlayMode, keyChange):0.00}x";
         float ms = 30.8f * u; // stable's 30, measured at 1080p
         // stable: the text fades over 400ms to green-yellow above 1x, orange-red below, white at 1x
