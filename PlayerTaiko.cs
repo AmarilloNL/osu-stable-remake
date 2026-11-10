@@ -20,7 +20,7 @@ sealed partial class Player
         public int Result = -1;
         public double JudgedAt;
         public bool Pending; public double FirstHitAt; public int FirstKey; // a big note waiting for the other hand (30ms)
-        public double TickSpacing; public int TicksHit; public readonly List<double> Ticks = []; // drumroll
+        public double TickSpacing; public int TicksHit, TicksScored; public readonly List<double> Ticks = []; // drumroll (TicksHit: the next one; TicksScored: those hit)
         public int HitsNeeded, Hits, LastSwellRim = -1; // swell
         public int AutoNext; // Auto's next tick / swell hit
         public double RollEnd => End + TickSpacing / 2; // (the last tick can sit up to half a tick past the end)
@@ -202,10 +202,15 @@ sealed partial class Player
             var n = tNotes[i];
             if (n.Done) continue;
             if (n.Kind is TKind.Don or TKind.Kat && now > n.Time + tMiss) TaikoJudge(n, 0, n.Time + tMiss);
-            else if (n.Kind == TKind.Roll && now > n.RollEnd) { n.Done = true; n.JudgedAt = n.End; }
+            else if (n.Kind == TKind.Roll && now > n.RollEnd)
+            {
+                if (ModeV2) TaikoJudge(n, TaikoRollV2(n), n.End);
+                else { n.Done = true; n.JudgedAt = n.End; }
+            }
             else if (n.Kind == TKind.Swell && now > n.End)
             {
-                TaikoJudge(n, 0, n.End); // (not cleared in time)
+                // (not cleared in time; Score V2: a 100 with at least half its hits)
+                TaikoJudge(n, ModeV2 && n.HitsNeeded - n.Hits < n.HitsNeeded / 2 ? 100 : 0, n.End);
             }
         }
     }
@@ -256,7 +261,7 @@ sealed partial class Player
                     if (n.LastSwellRim == (rim ? 1 : 0) && !relax) return; // (Relax: any order)
                     n.LastSwellRim = rim ? 1 : 0;
                     n.Hits++;
-                    score += 300;
+                    if (!ModeV2) score += 300; // (V2: nothing)
                     if (n.Hits > n.HitsNeeded) { TaikoJudge(n, 300, at); tClearAt = Game.NowMs; } // (stable: one more than its count)
                     return;
                 case TKind.Roll when !n.Done && at >= n.Time && (at <= n.End || at <= n.RollEnd && (i + 1 >= tNotes.Count || tNotes[i + 1].Time > at)):
@@ -264,9 +269,11 @@ sealed partial class Player
                     if (n.TicksHit < n.Ticks.Count && Math.Abs(n.Ticks[n.TicksHit] - at) <= n.TickSpacing / 2 + 1)
                     {
                         n.TicksHit++;
-                        // stable: 300 a tick, 1.2x in kiai (the roll's start), a big roll's a fifth more
+                        n.TicksScored++;
+                        // stable: 300 a tick, 1.2x in kiai (the roll's start), a big roll's a fifth more; V2: a bonus 200 (800 big)
                         int tick = map.PointAt(n.Time).Kiai ? 360 : 300;
-                        score += n.Big ? tick + tick / 5 : tick;
+                        if (ModeV2) V2Bonus(n.Big ? 800 : 200);
+                        else score += n.Big ? tick + tick / 5 : tick;
                         SetSliderFail(false);
                         health.Add(0.0001);
                     }
@@ -298,7 +305,7 @@ sealed partial class Player
         n.Done = true;
         n.Result = result;
         n.JudgedAt = at;
-        if (n.Kind == TKind.Swell)
+        if (n.Kind == TKind.Swell && !ModeV2)
         {
             // stable: a cleared swell is a bonus (300 with the combo's bonus, 1.2x in kiai, doubled) leaving the combo
             // and the counts alone; one not cleared just costs some health
@@ -312,12 +319,14 @@ sealed partial class Player
         tFailing = result == 0;
         SetSliderFail(result == 0);
         Count(result);
+        // Score V2: a swell, and a big drumroll, count as both hands (a geki / katu)
+        if (result > 0 && (n.Kind == TKind.Swell || n.Kind == TKind.Roll && n.Big)) { if (result == 300) nGeki++; else nKatu++; }
         if (result > 0 && n.Kind is TKind.Don or TKind.Kat)
             tFlying.Add(new TFly { X = TaikoHitX, Y = TaikoLaneY, Scale = n.Big ? 1 : 0.65f, Vy = 169, Colour = n.Kind == TKind.Don ? new Color(235, 69, 44, 255) : new Color(67, 142, 172, 255), Big = n.Big });
         if (result > 0)
         {
             // (scored on the combo before this hit, like stable)
-            score += TaikoValue(result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai);
+            if (!ModeV2) score += TaikoValue(result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai);
             combo++;
             maxCombo = Math.Max(maxCombo, combo);
             if (result != 300 && mods.HasFlag(Mods.Perfect)) Fail(); // (Perfect: greats only)
@@ -328,6 +337,15 @@ sealed partial class Player
             health.Add(Beatmap.Range(map.HP, -6, -25, -40));
             BreakCombo();
         }
+        V2Hit(result == 0 ? 0 : n.Kind == TKind.Roll && n.Big ? 2400 : 300); // (V2: a 100 is worth a 300)
+    }
+
+    // Score V2 judges a drumroll at its end: a 300 with its share of ticks (0.1 + OD / 30, at most 0.3) hit, a 100 with
+    // any, else a miss
+    int TaikoRollV2(TNote n)
+    {
+        double share = Math.Min(0.3, 0.1 + 1.0 / 30.0 * map.OD);
+        return n.TicksScored >= n.Ticks.Count * share ? 300 : n.TicksScored >= 1 ? 100 : 0;
     }
 
     // stable: both keys in the same frame are one judgement worth double, counted as a geki / katu; the second hand
@@ -336,7 +354,8 @@ sealed partial class Player
     {
         if (together) { if (n.Result == 300) nGeki++; else nKatu++; }
         else health.Add(n.Result == 300 ? tHpMul * 6 : tHpMul * Beatmap.Range(map.HP, 17.6, 2.2, 2.2));
-        score += TaikoValue(n.Result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai, comboOffset: -1); // stable: the second hand's bonus counts one combo less
+        if (ModeV2) V2Hit(2100); // (V2: the second hand 7 times the first)
+        else score += TaikoValue(n.Result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai, comboOffset: -1); // stable: the second hand's bonus counts one combo less
         tLastJudge = (n.Result, true, Game.NowMs);
     }
 

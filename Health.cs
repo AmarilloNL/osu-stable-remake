@@ -90,8 +90,9 @@ sealed class Health
 
     // osu!mania: stable calibrates over the notes (from a preempt before the first; a hold drained over its length,
     // breaks skipped), each a MAX worth mul x (1.1 - HP / 10). Its drain rate is never applied in mania; the gain
-    // multiplier it settles on is (MAX, 300 and 200 heal mul times their amount).
-    public void CalibrateMania(Beatmap map, IReadOnlyList<(double Time, double End)> notes, double hpValue)
+    // multiplier it settles on is (MAX, 300 and 200 heal mul times their amount). Under Score V2 a hold's head is a MAX
+    // too, after its length has drained.
+    public void CalibrateMania(Beatmap map, IReadOnlyList<(double Time, double End)> notes, double hpValue, bool v2 = false)
     {
         mul = mulGeki = 1;
         if (notes.Count == 0) return;
@@ -117,6 +118,7 @@ sealed class Health
                 if (value <= lowestEver) { retry = true; rate *= 0.96; break; }
                 double during = rate * (end - t), overshoot = Math.Max(0, during - value);
                 Change(-during);
+                if (v2 && end > t) Change(mul * (1.1 - hpValue * 0.1));
                 if (overshoot > 0 && value - overshoot <= lowestEver) { retry = true; rate *= 0.96; break; }
                 Change(mul * (1.1 - hpValue * 0.1));
             }

@@ -239,7 +239,6 @@ sealed partial class Player : Screen
         }
 
         diffMul = mode == 1 ? map.TaikoDifficultyMultiplier : map.DifficultyMultiplier;
-        InitScoreV2();
 
         // stable counts retries in a row of a live play (any other way in starts over)
         if (playback == null && !auto) RetryStreak = retrying ? RetryStreak + 1 : 0;
@@ -277,6 +276,7 @@ sealed partial class Player : Screen
         if (mode == 1) { TaikoSetup(); samples.Prefix = "taiko-"; }
         else if (mode == 2) CatchSetup();
         else if (mode == 3) ManiaSetup();
+        InitScoreV2();
 
         // stable's lead-in: AudioLeadIn, the earliest storyboard event, or enough for max(1800ms, preempt) before the first object.
         clockOrigin = Math.Min(Math.Min(-map.AudioLeadIn, storyboard?.EarliestEvent ?? 0), objs[0].Time - Math.Max(1800, map.Preempt));
@@ -367,7 +367,15 @@ sealed partial class Player : Screen
         double target = Math.Round(beat > 0 ? objs[0].Time - beat * (beat < 500 ? 8 : 4) : objs[0].Time - 2000);
         if (target - Math.Min(0, clockOrigin) > 1200 + map.Preempt) skipTarget = target;
     }
-    internal int MapMaxCombo => objs.Sum(o => o.Type == ObjType.Slider ? 1 + o.Checkpoints.Count : 1);
+    // the most combo a play can reach: osu! sliders' every checkpoint; taiko's notes (Score V2: its drumrolls and swells
+    // too); catch's fruits and droplets; mania's notes and holds with a hold's 100ms ticks (V2: its head and tail instead)
+    internal int MapMaxCombo => mode switch
+    {
+        1 => tNotes.Count(n => n.Kind is TKind.Don or TKind.Kat || ModeV2),
+        2 => cFruits.Count(f => f.Kind is CKind.Fruit or CKind.Droplet),
+        3 => mNotes.Sum(n => !n.Hold ? 1 : ModeV2 ? 2 : OldModeRules ? 1 : 1 + (int)((n.End - n.Time) / 100)),
+        _ => objs.Sum(o => o.Type == ObjType.Slider ? 1 + o.Checkpoints.Count : 1),
+    };
     // full combo: osu!'s the map's whole combo; taiko's, catch's and mania's never broken (their combos don't count
     // the osu! objects: rolls, bananas, converted notes)
     internal bool FullCombo => mode == 0 ? maxCombo == MapMaxCombo : !comboBroke && maxCombo > 0;
@@ -3027,17 +3035,18 @@ sealed partial class Player : Screen
     }
 
     internal double Acc => Accuracy; // (--auto-check in the other modes)
-    double Accuracy => AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu);
+    double Accuracy => AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu, ScoreV2);
 
     // stable's accuracy per mode (percent)
-    internal static double AccuracyFor(int mode, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu)
+    internal static double AccuracyFor(int mode, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu, bool v2 = false)
     {
         int total = n300 + n100 + n50 + nMiss;
         if (mode == 1) return total == 0 ? 100 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half
         if (mode == 2) return total + nKatu == 0 ? 100 : (double)(n300 + n100 + n50) / (total + nKatu) * 100; // catch: anything caught (katu: tiny droplets missed)
-        if (mode == 3) // mania: MAX (geki) and 300 full, 200 (katu) two thirds, 100 a third, 50 a sixth
+        if (mode == 3) // mania: MAX (geki) and 300 full, 200 (katu) two thirds, 100 a third, 50 a sixth; Score V2: MAX 305 and 300 300 of 305
         {
             int all = total + nGeki + nKatu;
+            if (v2) return all == 0 ? 100 : (50.0 * n50 + 100.0 * n100 + 200.0 * nKatu + 300.0 * n300 + 305.0 * nGeki) / (305.0 * all) * 100;
             return all == 0 ? 100 : (50.0 * n50 + 100.0 * n100 + 200.0 * nKatu + 300.0 * (n300 + nGeki)) / (300.0 * all) * 100;
         }
         return total == 0 ? 100 : (300.0 * n300 + 100.0 * n100 + 50.0 * n50) / (300.0 * total) * 100;
@@ -3158,7 +3167,7 @@ sealed partial class Player : Screen
     internal static string GradeFor(int mode, Mods mods, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu)
     {
         int total = n300 + n100 + n50 + nMiss;
-        double Accuracy = AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu);
+        double Accuracy = AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu, mods.HasFlag(Mods.ScoreV2));
         if (mode == 3) // mania: by accuracy
         {
             double acc = Accuracy / 100;

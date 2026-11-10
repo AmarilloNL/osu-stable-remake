@@ -1280,8 +1280,11 @@ static class Game
                 }
                 var x = p.Result;
                 double acc = p.Acc;
+                string? v2 = extra.HasFlag(Mods.ScoreV2) && !p.V2Full ? p.V2Parts : checkMode != 0 && x.MaxCombo != p.MapMaxCombo ? $"combo {x.MaxCombo}/{p.MapMaxCombo}" : null;
+                if (v2 == null && extra.HasFlag(Mods.ScoreV2) && dt == frames[0]) Console.Error.WriteLine($"V2 {b.Title} [{b.Version}]: {p.V2Parts}");
                 p.Dispose();
                 runs++;
+                if (v2 != null) { bad++; Console.WriteLine($"{b.Artist} - {b.Title} [{b.Version}] at {dt:0.##}ms frames: short of a perfect play: {v2}"); continue; }
                 if (checkMode != 0 ? acc >= 100 - 1e-9 : x.N100 + x.N50 + x.NMiss == 0) continue;
                 // Objects overlapping in time (2B maps) can't all be followed by one cursor - stable's Auto drops
                 // points there too - so those are tagged rather than counted.

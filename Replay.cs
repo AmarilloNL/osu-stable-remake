@@ -15,7 +15,7 @@ sealed class ReplayInfo
     public int MaxCombo, N300, N100, N50, NMiss, NGeki, NKatu;
     public int Mode; // 0 osu!, 1 taiko, 2 catch, 3 mania
     public int Seed; // the play's random seed (mania's Random mod)
-    public int FormatVersion = 6; // an own replay's format (6: catch frames on every step that judged something)
+    public int FormatVersion = 7; // an own replay's format (6: catch frames on every step that judged something; 7: see Replays.Version)
     public bool Perfect; // full combo (the .osr flag)
     public double Accuracy;
     public DateTime Date;
@@ -25,8 +25,10 @@ sealed class ReplayInfo
 static class Replays
 {
     const int Magic = 0x50525253; // "SRRP"
-    const int Version = 6; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
+    const int Version = 7; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
     // 6: catch plays record a frame on every step that judged something (judged at that frame's spot on playback)
+    // 7: same frames, judged with stable's mania hold ticks, late misses and last press, and Score V2's own judging in
+    // taiko, catch and mania (older replays play back with the judging they were made with)
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
@@ -72,7 +74,7 @@ static class Replays
     static ReplayInfo ReadHeader(BinaryReader r, string path)
     {
         int version;
-        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or Version)) throw new InvalidDataException($"not a replay: {path}");
+        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or 6 or Version)) throw new InvalidDataException($"not a replay: {path}");
         var info = new ReplayInfo
         {
             Path = path, BeatmapMd5 = r.ReadString(), Artist = r.ReadString(), Title = r.ReadString(), Version = r.ReadString(),
@@ -128,7 +130,7 @@ static class Replays
         OsrString(r); // life bar graph
         info.Date = new DateTime(r.ReadInt64(), DateTimeKind.Utc).ToLocalTime();
         info.Mode = mode;
-        info.Accuracy = Player.AccuracyFor(mode, info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu);
+        info.Accuracy = Player.AccuracyFor(mode, info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu, info.Mods.HasFlag(Mods.ScoreV2));
         info.FromStable = true;
         byte[] data = withData ? r.ReadBytes(r.ReadInt32()) : [];
         return (info, mode, data);
@@ -283,7 +285,7 @@ static class Replays
                 var (info, mode) = (entry.Info, entry.Mode);
                 if (mode > 3) continue;
                 info.Mode = mode;
-                if (mode != 0) info.Accuracy = Player.AccuracyFor(mode, info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu); // (cached entries from before)
+                if (mode != 0) info.Accuracy = Player.AccuracyFor(mode, info.N300, info.N100, info.N50, info.NMiss, info.NGeki, info.NKatu, info.Mods.HasFlag(Mods.ScoreV2)); // (cached entries from before)
                 if (!index.TryGetValue(info.BeatmapMd5, out var list)) index[info.BeatmapMd5] = list = [];
                 if (list.Any(o => o.FromStable && o.Score == info.Score && o.Date == info.Date)) continue; // same play exported twice
                 list.Add(info);

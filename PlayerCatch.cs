@@ -298,6 +298,14 @@ sealed partial class Player
                 case CKind.Tiny: n50++; score += 10; health.Add(health.mul * 3 * 0.1f); break;
                 case CKind.Banana: score += 1100; health.Add(health.mul * 2); break; // (a bonus: no combo)
             }
+            // Score V2: fruits 300 and droplets 100 by the combo, tiny droplets counted, bananas a bonus 200
+            if (ModeV2) switch (f.Kind)
+            {
+                case CKind.Fruit: V2Hit(300); break;
+                case CKind.Droplet: V2Hit(100); break;
+                case CKind.Tiny: V2Tiny(); break;
+                case CKind.Banana: V2Bonus(200); break;
+            }
             maxCombo = Math.Max(maxCombo, combo);
             cFailUntil = double.MinValue;
             var colour = colours[f.Colour % colours.Length];
