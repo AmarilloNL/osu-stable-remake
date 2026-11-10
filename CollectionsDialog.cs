@@ -32,7 +32,9 @@ sealed partial class SongSelect
         XnaOrange = new(255, 165, 0, 255), XnaGreen = new(0, 128, 0, 255), XnaYellowGreen = new(154, 205, 50, 255), XnaDarkOrange = new(255, 140, 0, 255),
         ButtonGrey = new(150, 150, 150, 255);
 
-    static List<(string Name, HashSet<string> Md5s)> Collections =>
+    // the one list of collections everything uses (the main menu's Jump To too): a second copy read later would also
+    // reset what collection.db was when read, so this list could be saved over a newer file
+    internal static List<(string Name, HashSet<string> Md5s)> Collections =>
         collections ??= OsuDb.LoadCollections(Path.Combine(Config.OsuDir, "collection.db"));
 
     void OpenCollections()

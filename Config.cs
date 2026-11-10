@@ -83,6 +83,7 @@ static class Config
             "OemOpenBrackets" => KeyboardKey.LeftBracket, "OemCloseBrackets" => KeyboardKey.RightBracket, "OemPipe" => KeyboardKey.Backslash,
             "OemSemicolon" => KeyboardKey.Semicolon, "OemQuotes" => KeyboardKey.Apostrophe, "OemComma" => KeyboardKey.Comma,
             "OemPeriod" => KeyboardKey.Period, "OemQuestion" => KeyboardKey.Slash, "LeftControl" => KeyboardKey.LeftControl,
+            "LeftWindows" => KeyboardKey.LeftSuper, "RightWindows" => KeyboardKey.RightSuper, "Scroll" => KeyboardKey.ScrollLock, "Apps" => KeyboardKey.KeyboardMenu,
             _ => null,
         };
         if (oem is { } o) return o;

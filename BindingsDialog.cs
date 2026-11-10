@@ -29,13 +29,17 @@ sealed class BindingsDialog
         if (binding >= 0)
         {
             int key = Input.GetKeyPressed();
+            // stable: the left and right osu! keys can't share a key (that key is ignored; it waits for another)
+            string bound = KeyBindings.Rows[binding].Key, other = bound == "keyOsuLeft" ? "keyOsuRight" : bound == "keyOsuRight" ? "keyOsuLeft" : "";
+            bool taken = other.Length > 0 && key != 0 && Config.Key(other, other == "keyOsuLeft" ? KeyboardKey.Z : KeyboardKey.X) == (KeyboardKey)key;
             if (key == (int)KeyboardKey.Escape) binding = -1;
-            else if (key != 0)
+            else if (key != 0 && !taken)
             {
                 Config.SetOwn(KeyBindings.Rows[binding].Key, CfgName((KeyboardKey)key));
                 Game.Skin.Sound("click-short-confirm")?.Play(BeatmapSamples.EffectVolume);
                 binding = -1;
             }
+            if (key != 0) Input.Muted = true; // (the key is the binding's: the boss key, F7, F10, F12 don't act on it too)
             return;
         }
         if (Input.IsKeyPressed(KeyboardKey.Escape)) { Closed = true; return; }
@@ -129,6 +133,7 @@ sealed class BindingsDialog
         KeyboardKey.LeftShift => "LeftShift", KeyboardKey.RightShift => "RightShift", KeyboardKey.LeftControl => "LeftControl",
         KeyboardKey.RightControl => "RightControl", KeyboardKey.LeftAlt => "LeftAlt", KeyboardKey.RightAlt => "RightAlt",
         KeyboardKey.PageUp => "PageUp", KeyboardKey.PageDown => "PageDown",
+        KeyboardKey.LeftSuper => "LeftWindows", KeyboardKey.RightSuper => "RightWindows", KeyboardKey.ScrollLock => "Scroll", KeyboardKey.KeyboardMenu => "Apps",
         _ => k.ToString(),
     };
 }

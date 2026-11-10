@@ -257,8 +257,7 @@ sealed class MainMenu : Screen
     float jumpScroll; // units
     string? jumpCollection; // null: All
     bool jumpDropOpen;
-    List<(string Name, HashSet<string> Md5s)>? collections;
-    List<(string Name, HashSet<string> Md5s)> Collections => collections ??= OsuDb.LoadCollections(Path.Combine(Config.OsuDir, "collection.db"));
+    static List<(string Name, HashSet<string> Md5s)> Collections => SongSelect.Collections;
     Rectangle JumpDropRect => new(10 * u, 55 * u, 140 * u, 12 * u);
     Rectangle JumpDropItem(int i) => new(10 * u, (67 + i * 12) * u, 140 * u, 12 * u);
 

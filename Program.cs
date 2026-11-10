@@ -249,12 +249,13 @@ static class Game
 
     // Cached: UI text is mostly the same strings every frame (main thread only).
     static readonly Dictionary<string, string> oldStyle = [];
+    static bool Aller; // stable's font found (osu!ui.dll); otherwise a system font draws plain digits
 
     static string OldStyle(string s)
     {
         if (oldStyle.TryGetValue(s, out var cached)) return cached;
         bool digits = false;
-        foreach (char ch in s) if (char.IsAsciiDigit(ch)) { digits = true; break; }
+        if (Aller) foreach (char ch in s) if (char.IsAsciiDigit(ch)) { digits = true; break; } // (a system font has no such glyphs)
         string result = !digits ? s : string.Create(s.Length, s, (span, src) =>
         {
             for (int i = 0; i < src.Length; i++) span[i] = char.IsAsciiDigit(src[i]) ? (char)(src[i] + 63500) : src[i];
@@ -818,6 +819,7 @@ static class Game
 
         var codepoints = Enumerable.Range(32, 0x24F - 31).Append(0x2605).Append(0x266A)
             .Concat(Enumerable.Range('0' + 63500, 10)).ToArray(); // + star (U+2605), note (U+266A), Aller's old-style digits
+        Aller = DefaultSkin.Get("Aller") is { } aller && aller[0] == 0;
         Font = LoadUiFont("Aller", @"C:\Windows\Fonts\segoeui.ttf", codepoints);
         Bold = LoadUiFont("Aller_Bd", @"C:\Windows\Fonts\segoeuib.ttf", codepoints);
         Light = LoadUiFont("Aller_Lt", @"C:\Windows\Fonts\segoeuil.ttf", codepoints);

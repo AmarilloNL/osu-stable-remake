@@ -54,7 +54,7 @@ sealed class OffsetWizard : Screen
 
     void ChangeOffset(int by)
     {
-        Config.SetOwn("Offset", (Config.GetInt("Offset", 0) + by).ToString());
+        Config.SetOwn("Offset", (Config.GetInt("Offset", 0) + by).ToString(System.Globalization.CultureInfo.InvariantCulture)); // (some regions write a minus the reader can't parse)
         valueFlashAt = Game.NowMs;
     }
 
