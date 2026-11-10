@@ -1233,10 +1233,20 @@ static class Game
         UseSkin(null);
         Player.VirtualClock = true;
         int checkMode = int.TryParse(Environment.GetEnvironmentVariable("AUTOCHECK_MODE"), out int cm) ? cm : 0; // taiko / catch / mania (osu! maps converted)
-        var maps = OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db"))
+        // AUTOCHECK_DIR: every .osu under that folder instead of osu!.db's maps (malformed-map runs: a crash while
+        // playing is reported and the next map goes on)
+        string? dir = Environment.GetEnvironmentVariable("AUTOCHECK_DIR");
+        var listed = dir is { Length: > 0 }
+            ? Directory.EnumerateFiles(dir, "*.osu", SearchOption.AllDirectories).Select(f => new DbBeatmap
+            {
+                OsuFile = Path.GetFullPath(f), Artist = Path.GetFileName(Path.GetDirectoryName(f)!), Title = Path.GetFileNameWithoutExtension(f),
+                Mode = (byte)(System.Text.RegularExpressions.Regex.Match(File.ReadAllText(f), @"\bMode:\s*([0-3])") is { Success: true } mm ? mm.Groups[1].Value[0] - '0' : 0),
+            })
+            : OsuDb.Load(Path.Combine(Config.OsuDir, "osu!.db"));
+        var maps = listed
             .Where(b => (b.Mode == 0 || b.Mode == checkMode) && $"{b.Artist} {b.Title} [{b.Version}]".Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
         var back = new SongSelect();
-        double[] frames = [1, 1000 / 144.0, 1000 / 60.0, 0.37, 1000 / 30.0, 50]; // long frames = stutters
+        double[] frames = dir is { Length: > 0 } ? [1000 / 60.0] : [1, 1000 / 144.0, 1000 / 60.0, 0.37, 1000 / 30.0, 50]; // long frames = stutters
         bool loadOnly = Environment.GetEnvironmentVariable("AUTOCHECK_LOAD") == "1"; // just build every Player
         int runs = 0, bad = 0;
         foreach (var b in maps)
@@ -1259,7 +1269,13 @@ static class Game
                 }
                 if (loadOnly) { p.Dispose(); break; }
                 if (checkMode != 0) Console.Error.WriteLine($"checking {b.Artist} - {b.Title} [{b.Version}] at {dt:0.##}ms");
-                for (int step = 0; step < 50_000_000 && !p.Result.Done; step++) p.Update(dt);
+                try { for (int step = 0; step < 50_000_000 && !p.Result.Done; step++) p.Update(dt); }
+                catch (Exception e) when (dir is { Length: > 0 })
+                {
+                    Console.WriteLine($"{b.Artist} - {b.Title} [{b.Version}] CRASHED playing: {e.GetType().Name}: {e.Message}\n{e.StackTrace}");
+                    bad++;
+                    break;
+                }
                 var x = p.Result;
                 double acc = p.Acc;
                 p.Dispose();

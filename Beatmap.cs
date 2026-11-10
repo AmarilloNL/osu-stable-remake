@@ -45,7 +45,7 @@ sealed class HitObject
 
     public Vector2 PointAt(double distance)
     {
-        if (Path.Length == 1) return Path[0];
+        if (Path.Length <= 1) return Path.Length == 1 ? Path[0] : Pos; // (no path: a malformed slider)
         distance = Math.Clamp(distance, 0, Cumulative[^1]);
         int i = Array.BinarySearch(Cumulative, (float)distance);
         if (i >= 0) return Path[i];
@@ -734,7 +734,9 @@ static class SliderPath
         while (mid < t0) mid += Tau;
         while (t1 < t0) t1 += Tau;
         if (mid > t1) t1 -= Tau;
-        int pieces = (int)(Math.Abs((t1 - t0) * r) * 0.125);
+        double span = Math.Abs((t1 - t0) * r) * 0.125;
+        if (!(span < 100_000)) return null; // (a malformed point far off the playfield: a line, not millions of pieces)
+        int pieces = (int)span;
         var outPts = new List<Vector2> { a };
         for (int j = 1; j < pieces; j++)
         {
