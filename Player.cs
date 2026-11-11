@@ -1104,8 +1104,8 @@ sealed partial class Player : Screen
             firstActive++;
         if (endNow || ModeDone && (musicEnded || music == null || time > objs[^1].EndTime + 3000 && time >= SbEnd - 500))
         {
-            // stable's taiko: a play ending with the bar under half is failed
-            if (mode == 1 && health.Value <= Health.Max / 2 && !mods.HasFlag(Mods.NoFail) && !auto) { Fail(); return; } // (also when the play is ended early after completion: a replay ends the same way)
+            // stable's taiko: a play ending with the bar not over half is failed (not with NoFail or Relax)
+            if (mode == 1 && health.Value <= Health.Max / 2 && HealthFails && !auto) { Fail(); return; } // (also when the play is ended early after completion: a replay ends the same way)
             finished = true;
             passStates.Add(health.Value >= Health.Max / 2);
             SaveReplay();
