@@ -84,6 +84,7 @@ sealed partial class Player : Screen
     // (when under it), the bar refills at 0.08 a ms, and once it's shown within 5 of that the play goes on
     int easyLives;
     bool recovering;
+    double hpRecoverAt = double.MinValue; // (stable flashes the bar red, fading to white over 400ms)
     readonly List<double> hitErrors = [];
     readonly List<int> spinRpms = []; // the RPM readout while spinners turn (the ranking screen's "Spin" tooltip)
     readonly List<(Vector2 Pos, double Time, int Result, string Sprite, bool Spinner)> popups = [];
@@ -443,7 +444,7 @@ sealed partial class Player : Screen
         {
             easyLives--;
             recovering = true;
-            if (health.Value < 160) { health.Add(160); hpFilling = true; }
+            if (health.Value < 160) { health.Add(160); hpFilling = true; hpRecoverAt = Game.NowMs; }
             sw.Stop();
             if (musicStarted) music?.Pause();
             skin.Sound("readys")?.Play(BeatmapSamples.EffectVolume);
@@ -3160,6 +3161,7 @@ sealed partial class Player : Screen
             bool additive = newStyle, coloured = newStyle && (!hpFilling || HpFillStart > 0); // stable leaves the bar white while it fills
             if (coloured && hpShown < 40) { tint = ColorLerp(Color.Black, Xna.Red, (float)((40 - hpShown) / 40)); additive = false; }
             else if (coloured && hpShown < 100) { tint = ColorLerp(Color.White, Color.Black, (float)((100 - hpShown) / 100)); additive = false; }
+            if (Game.NowMs - hpRecoverAt < 400) tint = ColorLerp(Xna.Red, Color.White, (float)((Game.NowMs - hpRecoverAt) / 400)); // (an Easy life used)
             var at = (newStyle ? new Vector2(12f, 12.5f) * s : new Vector2(5f, 16f) * s) + new Vector2(0, by);
             tint = ColorAlpha(tint, ba);
             var tex = colour.Tex;
