@@ -1280,7 +1280,7 @@ static class Game
                 }
                 var x = p.Result;
                 double acc = p.Acc;
-                string? v2 = extra.HasFlag(Mods.ScoreV2) && !p.V2Full ? p.V2Parts : checkMode != 0 && x.MaxCombo != p.MapMaxCombo ? $"combo {x.MaxCombo}/{p.MapMaxCombo}" : checkMode == 1 && p.TaikoTicksMissed > 0 ? $"{p.TaikoTicksMissed} drumroll ticks missed" : null;
+                string? v2 = extra.HasFlag(Mods.ScoreV2) && !p.V2Full ? p.V2Parts : checkMode != 0 && x.MaxCombo != p.MapMaxCombo ? $"combo {x.MaxCombo}/{p.MapMaxCombo}" : checkMode == 1 && extra.HasFlag(Mods.ScoreV2) && p.TaikoTicksMissed > 0 ? $"{p.TaikoTicksMissed} drumroll ticks missed" : null; // (not V1: a hit just before a drumroll starts its rhythm, which can cost its first tick, as in stable)
                 if (v2 == null && extra.HasFlag(Mods.ScoreV2) && dt == frames[0]) Console.Error.WriteLine($"V2 {b.Title} [{b.Version}]: {p.V2Parts}");
                 p.Dispose();
                 runs++;

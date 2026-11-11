@@ -291,9 +291,10 @@ sealed partial class Player
         if (!Resting(at) && !paused) keyCounts[key is 1 or 2 ? key - 1 : key == 0 ? 2 : 3]++;
     }
 
-    // stable takes a frame's keys together: the first note within reach takes them all. A circle hit with both colours
-    // down is a miss; a big one hit with both keys of its colour is both hands at once, else the other one within 30ms
-    // (both then held) adds the second hand. A drumroll gets one try a frame, a swell one hit (centre before rim).
+    // stable takes a frame's keys together. They go to the first note within reach: a circle hit with both colours down
+    // is a miss; a big one hit with both keys of its colour is both hands at once, else the other one within 30ms (both
+    // then held) adds the second hand; a drumroll or swell within reach first takes nothing there. Then the drumroll or
+    // swell under way takes them as well: a drumroll one try a frame, a swell one hit (centre before rim).
     void TaikoFrame(int pressed, int held, double at)
     {
         bool lr = (pressed & 1) != 0, lc = (pressed & 2) != 0, rc = (pressed & 4) != 0, rr = (pressed & 8) != 0;
@@ -301,42 +302,43 @@ sealed partial class Player
         // (stable checks the centre keys, then the rim's over them; Relax takes either colour)
         bool Left(bool kat) => rimDown && (kat || relax) ? lr : centre && (!kat || relax) && lc;
         bool Both(bool kat) => rimDown && (kat || relax) ? lr && rr : centre && (!kat || relax) && lc && rc;
-        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - Math.Max(tMiss, 250) <= at; i++) // (a drumroll from a tick before)
+        bool Active(TNote n) => !n.Done && (n.Kind == TKind.Roll ? at >= n.Time - (int)n.TickSpacing && at <= n.ActiveEnd : n.Kind == TKind.Swell && at >= n.Time && at <= n.End);
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - Math.Max(tMiss, 250) <= at; i++)
         {
             var n = tNotes[i];
             bool kat = n.Kind == TKind.Kat;
-            switch (n.Kind)
+            if (Active(n)) break;
+            if (n.Kind is TKind.Don or TKind.Kat && n.Pending && n.Done)
             {
-                case TKind.Swell when !n.Done && at >= n.Time && at <= n.End:
-                    TaikoSwellHit(n, centre, rimDown, at);
-                    return;
-                case TKind.Roll when !n.Done && at >= n.Time - (int)n.TickSpacing && at <= n.ActiveEnd:
-                    TaikoRollHit(n, at);
-                    return;
-                case TKind.Don or TKind.Kat when n.Pending && n.Done:
-                    if ((relax || (kat ? rimDown : centre)) && (centre ? (held & 6) == 6 : (held & 9) == 9) && at - n.FirstHitAt < 30 && Left(kat) != n.FirstLeft)
-                    {
-                        n.Pending = false;
-                        TaikoBigBonus(n, together: false);
-                        return;
-                    }
-                    continue;
-                case TKind.Don or TKind.Kat when !n.Done:
+                if ((relax || (kat ? rimDown : centre)) && (centre ? (held & 6) == 6 : (held & 9) == 9) && at - n.FirstHitAt < 30 && Left(kat) != n.FirstLeft)
                 {
-                    double err = at - n.Time;
-                    if (Math.Abs(err) > tMiss) continue;
-                    bool wrong = !relax && (kat ? centre : rimDown);
-                    int result = wrong ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
-                    TaikoJudge(n, result, at);
-                    if (result > 0) hitErrors.Add(err / rate); // (real milliseconds, like osu!'s)
-                    if (result > 0 && n.Big)
-                    {
-                        if (Both(kat)) TaikoBigBonus(n, together: true);
-                        else { n.Pending = true; n.FirstHitAt = at; n.FirstLeft = Left(kat); }
-                    }
-                    return;
+                    n.Pending = false;
+                    TaikoBigBonus(n, together: false);
+                    break;
                 }
             }
+            else if (n.Kind is TKind.Don or TKind.Kat && !n.Done && Math.Abs(at - n.Time) <= tMiss)
+            {
+                double err = at - n.Time;
+                bool wrong = !relax && (kat ? centre : rimDown);
+                int result = wrong ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
+                TaikoJudge(n, result, at);
+                if (result > 0) hitErrors.Add(err / rate); // (real milliseconds, like osu!'s)
+                if (result > 0 && n.Big)
+                {
+                    if (Both(kat)) TaikoBigBonus(n, together: true);
+                    else { n.Pending = true; n.FirstHitAt = at; n.FirstLeft = Left(kat); }
+                }
+                break;
+            }
+        }
+        for (int i = tNext; i < tNotes.Count && tNotes[i].Time - 1000 <= at; i++) // (a drumroll from a tick before its start)
+        {
+            var n = tNotes[i];
+            if (!Active(n)) continue;
+            if (n.Kind == TKind.Roll) TaikoRollHit(n, at);
+            else TaikoSwellHit(n, centre, rimDown, at);
+            return;
         }
     }
 
