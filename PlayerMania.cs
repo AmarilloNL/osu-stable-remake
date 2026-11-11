@@ -509,7 +509,7 @@ sealed partial class Player
         if (ModeV2)
         {
             V2Hit(result >= 300 ? 300 : result);
-            if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
+            if (health.Value <= 0 && HealthFails) Fail();
             return;
         }
 
@@ -535,7 +535,7 @@ sealed partial class Player
         mScore += add;
         // the last note: stable rounds the exact sum, and makes 999,999 a million
         if (mJudged == mNotes.Count) { score = (long)Math.Round(mScore); if (score == 999999) score = 1000000; }
-        if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
+        if (health.Value <= 0 && HealthFails) Fail();
     }
 
     // the stage as the skin's [Mania] section for this key count sets it (stable's defaults otherwise): column widths

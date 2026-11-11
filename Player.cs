@@ -101,6 +101,8 @@ sealed partial class Player : Screen
 
     readonly Mods mods;
     readonly bool auto, relax, autopilot;
+    // stable: running out of health fails a play unless NoFail, Relax or Autopilot (older own replays: Relax and Autopilot too)
+    bool HealthFails => !mods.HasFlag(Mods.NoFail) && (OldModeRules || !relax && !autopilot);
     // stable's Cinema (Auto's second state): an Auto play showing only the background, video and storyboard - no
     // objects, interface, cursor or bursts (the hitsounds still play) - that goes back to song select at the end
     readonly bool cinema;
@@ -742,7 +744,7 @@ sealed partial class Player : Screen
         lastTime = upTo;
         if (delta <= 0 || upTo < objs[0].Time - map.Preempt || upTo > objs[^1].EndTime || InBreak(upTo)) return;
         health.Add(-health.DropRate * delta * (InSpinner(upTo) ? 0.25 : 1)); // stable: a quarter of the drain during spinners
-        if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
+        if (health.Value <= 0 && HealthFails) Fail();
     }
 
     void UpdateClock(double dtMs)
