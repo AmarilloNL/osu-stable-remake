@@ -325,7 +325,8 @@ sealed partial class Player
     void ManiaTimeouts(double now)
     {
         if (OldModeRules) { ManiaTimeoutPass(now); return; }
-        for (double t = double.IsNaN(mPassAt) ? Math.Floor(now) : mPassAt + 1; t <= now; t++)
+        if (double.IsNaN(mPassAt) || now - mPassAt > 600000) mPassAt = Math.Floor(now) - 1; // (a damaged replay's time jumping minutes)
+        for (double t = mPassAt + 1; t <= now; t++)
         {
             ManiaTimeoutPass(t);
             mPassAt = t;

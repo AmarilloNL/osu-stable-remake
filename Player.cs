@@ -446,7 +446,7 @@ sealed partial class Player : Screen
             recovering = true;
             if (health.Value < 160) { health.Add(160); hpFilling = true; hpRecoverAt = Game.NowMs; }
             sw.Stop();
-            if (musicStarted) music?.Pause();
+            if (musicStarted && !musicEnded) music?.Pause();
             skin.Sound("readys")?.Play(BeatmapSamples.EffectVolume);
             Console.Error.WriteLine($"a life used at {time:0}ms ({easyLives} left); hp {health.Value:0.0}");
             return;
@@ -675,7 +675,7 @@ sealed partial class Player : Screen
 
     void UpdateLoopSounds()
     {
-        bool live = !paused && !failed && !finished;
+        bool live = !paused && !failed && !finished && !recovering;
         HitObject? slider = null;
         (HitObject O, ObjState S)? spinner = null;
         for (int i = firstActive; live && i < objs.Count && objs[i].Time <= time; i++)
@@ -738,6 +738,7 @@ sealed partial class Player : Screen
     {
         if (mode is 1 or 3) return; // taiko and mania: no drain (taiko's hits fill the bar from empty)
         double delta = double.IsNaN(lastTime) ? 0 : upTo - lastTime;
+        if (delta < 0) return; // (a replay frame earlier than the last: drained already)
         lastTime = upTo;
         if (delta <= 0 || upTo < objs[0].Time - map.Preempt || upTo > objs[^1].EndTime || InBreak(upTo)) return;
         health.Add(-health.DropRate * delta * (InSpinner(upTo) ? 0.25 : 1)); // stable: a quarter of the drain during spinners
@@ -783,13 +784,12 @@ sealed partial class Player : Screen
         && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime;
     internal void ApplyMusicVolume() { if (music != null) music.Volume = Config.MusicVolume; }
     // the Boss key pauses any play in progress (stable's does too)
-    internal void BossPause() { if (!paused && !failed && !finished && !recovering && !VirtualClock) SetPaused(true); }
+    internal void BossPause() { if (!paused && !failed && !finished && !VirtualClock) SetPaused(true); }
 
     // stable: a live play can't pause again within a second (of song time) of its last pause
     double lastPauseAt = double.NaN;
     void TryPause(bool quiet = false)
     {
-        if (recovering) return;
         if (playback == null && !auto && time - lastPauseAt < 1000)
         {
             if (!quiet) Toast.Show("Wait at least one second before pausing again.");
@@ -811,7 +811,11 @@ sealed partial class Player : Screen
             pauseCursor = cursor;
             resumePending = false;
         }
-        else { sw.Start(); if (musicStarted) music?.Play(); SoundPool.Stop(pauseLoop); pauseLoop = 0; }
+        else
+        {
+            if (!recovering) { sw.Start(); if (musicStarted) music?.Play(); } // (an Easy life's refill keeps the song stopped)
+            SoundPool.Stop(pauseLoop); pauseLoop = 0;
+        }
     }
 
     // ---- stable's resume: live play outside breaks only continues once you click the orange ring left where your
@@ -972,7 +976,7 @@ sealed partial class Player : Screen
             hpFilling = false;
             skin.Sound("gos")?.Play(BeatmapSamples.EffectVolume);
             sw.Start();
-            if (musicStarted) music?.Play();
+            if (musicStarted && !musicEnded) music?.Play(); // (a song already over would start again)
         }
         if (VirtualClock) virtualElapsed += dtMs;
         UpdateClock(dtMs);

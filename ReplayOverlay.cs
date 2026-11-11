@@ -57,7 +57,7 @@ sealed partial class Player
     {
         clockOrigin = Raw;
         if (VirtualClock) virtualElapsed = 0;
-        else { sw.Restart(); if (paused) sw.Stop(); }
+        else { sw.Restart(); if (paused || recovering) sw.Stop(); }
         speed = s;
         music?.SetTempo(rate * speed, mods.HasFlag(Mods.Nightcore));
         if (musicStarted && !musicEnded) music?.Seek(Raw); // flush audio buffered at the old tempo
