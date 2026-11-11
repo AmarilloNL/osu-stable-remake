@@ -351,7 +351,9 @@ sealed partial class Player
             {
                 case CKind.Fruit: nMiss++; cComboMisses++; health.Apply(HpEvent.Miss); BreakCombo(); cFailUntil = time + 1000; break;
                 case CKind.Droplet: nMiss++; health.Apply(HpEvent.SliderBreak); BreakCombo(); cFailUntil = time + 1000; break;
-                case CKind.Tiny: nKatu++; if (mods.HasFlag(Mods.Perfect)) Fail(); break; // (Perfect: not even a tiny droplet)
+                // (Perfect: not even a tiny droplet; stable counts it a miss then)
+                case CKind.Tiny when mods.HasFlag(Mods.Perfect) && !OldModeRules: nMiss++; health.Apply(HpEvent.Miss); BreakCombo(); break;
+                case CKind.Tiny: nKatu++; if (mods.HasFlag(Mods.Perfect)) Fail(); break;
             }
             if (f.LastInCombo) { cComboMisses = 0; ClearPlate(thrown: false, shower: f.Kind == CKind.Banana); }
             if (f.Kind is CKind.Fruit or CKind.Droplet) cHyperDir = 0;

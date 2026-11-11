@@ -322,6 +322,7 @@ sealed partial class Player
                 double err = at - n.Time;
                 bool wrong = !relax && (kat ? centre : rimDown);
                 int result = wrong ? 0 : Math.Abs(err) < tGreat ? 300 : Math.Abs(err) < tGood ? 100 : 0;
+                if (result == 100 && mods.HasFlag(Mods.Perfect)) result = 0;
                 TaikoJudge(n, result, at);
                 if (result > 0) hitErrors.Add(err / rate); // (real milliseconds, like osu!'s)
                 if (result > 0 && n.Big)
@@ -456,6 +457,7 @@ sealed partial class Player
 
     void TaikoJudge(TNote n, int result, double at)
     {
+        if (!OldModeRules && result == 100 && mods.HasFlag(Mods.Perfect)) result = 0; // stable: Perfect makes a 100 a miss
         n.Done = true;
         n.Result = result;
         n.JudgedAt = at;

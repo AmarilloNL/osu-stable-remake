@@ -1409,6 +1409,7 @@ sealed partial class Player : Screen
     // Every object's final judgement goes through here: counts, score, combo, HP, SD/PF and combo-end bonus.
     void Final(int i, int result, Vector2 popupPos)
     {
+        if (!OldModeRules && result is 100 or 50 && mods.HasFlag(Mods.Perfect)) result = 0; // stable: Perfect makes a 100 or 50 a miss
         var o = objs[i];
         var s = st[i];
         s.TrackedAtEnd = s.Tracking;

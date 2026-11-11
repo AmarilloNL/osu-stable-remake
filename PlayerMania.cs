@@ -474,6 +474,8 @@ sealed partial class Player
 
     void ManiaJudge(MNote n, int result, bool head = false)
     {
+        // stable: Perfect turns a note's (or tail's) judgement under a 300 into a miss
+        if (!head && !OldModeRules && result is > 0 and < 300 && mods.HasFlag(Mods.Perfect)) result = 0;
         if (head) n.HeadDone = true;
         else
         {
