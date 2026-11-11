@@ -80,6 +80,10 @@ sealed partial class Player : Screen
     internal readonly List<Vector2> perfGraph = []; // stable's ranking graph (see Final)
     readonly double diffMul;
     readonly int maniaKeyChange;
+    // stable's Easy: two lives (not with Sudden Death). Running out of health uses one: the song stops, health gets 160
+    // (when under it), the bar refills at 0.08 a ms, and once it's shown within 5 of that the play goes on
+    int easyLives;
+    bool recovering;
     readonly List<double> hitErrors = [];
     readonly List<int> spinRpms = []; // the RPM readout while spinners turn (the ranking screen's "Spin" tooltip)
     readonly List<(Vector2 Pos, double Time, int Result, string Sprite, bool Spinner)> popups = [];
@@ -187,6 +191,7 @@ sealed partial class Player : Screen
         int ownKeys = mode == 3 && map.Mode != 3 ? ManiaConvertKeys(map) : 0;
         maniaKeyChange = ownKeys > 0 ? (mods.Keys() > 0 ? mods.Keys() : ownKeys) * (mods.HasFlag(Mods.KeyCoop) ? 2 : 1) - ownKeys : 0;
         modMul = mods.ScoreMultiplier(mode, maniaKeyChange);
+        easyLives = mods.HasFlag(Mods.Easy) && !mods.HasFlag(Mods.SuddenDeath) ? 2 : 0;
         st = objs.Select(_ => new ObjState()).ToArray();
         samples = new BeatmapSamples(map.Folder);
         skin.PreloadGameplay();
@@ -433,7 +438,18 @@ sealed partial class Player : Screen
 
     void Fail()
     {
-        if (failed || auto || finished) return;
+        if (failed || auto || finished || recovering) return;
+        if (easyLives > 0 && !OldModeRules) // (older own replays: no lives)
+        {
+            easyLives--;
+            recovering = true;
+            if (health.Value < 160) { health.Add(160); hpFilling = true; }
+            sw.Stop();
+            if (musicStarted) music?.Pause();
+            skin.Sound("readys")?.Play(BeatmapSamples.EffectVolume);
+            Console.Error.WriteLine($"a life used at {time:0}ms ({easyLives} left); hp {health.Value:0.0}");
+            return;
+        }
         failed = true;
         if (storyboard != null) storyboard.Passing = false;
         menuShownAt = double.PositiveInfinity; // shown once the song has wound down
@@ -766,12 +782,13 @@ sealed partial class Player : Screen
         && time >= objs[0].Time - map.Preempt && time <= objs[^1].EndTime;
     internal void ApplyMusicVolume() { if (music != null) music.Volume = Config.MusicVolume; }
     // the Boss key pauses any play in progress (stable's does too)
-    internal void BossPause() { if (!paused && !failed && !finished && !VirtualClock) SetPaused(true); }
+    internal void BossPause() { if (!paused && !failed && !finished && !recovering && !VirtualClock) SetPaused(true); }
 
     // stable: a live play can't pause again within a second (of song time) of its last pause
     double lastPauseAt = double.NaN;
     void TryPause(bool quiet = false)
     {
+        if (recovering) return;
         if (playback == null && !auto && time - lastPauseAt < 1000)
         {
             if (!quiet) Toast.Show("Wait at least one second before pausing again.");
@@ -947,6 +964,15 @@ sealed partial class Player : Screen
             Skip();
         }
 
+        if (recovering)
+        {
+            if (!VirtualClock && hpShown <= health.Value - 5) return; // (the bar refills as it's drawn)
+            recovering = false;
+            hpFilling = false;
+            skin.Sound("gos")?.Play(BeatmapSamples.EffectVolume);
+            sw.Start();
+            if (musicStarted) music?.Play();
+        }
         if (VirtualClock) virtualElapsed += dtMs;
         UpdateClock(dtMs);
         // Replays are judged in 1ms steps of map time whatever the frame rate (like --verify-osr), so watching at
@@ -3085,7 +3111,8 @@ sealed partial class Player : Screen
         hpLast = actual;
         if (hpShown < actual)
         {
-            if (hpFilling)
+            if (hpFilling && recovering) hpShown = Math.Min(200, hpShown + 0.08 * dt);
+            else if (hpFilling)
             {
                 if (time > HpFillStart)
                 {

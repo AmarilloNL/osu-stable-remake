@@ -50,7 +50,7 @@ screenshots) goes next to its own executable; it only writes to your osu! folder
 <details open>
 <summary><b>Gameplay</b></summary>
 
-- osu!standard with all of stable's mods and hotkeys: EZ NF HT HR SD PF DT NC HD FL RX AP SO, Auto, Cinema and Score V2 (stable's V2 scoring and slider-head judging)
+- osu!standard with all of stable's mods and hotkeys: EZ NF HT HR SD PF DT NC HD FL RX AP SO, Auto, Cinema and Score V2 (stable's V2 scoring and slider-head judging); Easy's two extra lives in every mode (the song stops while the health bar refills)
 - Stable's flashlight, countdown, breaks (pass/fail), warning arrows, skip, the fail animation and sound
 - Pause and resume exactly like stable (click the orange cursor to resume), hold-to-retry, Visual Settings bar (dim, storyboard, video, skin, hitsound toggles, per map)
 - Follow points, snaking sliders, judgement animations and particles, old- and new-style spinners
