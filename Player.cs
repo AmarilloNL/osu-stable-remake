@@ -453,6 +453,17 @@ sealed partial class Player : Screen
             Console.Error.WriteLine($"a life used at {time:0}ms ({easyLives} left); hp {health.Value:0.0}");
             return;
         }
+        if (mods.HasFlag(Mods.Perfect) && playback == null)
+        {
+            // stable: Perfect starts the map again at once (the retry click, no fail screen)
+            failed = true;
+            sw.Stop();
+            if (musicStarted && !musicEnded) music?.Pause();
+            skin.Sound("pause-retry-click")?.Play(BeatmapSamples.EffectVolume);
+            Console.Error.WriteLine($"failed at {time:0}ms (Perfect: starting again); score {score} acc {Accuracy:0.00}% 300/100/50/miss {n300}/{n100}/{n50}/{nMiss}");
+            Retry(quick: true);
+            return;
+        }
         failed = true;
         if (storyboard != null) storyboard.Passing = false;
         menuShownAt = double.PositiveInfinity; // shown once the song has wound down
