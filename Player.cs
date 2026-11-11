@@ -717,13 +717,13 @@ sealed partial class Player : Screen
         return false;
     }
 
-    void Drain()
+    void Drain(double upTo)
     {
         if (mode is 1 or 3) return; // taiko and mania: no drain (taiko's hits fill the bar from empty)
-        double delta = double.IsNaN(lastTime) ? 0 : time - lastTime;
-        lastTime = time;
-        if (delta <= 0 || time < objs[0].Time - map.Preempt || time > objs[^1].EndTime || InBreak(time)) return;
-        health.Add(-health.DropRate * delta * (InSpinner(time) ? 0.25 : 1)); // stable: a quarter of the drain during spinners
+        double delta = double.IsNaN(lastTime) ? 0 : upTo - lastTime;
+        lastTime = upTo;
+        if (delta <= 0 || upTo < objs[0].Time - map.Preempt || upTo > objs[^1].EndTime || InBreak(upTo)) return;
+        health.Add(-health.DropRate * delta * (InSpinner(upTo) ? 0.25 : 1)); // stable: a quarter of the drain during spinners
         if (health.Value <= 0 && !mods.HasFlag(Mods.NoFail)) Fail();
     }
 
@@ -995,7 +995,8 @@ sealed partial class Player : Screen
             }
             wasInBreak = inBreak;
         }
-        Drain();
+        // (a catch replay drains up to each of its frames before what it judges there, like the play it was made from)
+        if (!(mode == 2 && playback != null && !OldModeRules)) Drain(time);
         UpdateBreakSection();
         UpdateCountdown();
         if (mode != 0) { StepMode(dtMs); return; }
@@ -3035,7 +3036,7 @@ sealed partial class Player : Screen
     }
 
     internal double Acc => Accuracy; // (--auto-check in the other modes)
-    double Accuracy => AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu, ScoreV2);
+    double Accuracy => AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu, ScoreV2 && !OldModeRules); // (an older own replay keeps the accuracy it was saved with)
 
     // stable's accuracy per mode (percent)
     internal static double AccuracyFor(int mode, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu, bool v2 = false)
@@ -3162,12 +3163,12 @@ sealed partial class Player : Screen
     }
 
     // stable's grade rules.
-    string Grade() => GradeFor(mode, mods, n300, n100, n50, nMiss, nGeki, nKatu);
+    string Grade() => GradeFor(mode, mods, n300, n100, n50, nMiss, nGeki, nKatu, OldModeRules);
 
-    internal static string GradeFor(int mode, Mods mods, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu)
+    internal static string GradeFor(int mode, Mods mods, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu, bool oldRules = false)
     {
         int total = n300 + n100 + n50 + nMiss;
-        double Accuracy = AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu, mods.HasFlag(Mods.ScoreV2));
+        double Accuracy = AccuracyFor(mode, n300, n100, n50, nMiss, nGeki, nKatu, mods.HasFlag(Mods.ScoreV2) && !oldRules);
         if (mode == 3) // mania: by accuracy
         {
             double acc = Accuracy / 100;

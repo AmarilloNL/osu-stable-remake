@@ -318,7 +318,21 @@ sealed partial class Player
         ManiaTimeouts(time);
     }
 
+    // the timeouts run a whole ms at a time, each in turn up to now (older own replays: once at now), so a live play and
+    // its replay, stepped at different moments, judge misses and hold ticks across the columns in the same order
+    double mPassAt = double.NaN;
+
     void ManiaTimeouts(double now)
+    {
+        if (OldModeRules) { ManiaTimeoutPass(now); return; }
+        for (double t = double.IsNaN(mPassAt) ? Math.Floor(now) : mPassAt + 1; t <= now; t++)
+        {
+            ManiaTimeoutPass(t);
+            mPassAt = t;
+        }
+    }
+
+    void ManiaTimeoutPass(double now)
     {
         for (int c = 0; c < mKeys; c++)
         {

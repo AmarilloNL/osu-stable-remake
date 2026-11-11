@@ -249,8 +249,10 @@ sealed partial class Player
                 if (x != cX) cDir = x > cX ? 1 : -1;
                 cX = x;
                 double at = playback[pbIndex++].Time;
+                if (!OldModeRules) Drain(at);
                 if (watching is not { FromStable: false, FormatVersion: < 6 }) CatchFruitsTo(at); // (older own replays: judged by time below)
             }
+            if (!OldModeRules) Drain(time);
             if (pbIndex < playback.Length && watching is not { FromStable: false, FormatVersion: < 6 }) return; // (the rest waits for the frame that judged it)
         }
         CatchFruitsTo(time);

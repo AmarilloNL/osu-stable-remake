@@ -2072,7 +2072,7 @@ sealed partial class SongSelect : Screen
         return null;
     }
 
-    static string GradeOf(ReplayInfo r) => Player.GradeFor(r.Mode, r.Mods, r.N300, r.N100, r.N50, r.NMiss, r.NGeki, r.NKatu);
+    static string GradeOf(ReplayInfo r) => Player.GradeFor(r.Mode, r.Mods, r.N300, r.N100, r.N50, r.NMiss, r.NGeki, r.NKatu, r is { FromStable: false, FormatVersion: < 7 });
 
     // the scores are kept per map and mode (osu! ones under the plain MD5)
     internal static string ScoreKey(string md5, int mode) => mode == 0 ? md5 : $"{md5}:{mode}";
