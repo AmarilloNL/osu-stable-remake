@@ -54,7 +54,8 @@ sealed partial class Player
         uint NextUInt() { uint t = x ^ (x << 11); x = y; y = z; z = w; return w = w ^ (w >> 19) ^ t ^ (t >> 8); }
         public int Next() => (int)(0x7FFFFFFF & NextUInt());
         public double NextDouble() => 1.0 / (int.MaxValue + 1.0) * Next();
-        public int Next(int lo, int hi) => (int)(lo + NextDouble() * (hi - lo));
+        public int Next(int lo, int hi) => lo + (int)(NextDouble() * (hi - lo)); // (stable rounds the span down, then adds: -20..19)
+        public int NextTowardsZero(int lo, int hi) => (int)(lo + NextDouble() * (hi - lo)); // (older replays' fruits)
         public int Next(double lo, double hi) => (int)(lo + NextDouble() * (hi - lo));
         uint bits; int bitIndex = 32;
         public bool NextBool()
@@ -72,13 +73,14 @@ sealed partial class Player
         cDash = Config.Key("keyFruitsDash", KeyboardKey.LeftShift);
         float cs = (float)map.CS;
         cWidth = 106.75f * (1 - 0.7f * (cs - 5) / 5);
-        cFruits.AddRange(CatchConvert(map, cWidth, mods.HasFlag(Mods.HardRock)));
+        cFruits.AddRange(CatchConvert(map, cWidth, mods.HasFlag(Mods.HardRock), OldCatch));
         // stable's catch HP calibration runs over these objects (in time order)
         health.CalibrateCatch(map, cFruits.Select((f, i) => (f.Time, (int)f.Kind, f.Kind == CKind.Fruit && (i + 1 == cFruits.Count || cFruits[i + 1].NewCombo))).ToList(), mods.HasFlag(Mods.HalfTime));
     }
 
     // stable's catch conversion: the fruits, droplets, tiny droplets and bananas, with the hyperdashes for a catcher this wide
-    internal static List<CFruit> CatchConvert(Beatmap map, float cWidth, bool hardRock = false)
+    // (old: the fruits as replays before format 9 were made on: a pixel off here and there)
+    internal static List<CFruit> CatchConvert(Beatmap map, float cWidth, bool hardRock = false, bool old = false)
     {
         var fruits = new List<CFruit>();
         var rng = new LegacyRandom(1337);
@@ -96,7 +98,7 @@ sealed partial class Player
             if (diff == 0)
             {
                 bool right = rng.NextBool();
-                float rand = Math.Min(20, (float)rng.Next(0, Math.Max(0, gap / 4d)));
+                float rand = Math.Min(20, old ? (float)rng.Next(0, Math.Max(0, gap / 4d)) : rng.Next(0, Math.Max(0, gap / 4))); // (stable: a whole quarter of the gap)
                 return right ? x + rand <= 512 ? x + rand : x - rand : x - rand >= 0 ? x - rand : x + rand;
             }
             if (Math.Abs(diff) < gap / 3)
@@ -149,14 +151,25 @@ sealed partial class Player
                     {
                         var (t0, p0, _) = events[e - 1];
                         double since = (int)events[e].T - (int)t0;
-                        if (since > 80)
+                        if (since > 80 && old)
                         {
                             double step = since;
                             while (step > 100) step /= 2;
                             for (double t = step; t < since; t += step)
                             {
                                 float tx = XAt(p0 + t / since * (events[e].P - p0));
-                                fruits.Add(new CFruit { Kind = CKind.Tiny, Time = t0 + t, X = Math.Clamp(tx + Math.Clamp(rng.Next(-20, 20), -tx, 512 - tx), 0, 512), Colour = o.ColourIndex });
+                                fruits.Add(new CFruit { Kind = CKind.Tiny, Time = t0 + t, X = Math.Clamp(tx + Math.Clamp(rng.NextTowardsZero(-20, 20), -tx, 512 - tx), 0, 512), Colour = o.ColourIndex });
+                            }
+                        }
+                        else if (since > 80 && (int)events[e].T - (int)o.Time <= 60000) // (stable: none past a minute into a slider)
+                        {
+                            // stable counts in single precision from the last whole ms and puts each on a whole ms
+                            float step = (float)since;
+                            while (step > 100f) step /= 2f;
+                            for (float t = (float)(int)t0 + step; t < (float)(int)events[e].T; t += step)
+                            {
+                                float tx = XAt(p0 + ((int)t - t0) / (events[e].T - t0) * (events[e].P - p0));
+                                fruits.Add(new CFruit { Kind = CKind.Tiny, Time = (int)t, X = Math.Clamp(tx + Math.Clamp(rng.Next(-20, 20), -tx, 512 - tx), 0, 512), Colour = o.ColourIndex });
                             }
                         }
                     }
@@ -174,9 +187,13 @@ sealed partial class Player
                 float spacing = (float)(o.EndTime - o.Time);
                 while (spacing > 100) spacing /= 2;
                 if (spacing <= 0) continue;
+                bool firstBanana = true;
                 for (float t = (int)o.Time; t <= (int)o.EndTime; t += spacing)
                 {
-                    fruits.Add(new CFruit { Kind = CKind.Banana, Time = t, X = (float)(rng.NextDouble() * 512), Colour = o.ColourIndex });
+                    if (old) fruits.Add(new CFruit { Kind = CKind.Banana, Time = t, X = (float)(rng.NextDouble() * 512), Colour = o.ColourIndex });
+                    // stable: a whole x on a whole ms; the first one starts a combo in maps up to format 8
+                    else fruits.Add(new CFruit { Kind = CKind.Banana, Time = (int)t, X = rng.Next(0, 512), Colour = o.ColourIndex, NewCombo = firstBanana && map.FormatVersion <= 8 });
+                    firstBanana = false;
                     rng.Next(); rng.Next(); rng.Next();
                 }
             }
@@ -185,6 +202,8 @@ sealed partial class Player
         CFruit? nextFruit = null; // (walking back: the fruit after each)
         for (int i = fruits.Count - 1; i >= 0; i--)
         {
+            // stable: a combo ends on whatever comes right before the next thing that starts one (or last of all)
+            if (!old) { fruits[i].LastInCombo = i == fruits.Count - 1 || fruits[i + 1].NewCombo; continue; }
             if (fruits[i].Kind != CKind.Fruit) continue;
             fruits[i].LastInCombo = nextFruit == null || nextFruit.Colour != fruits[i].Colour;
             nextFruit = fruits[i];
@@ -193,6 +212,8 @@ sealed partial class Player
         // stable's hyperdashes: where even a dash can't make the next fruit or droplet in time (a quarter frame's grace,
         // counting the plate's half width, or what's left of it when carrying on the same way), the catcher is flung there
         var palpable = fruits.Where(f => f.Kind is CKind.Fruit or CKind.Droplet).ToList();
+        // (stable: with only bananas or tiny droplets left after the last of these, the very last one stands in for the next)
+        if (!old && palpable.Count > 0 && fruits[^1] != palpable[^1]) palpable.Add(fruits[^1]);
         float half = cWidth / 2; // (stable: the full catcher, margins included)
         int lastDir = 0;
         double lastExcess = half;
@@ -219,7 +240,8 @@ sealed partial class Player
         if (auto) CatchAutoMove();
         else if (playback == null && dt > 0)
         {
-            bool dash = Down(cDash);
+            // stable: the left button dashes too (the mouse's, unless turned off, and the osu! left click key)
+            bool dash = Down(cDash) || Down(key1) || mouseButtons && Down(MouseButton.Left);
             float speed = (dash ? 1f : 0.5f) * (cHyperDir != 0 ? cHyperSpeed : 1);
             int move = (Down(cRight) ? 1 : 0) - (Down(cLeft) ? 1 : 0);
             cDashing = dash;
@@ -230,7 +252,7 @@ sealed partial class Player
                 if (Math.Abs(mx - cX) > 0.01f) cDir = mx > cX ? 1 : -1;
                 cX = mx;
             }
-            else if (move != 0) { cX += move * speed * (float)dt; cDir = move; }
+            else if (move != 0 && dt / rate <= 33) { cX += move * speed * (float)dt; cDir = move; } // (stable: no step over a frame longer than 33ms)
             // a hyperdash ends on reaching its fruit's spot
             if (cHyperDir != 0 && cHyperTarget != null && (cHyperDir > 0 ? cX >= cHyperTarget.X : cX <= cHyperTarget.X)) { cX = cHyperTarget.X; cHyperDir = 0; }
             cX = MathF.Round(Math.Clamp(cX, 0, 512) * Replays.PosScale) / Replays.PosScale; // (on the replay's grid, so playback is exact)
@@ -287,7 +309,8 @@ sealed partial class Player
         cX = x;
     }
 
-    int cComboMisses; // fruits missed in the current combo
+    int cComboMisses; // fruits (and droplets) missed in the current combo
+    bool OldCatch => watching is { FromStable: false, FormatVersion: < 9 }; // (own replays before format 9 keep the fruits and rules they were made with)
 
     void CatchJudge(CFruit f)
     {
@@ -343,16 +366,18 @@ sealed partial class Player
                 cHyperSpeed = Math.Abs(target.X - cX) / Math.Max(1f, (float)(target.Time - f.Time) - 16.666666f); // (from the fruit's time, not the frame's)
                 cHyperDir = target.X > cX ? 1 : -1;
             }
-            else if (f.Kind is CKind.Fruit or CKind.Droplet) cHyperDir = 0;
+            else if (f.Kind is CKind.Fruit or CKind.Droplet || f.Kind == CKind.Banana && !OldCatch) cHyperDir = 0; // (stable: a banana ends it too)
         }
         else
         {
             switch (f.Kind)
             {
                 case CKind.Fruit: nMiss++; cComboMisses++; health.Apply(HpEvent.Miss); BreakCombo(); cFailUntil = time + 1000; break;
+                // (stable: a missed droplet is a miss like a fruit's: its health, and no geki for the combo)
+                case CKind.Droplet when !OldCatch: nMiss++; cComboMisses++; health.Apply(HpEvent.Miss); BreakCombo(); cFailUntil = time + 1000; break;
                 case CKind.Droplet: nMiss++; health.Apply(HpEvent.SliderBreak); BreakCombo(); cFailUntil = time + 1000; break;
                 // (Perfect: not even a tiny droplet; stable counts it a miss then)
-                case CKind.Tiny when mods.HasFlag(Mods.Perfect) && !OldModeRules: nMiss++; health.Apply(HpEvent.Miss); BreakCombo(); break;
+                case CKind.Tiny when mods.HasFlag(Mods.Perfect) && !OldModeRules: nMiss++; if (!OldCatch) cComboMisses++; health.Apply(HpEvent.Miss); BreakCombo(); break;
                 case CKind.Tiny: nKatu++; if (mods.HasFlag(Mods.Perfect)) Fail(); break;
             }
             if (f.LastInCombo) { cComboMisses = 0; ClearPlate(thrown: false, shower: f.Kind == CKind.Banana); }
