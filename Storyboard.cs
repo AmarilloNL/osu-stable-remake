@@ -254,9 +254,10 @@ sealed class Storyboard
             {
                 FlushLoop();
                 trigger = null;
-                if (p[0] == "T" && p.Length >= 4)
+                // (stable: "T,name" alone has no time window; its times are read only with both given, and an end of 0 is none)
+                if (p[0] == "T" && p.Length >= 2 && p.Length != 3)
                 {
-                    trigger = new Trigger(p[1], D(p[2]), D(p[3]), p.Length > 4 ? (int)D(p[4]) : 0);
+                    trigger = new Trigger(p[1], p.Length > 3 ? D(p[2]) : 0, p.Length > 3 ? D(p[3]) : 0, p.Length > 4 ? (int)D(p[4]) : 0);
                     (current.Triggers ??= []).Add(trigger);
                 }
                 else if (p[0] == "L" && p.Length >= 3) loop = (D(p[1]), (int)D(p[2]), []);
@@ -353,8 +354,12 @@ sealed class Storyboard
     {
         var m = HitSoundName.Match(name);
         if (!m.Success) return false;
-        if (m.Groups[1].Success && SetOf(m.Groups[1].Value) is int s1 && s1 != 0 && s1 != set) return false;
-        if (m.Groups[2].Success && SetOf(m.Groups[2].Value) is int s2 && s2 != 0 && s2 != additionSet) return false;
+        // (stable: one set before an addition is the addition's set: "HitSoundSoftWhistle" is a whistle from the soft set)
+        bool oneSet = m.Groups[1].Success && !m.Groups[2].Success && m.Groups[3].Success;
+        var normal = oneSet ? null : m.Groups[1].Success ? m.Groups[1].Value : null;
+        var addition = oneSet ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : null;
+        if (normal != null && SetOf(normal) is int s1 && s1 != 0 && s1 != set) return false;
+        if (addition != null && SetOf(addition) is int s2 && s2 != 0 && s2 != additionSet) return false;
         if (m.Groups[3].Success && (bits & (m.Groups[3].Value switch { "Whistle" => 2, "Finish" => 4, _ => 8 })) == 0) return false;
         return !m.Groups[4].Success || int.Parse(m.Groups[4].Value) == index;
     });
@@ -367,15 +372,20 @@ sealed class Storyboard
         foreach (var e in triggered)
             foreach (var trig in e.Triggers!)
             {
-                if (time < trig.Start || time > trig.End || !matches(trig.Name)) continue;
-                foreach (var other in e.Triggers!)
-                    if (other.Group == trig.Group)
-                    {
-                        foreach (var o in other.Active)
-                            if (o is Cmd c) foreach (var track in e.Tracks) track?.Remove(c);
-                            else e.Params.Remove(((double, double, char))o);
-                        other.Active.Clear();
-                    }
+                if (!matches(trig.Name)) continue;
+                // stable: a firing first takes out what earlier firings added: Passing / Failing take out every Passing and
+                // Failing trigger's (even outside their window), others their group's, or with no group (0) only their own
+                void Clear(Trigger other)
+                {
+                    foreach (var o in other.Active)
+                        if (o is Cmd c) foreach (var track in e.Tracks) track?.Remove(c);
+                        else e.Params.Remove(((double, double, char))o);
+                    other.Active.Clear();
+                }
+                bool passFail = trig.Name is "Passing" or "Failing";
+                if (passFail) foreach (var other in e.Triggers!) if (other.Name is "Passing" or "Failing") Clear(other);
+                if (trig.End != 0 && (time < trig.Start || time > trig.End)) continue;
+                if (!passFail) foreach (var other in e.Triggers!) if (trig.Group != 0 ? other.Group == trig.Group : other == trig) Clear(other);
                 foreach (var (kind, p) in trig.Lines)
                     foreach (var (k, easing, s, end, values) in Expand(kind, p))
                         AddCmd(e, k, easing, s + time, end + time, values, trig.Active);
