@@ -1125,6 +1125,12 @@ sealed partial class SongSelect : Screen
         }
         {
             var m = Input.GetMousePosition();
+            // stable: right-clicking a local score opens its Score Management
+            if (Input.IsMouseButtonPressed(MouseButton.Right) && m.X < 240 * U && InScoreArea(m) && ScoreRowAt(m.Y) is int sn && sn >= 0 && sn < SelectedScores.Count)
+            {
+                OpenScoreManagement(SelectedScores[sn]);
+                return;
+            }
             if (Input.IsMouseButtonPressed(MouseButton.Right) && m.X >= 200 * U && m.Y > TopH && m.Y < Game.H - BottomH
                 && !CheckCollisionPointRec(m, GroupBox(Game.W)) && !CheckCollisionPointRec(m, SortBox(Game.W)))
             {
@@ -2730,7 +2736,26 @@ sealed partial class SongSelect : Screen
     }
 
     static bool Cleared(ReplayInfo r) =>
-        Config.Get($"ClearedScores_{r.BeatmapMd5}", "") is { Length: > 0 } v && long.TryParse(v, CultureInfo.InvariantCulture, out long t) && r.Date.Ticks <= t;
+        Config.Get($"ClearedScores_{r.BeatmapMd5}", "") is { Length: > 0 } v && long.TryParse(v, CultureInfo.InvariantCulture, out long t) && r.Date.Ticks <= t
+        || Config.Get($"DeletedScores_{r.BeatmapMd5}", "").Split('|').Contains(System.IO.Path.GetFileName(r.Path));
+
+    // stable's Score Management (right-click on a local score): Delete score takes it off the list (stable's scores.db;
+    // here its replay stays and remake.cfg remembers it, like Clear local scores), Export replay is the ranking screen's F2
+    void OpenScoreManagement(ReplayInfo r) => OpenDialog("Score Management",
+        ("Delete score", YellowGreen, (Action)(() =>
+        {
+            string key = $"DeletedScores_{r.BeatmapMd5}", file = System.IO.Path.GetFileName(r.Path), had = Config.Get(key, ""); // (by its replay's file name)
+            Config.SetOwn(key, had.Length > 0 ? had + "|" + file : file);
+            if (scores.TryGetValue(ScoreKey(r.BeatmapMd5, r.Mode), out var list)) list.Remove(r);
+            rankedFor = null;
+        })),
+        ("Export replay", new Color(173, 216, 230, 255), (Action)(() =>
+        {
+            string me = Config.Get("Username", Environment.UserName);
+            bool perfect = r.FromStable || r.FormatVersion >= 10 ? r.Perfect : r.Mode is 1 or 2 && r.NMiss == 0 && r.MaxCombo > 0;
+            Player.Results.ExportOsr(r, r.Player.Length > 0 ? r.Player : me, r.Artist, r.Title, r.Version, null, perfect);
+        })),
+        ("Close", Xna.Gray, null));
 
     // the music's file stays open while it plays or loads: let go of it before its folder goes (it restarts for the
     // next selection)

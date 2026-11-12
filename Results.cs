@@ -192,12 +192,17 @@ sealed partial class Player
         // player and the life bar written in like stable's
         void Export()
         {
-            if (Replay is not { } r) return;
+            if (Replay is { } r) ExportOsr(r, PlayerName, p.map.Artist, p.map.Title, p.map.Version, p.hpGraph, perfect);
+        }
+
+        // (also song select's Score Management > Export replay, stable's same export)
+        internal static void ExportOsr(ReplayInfo r, string playerName, string artist, string title, string version, IReadOnlyList<Vector2>? lifeBar, bool perfect)
+        {
             try
             {
                 var dir = Path.Combine(AppContext.BaseDirectory, "Exports");
                 Directory.CreateDirectory(dir);
-                string name = $"{PlayerName} - {p.map.Artist} - {p.map.Title} [{p.map.Version}] ({r.Date.ToUniversalTime():yyyy-MM-dd}) Osu";
+                string name = $"{playerName} - {artist} - {title} [{version}] ({r.Date.ToUniversalTime():yyyy-MM-dd}) Osu";
                 name = string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
                 string path = Path.Combine(dir, name + ".osr");
                 for (int n = 1; File.Exists(path); n++) path = Path.Combine(dir, $"{name} ({n}).osr");
@@ -205,7 +210,7 @@ sealed partial class Player
                 else
                 {
                     // (the .osr's full combo flag: this play's; a leaderboard score's ranking screen didn't replay it)
-                    Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: p.hpGraph, player: PlayerName, perfect: perfect);
+                    Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: lifeBar, player: playerName, perfect: perfect);
                 }
                 Toast.Show($"Saved replay to {path}.", new Color(138, 43, 226, 255), 6000);
             }
