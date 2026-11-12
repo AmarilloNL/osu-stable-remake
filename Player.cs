@@ -1253,7 +1253,7 @@ sealed partial class Player : Screen
     {
         BeatmapMd5 = Replays.Md5Of(map.File), Artist = map.Artist, Title = map.Title, Version = map.Version,
         Mods = mods, Score = score, MaxCombo = maxCombo, N300 = n300, N100 = n100, N50 = n50, NMiss = nMiss,
-        NGeki = nGeki, NKatu = nKatu, Mode = mode, Seed = seed, Accuracy = Accuracy, Date = DateTime.Now,
+        NGeki = nGeki, NKatu = nKatu, Mode = mode, Seed = seed, Accuracy = Accuracy, Date = DateTime.Now, Perfect = FullCombo,
     };
 
     void SaveReplay()

@@ -52,7 +52,8 @@ sealed partial class Player
                 .Where(x => p.mods.HasFlag(x.Flag) && !(x.Flag == Mods.DoubleTime && p.mods.HasFlag(Mods.Nightcore)) && !(x.Flag == Mods.SuddenDeath && p.mods.HasFlag(Mods.Perfect)))
                 .Select(x => "selection-mod-" + x.Icon)];
             scoreText = p.score.ToString(p.mode == 3 || p.mods.HasFlag(Mods.ScoreV2) ? "0000000" : "00000000"); // (stable: seven digits for mania and Score V2)
-            perfect = p.summary && p.watching is { } sw ? sw.Perfect : p.FullCombo;
+            // (an own replay from before format 10 doesn't say: worked out from its counts, a taiko or catch one by its misses)
+            perfect = p.summary && p.watching is { } sw ? sw.FromStable || sw.FormatVersion >= 10 ? sw.Perfect : sw.Mode is 1 or 2 ? sw.NMiss == 0 && sw.MaxCombo > 0 : p.FullCombo : p.FullCombo;
 
             int lift = newLayout ? 20 : 8, textDy = newLayout ? -16 : -25;
             var list = new List<(string, Vector2, string?, float, float, Vector2, bool, Color, float, int)>();
@@ -204,7 +205,7 @@ sealed partial class Player
                 else
                 {
                     // (the .osr's full combo flag: this play's; a leaderboard score's ranking screen didn't replay it)
-                    Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: p.hpGraph, player: PlayerName, perfect: p.summary ? r.Perfect : p.FullCombo);
+                    Replays.SaveOsr(path, r, Replays.Frames(r), exact: true, lifeBar: p.hpGraph, player: PlayerName, perfect: perfect);
                 }
                 Toast.Show($"Saved replay to {path}.", new Color(138, 43, 226, 255), 6000);
             }

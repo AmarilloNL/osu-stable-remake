@@ -25,7 +25,7 @@ sealed class ReplayInfo
 static class Replays
 {
     const int Magic = 0x50525253; // "SRRP"
-    const int Version = 9; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
+    const int Version = 10; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
     // 6: catch plays record a frame on every step that judged something (judged at that frame's spot on playback)
     // 7: same frames, judged with stable's mania hold ticks, late misses and last press, and Score V2's own judging in
     // taiko, catch and mania (older replays play back with the judging they were made with)
@@ -35,6 +35,7 @@ static class Replays
     // rules for missed droplets and combo ends (older replays keep the fruits and rules they were made with)
     // and taiko on stable's health scale (6% of every change), its big drumroll ticks (doubled) and kiai read 5ms past a note
     // and mania's holds held through judged at the end of the 100 window, a note hit early keeping its column till its time
+    // 10: + the full combo ("perfect") flag in the header, as stable's scores keep it
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
@@ -60,6 +61,7 @@ static class Replays
         w.Write(info.N300); w.Write(info.N100); w.Write(info.N50); w.Write(info.NMiss);
         w.Write(info.Accuracy); w.Write(info.Date.ToBinary());
         w.Write(info.Mode); w.Write(info.NGeki); w.Write(info.NKatu); w.Write(info.Seed);
+        w.Write(info.Perfect);
         w.Write(frames.Count);
         using var z = new BinaryWriter(new DeflateStream(w.BaseStream, CompressionLevel.SmallestSize, leaveOpen: true));
         long prev = 0;
@@ -80,7 +82,7 @@ static class Replays
     static ReplayInfo ReadHeader(BinaryReader r, string path)
     {
         int version;
-        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or 6 or 7 or 8 or Version)) throw new InvalidDataException($"not a replay: {path}");
+        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or 6 or 7 or 8 or 9 or Version)) throw new InvalidDataException($"not a replay: {path}");
         var info = new ReplayInfo
         {
             Path = path, BeatmapMd5 = r.ReadString(), Artist = r.ReadString(), Title = r.ReadString(), Version = r.ReadString(),
@@ -90,6 +92,7 @@ static class Replays
         };
         if (version >= 4) { info.Mode = r.ReadInt32(); info.NGeki = r.ReadInt32(); info.NKatu = r.ReadInt32(); }
         if (version >= 5) info.Seed = r.ReadInt32();
+        if (version >= 10) info.Perfect = r.ReadBoolean();
         info.FormatVersion = version;
         return info;
     }
