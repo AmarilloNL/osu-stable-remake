@@ -30,7 +30,8 @@ sealed partial class Player
         readonly bool perfect;
         readonly Vector2[] graph;
         readonly string tooltip;
-        readonly (string Sprite, Vector2 Pos, string? Text, float From, float To, Vector2 TextPos, bool TopLeft)[] rows;
+        // (Slot: when it comes in, 300ms apart; sprites sharing a counter share its slot)
+        readonly (string Sprite, Vector2 Pos, string? Text, float From, float To, Vector2 TextPos, bool TopLeft, Color Tint, float Rot, int Slot)[] rows;
         readonly int gradeAt;
         readonly Texture2D bg;
         readonly bool ownsBg;
@@ -54,8 +55,12 @@ sealed partial class Player
             perfect = p.summary && p.watching is { } sw ? sw.Perfect : p.FullCombo;
 
             int lift = newLayout ? 20 : 8, textDy = newLayout ? -16 : -25;
-            var list = new List<(string, Vector2, string?, float, float, Vector2, bool)>();
-            void Row(string sprite, float x, float y, int count) => list.Add((sprite, new(x, y), $"{count}x", 1, 0.5f, new(x + 40, y + textDy), false));
+            var list = new List<(string, Vector2, string?, float, float, Vector2, bool, Color, float, int)>();
+            int slot = 0;
+            void Row(string sprite, float x, float y, int count) => list.Add((sprite, new(x, y), $"{count}x", 1, 0.5f, new(x + 40, y + textDy), false, Color.White, 0, slot++));
+            // a counter drawn from several sprites (catch): one carries the number, the last ends the slot
+            void Part(string sprite, float x, float y, float from, float to, Color tint, float rot, int? count = null, bool end = false) =>
+                list.Add((sprite, new(x, y), count is { } c ? $"{c}x" : null, from, to, new(x + 40, y + textDy), false, tint, rot, end ? slot++ : slot));
             if (p.mode == 1) // taiko: greats, goods and misses on the left (stable: without the big notes' bonuses), the bonuses on the right
             {
                 Row("taiko-hit300", 40, 160, p.n300 - p.nGeki);
@@ -75,11 +80,15 @@ sealed partial class Player
             }
             else if (p.mode == 2) // catch: fruits, droplets, tiny droplets, misses (and tiny droplets missed)
             {
-                Row("fruit-orange", 40, 160, p.n300);
-                Row("fruit-drop", 40, 220, p.n100);
-                Row("fruit-drop", 40, 280, p.n50);
-                Row("hit0", 240, 160, p.nMiss);
-                Row("hit0", 240, 280, p.nKatu);
+                // stable's: an orange fruit for the fruits, a yellow-green drop for the droplets, a small tilted light blue one
+                // for the tiny droplets, and a grey tipped-over fruit with a small miss mark for the misses (no tiny-miss count)
+                Part("fruit-orange", 40, 160, 1, 0.5f, new Color(255, 165, 0, 255), 0, p.n300);
+                Part("fruit-orange-overlay", 40, 160, 1, 0.5f, Color.White, 0, end: true);
+                Part("fruit-drop", 40, 220, 1, 0.6f, new Color(154, 205, 50, 255), 0, p.n100, end: true);
+                Part("fruit-drop", 40, 280, 1, 0.4f, new Color(173, 216, 230, 255), 4, p.n50, end: true);
+                Part("fruit-orange", 240, 160, 1, 0.4f, new Color(211, 211, 211, 255), 0.8f, p.nMiss);
+                Part("fruit-orange-overlay", 240, 160, 1, 0.4f, Color.White, 0.8f);
+                Part("hit0", 220, 140, 0.7f, 0.2f, Color.White, 0, end: true);
             }
             else
             {
@@ -90,11 +99,11 @@ sealed partial class Player
                 Row("hit100k", 240, 220, p.nKatu);
                 Row("hit0", 240, 280, p.nMiss);
             }
-            list.Add(("ranking-maxcombo", new(5, 320 - lift), $"{p.maxCombo}x", 1, 1, new(15, 330), true));
-            list.Add(("ranking-accuracy", new(182, 320 - lift), FormattableString.Invariant($"{p.Accuracy:0.00}%"), 1, 1, new(194, 330), true));
-            if (perfect) list.Add(("ranking-perfect", new(newLayout ? 260 : 200, 430), null, 1.1f, 1, default, false));
+            list.Add(("ranking-maxcombo", new(5, 320 - lift), $"{p.maxCombo}x", 1, 1, new(15, 330), true, Color.White, 0, slot++));
+            list.Add(("ranking-accuracy", new(182, 320 - lift), FormattableString.Invariant($"{p.Accuracy:0.00}%"), 1, 1, new(194, 330), true, Color.White, 0, slot++));
+            if (perfect) list.Add(("ranking-perfect", new(newLayout ? 260 : 200, 430), null, 1.1f, 1, default, false, Color.White, 0, slot++));
             rows = list.ToArray();
-            gradeAt = 300 + 300 * rows.Length;
+            gradeAt = 300 + 300 * slot;
 
             // HP graph: a stable replay shows the graph stable saved in it, else ours; thinned to <= 100 points the
             // way stable does it (drop every other one from the end).
@@ -278,13 +287,13 @@ sealed partial class Player
             float textScale = 1.12f * sd;
             for (int i = 0; i < rows.Length; i++)
             {
-                var (name, pos, text, from, to, textPos, topLeft) = rows[i];
-                int at = 300 + 300 * i + (name == "ranking-perfect" ? 300 : 0);
+                var (name, pos, text, from, to, textPos, topLeft, tint, rot, slotOf) = rows[i];
+                int at = 300 + 300 * slotOf + (name == "ranking-perfect" ? 300 : 0);
                 float a = Progress(t, at, 300);
                 if (a > 0 && Tex(name) is { } sp)
                 {
                     float sc = (from + (to - from) * a * a) * sd; // ease in
-                    sp.Draw(Centre(sp, L(pos.X, pos.Y), topLeft ? Vector2.Zero : new(0.5f), sc), sc, ColorAlpha(Color.White, a));
+                    sp.Draw(Centre(sp, L(pos.X, pos.Y), topLeft ? Vector2.Zero : new(0.5f), sc), sc, ColorAlpha(tint, a), rot * 180 / MathF.PI);
                 }
                 float ta = Progress(t, at + 200, 300);
                 if (text != null && ta > 0)
