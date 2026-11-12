@@ -36,7 +36,8 @@ static class StarRating
     static List<Nested> NestedPoints(Beatmap map, HitObject o)
     {
         var list = new List<Nested>();
-        Vector2 head = o.Pos + map.StackOffset(o);
+        // stable makes these before it stacks the objects, so a stacked slider's points stay where the map put them
+        Vector2 head = o.Pos;
         Vector2 At(double progress) => head + (o.PointAt((float)(Clamp01(progress) * o.Length)) - o.Pos);
         int spans = o.Slides, start = (int)o.Time;
         double velocity = o.StableVelocity / 1000.0, length = o.Length;
@@ -65,7 +66,7 @@ static class StarRating
                 list.AddRange(ticks);
                 if (span < spans - 1) list.Add(new(NestedKind.Repeat, (double)start + (double)(span + 1) * spanDuration, At((span + 1) % 2)));
             }
-        list.Add(new(NestedKind.Tail, start + spans * spanDuration, o.EndPos + map.StackOffset(o)));
+        list.Add(new(NestedKind.Tail, start + spans * spanDuration, o.EndPos));
         return list;
     }
 
@@ -156,7 +157,8 @@ static class StarRating
             int spanDuration = duration / o.Slides;
             double endProgress = LazyTravelTime / spanDuration;
             endProgress = endProgress % 2.0 >= 1.0 ? 1.0 - endProgress % 1.0 : endProgress % 1.0;
-            LazyEndPosition = Pos + (o.PointAt((float)(Clamp01(endProgress) * o.Length)) - o.Pos);
+            // (stable's path has moved with the stack by now while its base position hasn't: the offset counts twice)
+            LazyEndPosition = Pos + (o.PointAt((float)(Clamp01(endProgress) * o.Length)) - o.Pos) + map.StackOffset(o);
             Vector2 cursor = Pos;
             double scale = 50f / Radius;
             for (int i = 1; i < list.Count; i++)
