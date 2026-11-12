@@ -34,6 +34,7 @@ sealed class Storyboard
     sealed class Element
     {
         public int Layer; // 0 background, 1 fail, 2 pass, 3 foreground, 4 overlay
+        public bool Animation;
         public Vector2 Origin; // 0..1 of the sprite size
         public string Path = "";
         public float X, Y;
@@ -94,6 +95,7 @@ sealed class Storyboard
         string osb = System.IO.Path.Combine(map.Folder, OsbName(map.Artist, map.Title, map.Creator, map.File));
         if (File.Exists(osb)) ReadEvents(osb, lines, vars, ref widescreen);
         var sb = new Storyboard(map.Folder, widescreen);
+        sb.formatVersion = map.FormatVersion;
         sb.Parse(lines, vars);
         if (sb.IsEmpty) return null;
         foreach (var path in sb.samples.Select(s => s.Path).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -114,6 +116,7 @@ sealed class Storyboard
         if (osbLines != null) ReadEvents(osbLines, lines, vars, ref widescreen);
         widescreen |= widescreenOsu;
         var sb = new Storyboard(map.Folder, widescreen);
+        sb.formatVersion = map.FormatVersion;
         sb.Parse(lines, vars);
         if (reuse != null) { foreach (var (k, v) in reuse.textures) sb.textures[k] = v; reuse.textures.Clear(); }
         sb.LoadTextures();
@@ -233,7 +236,7 @@ sealed class Storyboard
                         current = new Element
                         {
                             Layer = LayerOf(p[1]), Origin = OriginOf(p[2]), Path = Clean(p[3]), X = F(p[4]), Y = F(p[5]),
-                            Frames = Math.Max(1, (int)D(p[6])), FrameDelay = D(p[7]), LoopOnce = p.Length > 8 && p[8] is "LoopOnce" or "1",
+                            Animation = true, Frames = Math.Max(1, (int)D(p[6])), FrameDelay = FrameDelayOf(D(p[7])), LoopOnce = p.Length > 8 && p[8] is "LoopOnce" or "1",
                         };
                         elements.Add(current);
                         break;
@@ -277,6 +280,10 @@ sealed class Storyboard
         elements.Clear();
         elements.AddRange(byLayer);
     }
+
+    int formatVersion = 14;
+    // stable: maps before format 6 had their frame delays in 60Hz frames of 1.186 (rounded at 0.015 a ms)
+    double FrameDelayOf(double d) => formatVersion < 6 ? Math.Round(0.015 * d) * 1.186 * (1000 / 60.0) : d;
 
     static char KindOf(string s) => s == "MX" ? 'x' : s == "MY" ? 'y' : s.Length > 0 ? s[0] : ' ';
 
@@ -377,7 +384,8 @@ sealed class Storyboard
 
     void LoadTextures()
     {
-        static string FileOf(Element e, int i) => e.Frames == 1 ? e.Path : System.IO.Path.ChangeExtension(e.Path, null) + i + System.IO.Path.GetExtension(e.Path);
+        // stable's frame files: the number before every "." of the path ("a.png" -> "a0.png"), one frame too; a sprite's own path
+        static string FileOf(Element e, int i) => e.Frames == 1 && !e.Animation ? e.Path : e.Path.Replace(".", i + ".");
         // an animation claiming over 10,000 frames runs over the ones that are there (up to the first missing one): a
         // count like 2^31 built that many names and hung
         foreach (var e in elements.Where(e => e.Frames > 10_000))

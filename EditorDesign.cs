@@ -457,7 +457,7 @@ sealed partial class Editor
     {
         var cmds = sp.Cmds.Where(c => c.Type.Length > 0 || c.Span).ToList();
         if (cmds.Count == 0 || time < cmds.Min(c => c.Start) || time > cmds.Max(c => c.End)) return null;
-        if (sbView?.TextureOf(sp.Head[0] == "Animation" ? Path.ChangeExtension(sp.File, null) + "0" + Path.GetExtension(sp.File) : sp.File) is not { } tex) return null;
+        if (sbView?.TextureOf(sp.Head[0] == "Animation" ? sp.File.Replace(".", "0.") : sp.File) is not { } tex) return null;
         var pos = SbValue(sp, "M", time);
         double x = sp.Cmds.Any(c => c.Type == "MX") ? SbValue(sp, "MX", time)[0] : pos[0], y = sp.Cmds.Any(c => c.Type == "MY") ? SbValue(sp, "MY", time)[0] : pos[1];
         double s = SbValue(sp, "S", time)[0], r = SbValue(sp, "R", time)[0];
