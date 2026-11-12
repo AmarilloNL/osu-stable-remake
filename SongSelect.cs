@@ -102,8 +102,8 @@ sealed partial class SongSelect : Screen
         string key = ScoreKey(info.BeatmapMd5, info.Mode);
         if (!scores.TryGetValue(key, out var list)) scores[key] = list = [];
         list.Add(info);
-        // score, then name (stable's scoreboard order); equal ones keep their order
-        var sorted = list.OrderByDescending(s => s.Score).ThenBy(s => s.Player, StringComparer.CurrentCulture).ToList();
+        // score, then the older one first (stable's order); equal ones keep their order
+        var sorted = list.OrderByDescending(s => s.Score).ThenBy(s => s.Date).ToList();
         list.Clear();
         list.AddRange(sorted);
     }
@@ -2066,11 +2066,14 @@ sealed partial class SongSelect : Screen
 
     string? BestGrade(DbBeatmap b)
     {
-        if (!scores.TryGetValue(ScoreKey(b), out var list)) return null;
+        if (!scores.TryGetValue(ScoreKey(b), out var list)) return ClearedGrade(ScoreKey(b));
         string me = Config.Get("Username", ""); // like stable: the local player's own scores only (as Personal Best)
         foreach (var r in list) if (!r.FromStable || r.Player.Equals(me, StringComparison.OrdinalIgnoreCase)) return GradeOf(r);
-        return null;
+        return ClearedGrade(ScoreKey(b));
     }
+
+    // stable keeps a map's grade on its panel when its local scores are cleared, until a new score replaces it
+    static string? ClearedGrade(string key) => Config.Get($"ClearedGrade_{key.Replace(':', '_')}", "") is { Length: > 0 } g ? g : null;
 
     static string GradeOf(ReplayInfo r) => Player.GradeFor(r.Mode, r.Mods, r.N300, r.N100, r.N50, r.NMiss, r.NGeki, r.NKatu, r is { FromStable: false, FormatVersion: < 7 });
 
@@ -2470,6 +2473,9 @@ sealed partial class SongSelect : Screen
             && !(c.Flag == Mods.DoubleTime && r.Mods.HasFlag(Mods.Nightcore)) && !(c.Flag == Mods.SuddenDeath && r.Mods.HasFlag(Mods.Perfect)))
             .Select(c => c.Flag == Mods.Autoplay ? "Auto" : c.Name));
         double acc = r.N300 + r.N100 + r.N50 + r.NMiss == 0 ? 100 : r.Accuracy;
+        if (r.Mode == 3) // (stable's mania form)
+            return scoreTipText = string.Format("Achieved on {0}\nMAX:{1} 300:{2} 200:{3} Bad:{4}\nAccuracy:{5:0.00}%\nMods:{6}",
+                date, r.NGeki, r.N300, r.NKatu, r.N100 + r.N50 + r.NMiss, acc, mods.Length > 0 ? mods : "None");
         return scoreTipText = string.Format("Achieved on {0}\n300:{1} 100:{2} 50:{3} Miss:{4}\nAccuracy:{5:0.00}%\nMods:{6}",
             date, r.N300, r.N100, r.N50, r.NMiss, acc, mods.Length > 0 ? mods : "None");
     }
@@ -2678,10 +2684,21 @@ sealed partial class SongSelect : Screen
     // stable's Clear local scores empties the map's list in its scores.db. The remake's list comes from the replays
     // themselves, which stay where they are: it leaves out the map's scores up to the newest one at the time
     // (remake.cfg ClearedScores_<md5>), so later plays show again.
+    // Like stable's, it clears the map's scores in every mode and leaves the grade on its panel.
     void ClearScores(DbBeatmap b)
     {
-        if (scores.Remove(b.Md5, out var list) && list.Count > 0)
-            Config.SetOwn($"ClearedScores_{b.Md5}", list.Max(r => r.Date.Ticks).ToString(CultureInfo.InvariantCulture));
+        long newest = long.MinValue;
+        for (int m = 0; m <= 3; m++)
+        {
+            string key = ScoreKey(b.Md5, m);
+            if (!scores.TryGetValue(key, out var list) || list.Count == 0) continue;
+            string me = Config.Get("Username", "");
+            if (list.FirstOrDefault(r => !r.FromStable || r.Player.Equals(me, StringComparison.OrdinalIgnoreCase)) is { } best)
+                Config.SetOwn($"ClearedGrade_{key.Replace(':', '_')}", GradeOf(best));
+            newest = Math.Max(newest, list.Max(r => r.Date.Ticks));
+            scores.Remove(key);
+        }
+        if (newest != long.MinValue) Config.SetOwn($"ClearedScores_{b.Md5}", newest.ToString(CultureInfo.InvariantCulture));
         rankedFor = null;
         Toast.Show($"Cleared all local scores for {b.Artist} - {b.Title}", new Color(50, 205, 50, 255), 3000);
     }

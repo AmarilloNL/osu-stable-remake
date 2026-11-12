@@ -444,6 +444,8 @@ sealed partial class Player
                 if (Resting(time)) (hint, hintFrom) = (scoreboardOn ? "The scoreboard will be shown at all times!" : "The scoreboard will be hidden after this break ends!", Game.NowMs);
             }
         }
+        mapMd5 ??= Replays.Md5Of(map.File);
+        if (back.ScoresFor(SongSelect.ScoreKey(mapMd5, mode)).Count == 0) return; // (stable: no board, nor its hint, without scores to show)
         // stable's "Hit <key> to toggle scoreboard!" (the bound key) when the board appears: bold 12 just above it, fading out over 6s.
         if (double.IsNaN(hintFrom)) (hint, hintFrom) = ($"Hit <{Config.Get("keyToggleScoreboard", "Tab")}> to toggle scoreboard!", Game.NowMs);
         double hintAge = Game.NowMs - hintFrom;
