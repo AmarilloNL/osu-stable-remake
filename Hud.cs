@@ -112,7 +112,7 @@ sealed partial class Player
         hudFade = fade * ifaceAlpha;
         DrawMods(w, u, sd);
         // stable's "UNRANKED" banner (play-unranked) when the mods keep the play off the rankings: scale 1, centred at y 45.1 (measured).
-        if (mods.HasFlag(Mods.Autoplay) || mods.HasFlag(Mods.Relax) || mods.HasFlag(Mods.Autopilot))
+        if (mods.HasFlag(Mods.Autoplay)) // (stable: not for Relax or Autopilot)
             skin.Tex("play-unranked")?.Draw(new Vector2(w / 2f, 45.1f * u), sd, HudWhite);
         hudFade = fade;
         DrawScoreboard(u);

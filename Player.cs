@@ -1028,6 +1028,7 @@ sealed partial class Player : Screen
     }
 
     bool LiveStepped => mode == 0 && playback == null && !auto;
+    bool OldOsu => watching is { FromStable: false, FormatVersion: < 9 }; // (own replays before format 9 keep the Relax and Autopilot rules they were made with)
     // a replay of such a play drains health up to each of its frames before what that frame presses, as the play did
     bool FrameDrain => playback != null && !OldModeRules && (mode == 2 || mode == 0 && !StableReplay && !FrameStepped && watching is not { FormatVersion: < 8 });
 
@@ -1093,7 +1094,8 @@ sealed partial class Player : Screen
         else
         {
             // Relax: the click happens by itself once the object's time is reached and the cursor is on it.
-            if (relax && NextPending() is int i && time >= objs[i].Time && Vector2.Distance(cursor, PosOf(objs[i])) <= map.Radius)
+            // (stable: from 11ms before it; older replays: from its time)
+            if (relax && NextPending() is int i && (OldOsu ? time >= objs[i].Time : objs[i].Time - time < 12) && Vector2.Distance(cursor, PosOf(objs[i])) <= map.Radius)
                 HandlePress();
             held = relax || inputKeys != 0;
         }
@@ -1417,7 +1419,7 @@ sealed partial class Player : Screen
         {
             var c = objs[k];
             if (c.Type == ObjType.Spinner || (c.Type == ObjType.Circle ? st[k].Done : st[k].HeadDone)) continue;
-            if (Vector2.Distance(cursor, PosOf(c)) <= map.Radius) { i = k; break; }
+            if (Vector2.Distance(cursor, PosOf(c)) <= (autopilot && !OldOsu ? 100 : map.Radius)) { i = k; break; } // (stable: Autopilot's presses reach 100 around the cursor)
         }
         if (i < 0) return;
         var o = objs[i];
@@ -1429,7 +1431,7 @@ sealed partial class Player : Screen
             if (!st[k].Done && objs[k].EndTime + 3 < o.Time) { if (VerifyLog) Console.Error.WriteLine($"  notelock: press at {time:0} on #{i} blocked by #{k}"); return; } // notelock
         double err = time - o.Time;
         double abs = Math.Abs(err);
-        if (abs >= 400) return;
+        if (abs >= (autopilot && !OldOsu ? 200 : 400)) return; // (stable: Autopilot ignores a press 200ms off)
         int result = abs < map.Hit300 ? 300 : abs < map.Hit100 ? 100 : abs < map.Hit50 ? 50 : 0;
         if (result > 0)
         {
@@ -1678,6 +1680,8 @@ sealed partial class Player : Screen
         else
         {
             double a = maxAccel / rate; // acceleration is per real ms; one step is 1ms of map time
+            // stable: under Relax a spinner slows down (towards a stop or a turn the other way) at a quarter of that
+            if (relax && !OldOsu && (s.Velocity < 0 && s.Target > s.Velocity || s.Velocity > 0 && s.Target < s.Velocity)) a /= 4;
             s.Velocity += s.Target > s.Velocity ? Math.Min(s.Target - s.Velocity, a) : Math.Max(s.Target - s.Velocity, -a);
         }
         s.Velocity = Math.Clamp(s.Velocity, -0.05, 0.05);
@@ -3241,10 +3245,11 @@ sealed partial class Player : Screen
             return acc >= 1 ? silv ? "XH" : "X" : acc > 0.98 ? silv ? "SH" : "S" : acc > 0.94 ? "A" : acc > 0.9 ? "B" : acc > 0.85 ? "C" : "D";
         }
         if (total == 0) return "D";
-        double r300 = n300 / (double)total, r50 = n50 / (double)total;
+        // (stable works these two out in single precision: exactly 80% or 60% 300s counts as over it, and exactly 1% 50s still makes an S)
+        double r300 = (float)n300 / (float)total, r50 = (float)n50 / (float)total;
         bool silver = (mods & (Mods.Hidden | Mods.Flashlight | Mods.FadeIn)) != 0; // (stable: Fade In too)
         if (n300 == total) return silver ? "XH" : "X";
-        if (r300 > 0.9 && r50 < 0.01 && nMiss == 0) return silver ? "SH" : "S";
+        if (r300 > 0.9 && r50 <= 0.01 && nMiss == 0) return silver ? "SH" : "S";
         if (r300 > 0.8 && nMiss == 0 || r300 > 0.9) return "A";
         if (r300 > 0.7 && nMiss == 0 || r300 > 0.8) return "B";
         return r300 > 0.6 ? "C" : "D";

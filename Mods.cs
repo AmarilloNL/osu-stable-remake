@@ -119,12 +119,12 @@ static class ModInfo
     public static Mods Toggle(Mods m, KeyboardKey key) => key switch
     {
         KeyboardKey.Q => Flip(m, Mods.Easy, Mods.HardRock),
-        KeyboardKey.W => Flip(m, Mods.NoFail, Mods.SuddenDeath | Mods.Perfect),
+        KeyboardKey.W => Flip(m, Mods.NoFail, Mods.SuddenDeath | Mods.Perfect | Mods.Relax | Mods.Autopilot),
         KeyboardKey.E => Flip(m, Mods.HalfTime, Mods.DoubleTime | Mods.Nightcore),
         KeyboardKey.A => Flip(m, Mods.HardRock, Mods.Easy),
         KeyboardKey.S => m.HasFlag(Mods.Perfect) ? m & ~(Mods.SuddenDeath | Mods.Perfect)
                    : m.HasFlag(Mods.SuddenDeath) ? m | Mods.Perfect
-                   : Flip(m, Mods.SuddenDeath, Mods.NoFail),
+                   : Flip(m, Mods.SuddenDeath, Mods.NoFail | Mods.Relax | Mods.Autopilot | Mods.Autoplay | Mods.Cinema),
         KeyboardKey.D => m.HasFlag(Mods.Nightcore) ? m & ~(Mods.DoubleTime | Mods.Nightcore)
                    : m.HasFlag(Mods.DoubleTime) ? m | Mods.Nightcore
                    : Flip(m, Mods.DoubleTime, Mods.HalfTime),
@@ -137,12 +137,12 @@ static class ModInfo
         KeyboardKey.X or KeyboardKey.C when SongSelect.PlayMode != 0 => m, // (taiko and catch have no Autopilot or Spun Out)
         KeyboardKey.F => Flip(m, Mods.Hidden, Mods.None),
         KeyboardKey.G => Flip(m, Mods.Flashlight, Mods.None),
-        KeyboardKey.Z => Flip(m, Mods.Relax, Mods.Autopilot | Mods.Autoplay),
-        KeyboardKey.X => Flip(m, Mods.Autopilot, Mods.Relax | Mods.Autoplay | Mods.SpunOut),
-        KeyboardKey.C => Flip(m, Mods.SpunOut, Mods.Autopilot | Mods.Autoplay),
+        KeyboardKey.Z => Flip(m, Mods.Relax, Mods.Autopilot | Mods.Autoplay | Mods.Cinema | Mods.NoFail | Mods.SuddenDeath | Mods.Perfect),
+        KeyboardKey.X => Flip(m, Mods.Autopilot, Mods.Relax | Mods.Autoplay | Mods.Cinema | Mods.SpunOut | Mods.NoFail | Mods.SuddenDeath | Mods.Perfect),
+        KeyboardKey.C => Flip(m, Mods.SpunOut, Mods.Autopilot | Mods.Autoplay | Mods.Cinema),
         KeyboardKey.V => m.HasFlag(Mods.Cinema) ? m & ~(Mods.Autoplay | Mods.Cinema)
                    : m.HasFlag(Mods.Autoplay) ? m | Mods.Cinema
-                   : Flip(m, Mods.Autoplay, Mods.Relax | Mods.Autopilot),
+                   : Flip(m, Mods.Autoplay, Mods.Relax | Mods.Autopilot | Mods.SpunOut | Mods.SuddenDeath | Mods.Perfect),
         KeyboardKey.B => Flip(m, Mods.ScoreV2, Mods.None),
         _ => m,
     };
