@@ -132,7 +132,7 @@ sealed partial class Player : Screen
     int btnCur, btnPrev, btnPrev2, btnNew;
     int pressButton = 1; // the button (1 left, 2 right) of the press being handled; a slider head takes it (stable)
     Vector2 pbCursor = new(256, 192);
-    Vector2 lastRecorded = new(float.NaN);
+    Vector2 lastRecorded = new(float.NaN), liveCursor;
 
     // stable: a play started from song select waits for song select's music to fade out (0.02 of full volume a 60Hz
     // tick) before its clock starts, showing the Visual Settings strip meanwhile; an opened panel holds the start.
@@ -998,10 +998,13 @@ sealed partial class Player : Screen
         // Only whole milliseconds are judged: a frame shorter than 1ms judges nothing and a longer one judges every
         // ms it covered, so the number of updates (sliders judge one checkpoint per update) never depends on fps.
         // Auto too (stable's is a replay): a stutter would otherwise press late (100s) and drop slider ticks.
-        if ((playback != null || auto) && !double.IsNaN(simTime) && time - simTime < 2000)
+        // A live osu! play as well: every whole millisecond before this frame is judged on the input as it stood, then
+        // this frame's input comes in at its own time. Its replay takes the same steps, so the two can't differ.
+        bool live = LiveStepped;
+        if ((playback != null || auto || live) && !double.IsNaN(simTime) && time - simTime < 2000)
         {
             double target = time;
-            for (double t = Math.Floor(simTime) + 1; t <= Math.Floor(target) && !finished; t++)
+            for (double t = Math.Floor(simTime) + 1; (live ? t < target : t <= Math.Floor(target)) && !finished && !failed; t++)
             {
                 // Test-only: stable's replay watcher runs game logic only when it takes the next replay frame (at
                 // that frame's time), so --fuzz-osr can compare against it exactly. After the last frame it updates normally.
@@ -1013,13 +1016,19 @@ sealed partial class Player : Screen
                 simTime = t;
             }
             time = target;
+            if (live && !finished && !failed) LiveInput();
         }
         else
         {
             if (!finished) Step(dtMs);
             simTime = time;
+            if (live && !finished && !failed) LiveInput();
         }
     }
+
+    bool LiveStepped => mode == 0 && playback == null && !auto;
+    // a replay of such a play drains health up to each of its frames before what that frame presses, as the play did
+    bool FrameDrain => playback != null && !OldModeRules && (mode == 2 || mode == 0 && !StableReplay && !FrameStepped && watching is not { FormatVersion: < 8 });
 
     double simTime = double.NaN;
     bool sameTimePending; // PlaybackInput stopped before a replay frame with the same time as the last one
@@ -1040,12 +1049,12 @@ sealed partial class Player : Screen
             wasInBreak = inBreak;
         }
         // (a catch replay drains up to each of its frames before what it judges there, like the play it was made from)
-        if (!(mode == 2 && playback != null && !OldModeRules)) Drain(time);
+        if (!FrameDrain) Drain(time);
         UpdateBreakSection();
         UpdateCountdown();
         if (mode != 0) { StepMode(dtMs); return; }
         if (playback == null) AdvanceSpinners(time); // live/auto: up to now on the previous frame's input
-        cursor = auto || autopilot ? AutoCursor() : playback != null ? pbCursor : (Input.GetMousePosition() - origin) / scale;
+        cursor = auto || autopilot ? AutoCursor() : playback != null ? pbCursor : liveCursor;
 
         // Input first, then misses, like stable's update: a press in the same update as an object's miss time still
         // finds it unjudged (a press 1ms after the earlier circle's window closes is notelocked, not a hit on the next).
@@ -1082,7 +1091,6 @@ sealed partial class Player : Screen
         }
         else
         {
-            if (playback == null) LiveInput();
             // Relax: the click happens by itself once the object's time is reached and the cursor is on it.
             if (relax && NextPending() is int i && time >= objs[i].Time && Vector2.Distance(cursor, PosOf(objs[i])) <= map.Radius)
                 HandlePress();
@@ -1132,19 +1140,19 @@ sealed partial class Player : Screen
         var (keys, raw) = Bot ? BotInput() : DeviceInput();
         // 1/64 osu!px grid (far below tablet resolution) so replays store exact small integers.
         var mouse = new Vector2(MathF.Round(raw.X * Replays.PosScale), MathF.Round(raw.Y * Replays.PosScale)) / Replays.PosScale;
-        if (!autopilot) cursor = mouse;
-
         // Record only changes: frames then follow the tablet/mouse report rate, not the render rate.
         bool smoke = !Bot && Down(keySmoke);
         bool changed = keys != inputKeys || mouse != lastRecorded || smoke != smokeHeld;
+        if (!changed || recording.Count > 0 && recording[^1].Time >= time) return; // (one frame a moment: the next takes it)
+        AdvanceSpinners(time); // spinners run up to here on the input before
         smokeHeld = smoke;
-        if (changed)
-        {
-            recording.Add(new ReplayFrame(time, mouse.X, mouse.Y, (byte)(keys | (smoke ? SmokeBit : 0))));
-            lastRecorded = mouse;
-        }
+        recording.Add(new ReplayFrame(time, mouse.X, mouse.Y, (byte)(keys | (smoke ? SmokeBit : 0))));
+        lastRecorded = liveCursor = mouse;
+        cursor = autopilot ? AutoCursor() : mouse;
         int newly = keys & ~inputKeys;
         inputKeys = keys;
+        Drain(time);
+        if (failed) return;
         if (!relax)
             for (int b = 0; b < 4; b++)
                 if ((newly >> b & 1) != 0) { pressButton = (b & 1) == 0 ? 1 : 2; HandlePress(); }
@@ -1211,14 +1219,17 @@ sealed partial class Player : Screen
             // stable runs an update per replay frame: frames sharing a time are judged one at a time, so stop here
             // and let the stepping loop run another (zero-length) update at this time for the next one.
             bool split = pbIndex < playback.Length && playback[pbIndex].Time == f.Time;
+            if (FrameDrain && mode == 0) { Drain(f.Time); if (failed) break; }
             if (newly == 0 || relax) { if (split) { sameTimePending = true; break; } continue; }
             time = f.Time;
+            if (FrameDrain && autopilot) cursor = AutoCursor();
             for (int b = 0; b < 4; b++)
                 if ((newly >> b & 1) != 0) { pressButton = (b & 1) == 0 ? 1 : 2; HandlePress(); }
             time = now;
             if (split) { sameTimePending = true; break; }
         }
         AdvanceSpinners(now);
+        if (FrameDrain && mode == 0) Drain(now);
         // Stable replays store the cursor at ~60Hz, but stable judged slider tracking live at a much higher
         // rate. Interpolating between frames approximates the cursor it actually saw. (Our own replays record
         // every change, so they're played back as-is to stay exact.)

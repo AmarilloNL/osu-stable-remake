@@ -15,7 +15,7 @@ sealed class ReplayInfo
     public int MaxCombo, N300, N100, N50, NMiss, NGeki, NKatu;
     public int Mode; // 0 osu!, 1 taiko, 2 catch, 3 mania
     public int Seed; // the play's random seed (mania's Random mod)
-    public int FormatVersion = 7; // an own replay's format (6: catch frames on every step that judged something; 7: see Replays.Version)
+    public int FormatVersion = 8; // an own replay's format (6: catch frames on every step that judged something; 7, 8: see Replays.Version)
     public bool Perfect; // full combo (the .osr flag)
     public double Accuracy;
     public DateTime Date;
@@ -25,10 +25,12 @@ sealed class ReplayInfo
 static class Replays
 {
     const int Magic = 0x50525253; // "SRRP"
-    const int Version = 7; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
+    const int Version = 8; // 3: varint µs time deltas + zigzag varint cursor deltas on a 1/64 px grid; 4: + mode, geki, katu; 5: + seed;
     // 6: catch plays record a frame on every step that judged something (judged at that frame's spot on playback)
     // 7: same frames, judged with stable's mania hold ticks, late misses and last press, and Score V2's own judging in
     // taiko, catch and mania (older replays play back with the judging they were made with)
+    // 8: an osu! play is judged a whole millisecond at a time with each frame's input coming in at its own time, and its
+    // replay drains health up to each frame before that frame's presses (older replays keep draining a step at a time)
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
@@ -74,7 +76,7 @@ static class Replays
     static ReplayInfo ReadHeader(BinaryReader r, string path)
     {
         int version;
-        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or 6 or Version)) throw new InvalidDataException($"not a replay: {path}");
+        if (r.ReadInt32() != Magic || (version = r.ReadInt32()) is not (3 or 4 or 5 or 6 or 7 or Version)) throw new InvalidDataException($"not a replay: {path}");
         var info = new ReplayInfo
         {
             Path = path, BeatmapMd5 = r.ReadString(), Artist = r.ReadString(), Title = r.ReadString(), Version = r.ReadString(),
