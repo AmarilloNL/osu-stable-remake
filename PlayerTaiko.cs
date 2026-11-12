@@ -311,7 +311,8 @@ sealed partial class Player
         {
             var n = tNotes[i];
             bool kat = n.Kind == TKind.Kat;
-            if (Active(n)) break;
+            // (stable: a swell keeps presses off the circles behind it only until its start's miss window is over)
+            if (n.Kind == TKind.Swell && !OldTaiko ? !n.Done && at <= n.Time + tMiss : Active(n)) break;
             if (n.Kind is TKind.Don or TKind.Kat && n.Pending && n.Done)
             {
                 if ((relax || (kat ? rimDown : centre)) && (centre ? (held & 6) == 6 : (held & 9) == 9) && at - n.FirstHitAt < 30 && Left(kat) != n.FirstLeft)
