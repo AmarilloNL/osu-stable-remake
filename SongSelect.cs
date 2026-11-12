@@ -1113,7 +1113,7 @@ sealed partial class SongSelect : Screen
         // F2: random map (stable's spin; F2 again stops it); Shift+F2: back to the one before the last random pick.
         if (Input.IsKeyPressed(KeyboardKey.F2) && view.Count > 0) RandomKey(Input.ShiftHeld);
         UpdateSpin(dtMs);
-        float wheel = VolumeControl.Wheel;
+        float wheel = UpdateScoreScroll(dtMs) ? 0 : VolumeControl.Wheel;
         if (FocusRow != lastFocusRow) { lastFocusRow = FocusRow; wheelTarget = null; }
         if (wheel != 0)
         {
@@ -1161,7 +1161,7 @@ sealed partial class SongSelect : Screen
             if (mouse.X < Game.W * 0.35f)
             {
                 int n = ScoreRowAt(mouse.Y);
-                if (n >= 0 && n < Math.Min(8, SelectedScores.Count)) { ShowScore(SelectedScores[n]); return; }
+                if (InScoreArea(mouse) && n >= 0 && n < SelectedScores.Count) { ShowScore(SelectedScores[n]); return; }
             }
             else { leftDown = true; leftPressAt = mouse; leftDragging = false; leftDragFrom = scrollRow; dragLastY = mouse.Y; dragVelocity = 0; }
         }
@@ -2406,12 +2406,34 @@ sealed partial class SongSelect : Screen
 
     // Local scores, left side, as stable's leaderboard panels.
     // stable's local leaderboard (measured from a stable capture, in 640x480 units): a ranking box at 73-88, then
-    // up to eight rows of 33.3 from 96: rank, grade, name (16), "Score: N (Mx)" (12), and right-aligned mods /
-    // accuracy / gap to the next score (10).
+    // rows of 33.3 from 96: rank, grade, name (16), "Score: N (Mx)" (12), and right-aligned mods / accuracy / gap to the
+    // next score (10). Like stable's, the rows sit in a scroll area from 92 to 359 (eight fit): the wheel over it moves
+    // 100 units a notch, easing there at 0.98 a millisecond.
     static float U => Game.H / 480f;
     float ScoreTop => 96 * U;
     float ScoreRowH => 33.3f * U;
-    int ScoreRowAt(float y) => (int)MathF.Floor((y - ScoreTop) / ScoreRowH);
+    const float ScoreAreaTop = 92, ScoreAreaBottom = 359;
+    float scoreScroll, scoreScrollTarget; // units
+    string? scoreScrollFor;
+    float ScoreScrollMax => Math.Max(0, ScoreTop / U - ScoreAreaTop + SelectedScores.Count * ScoreRowH / U - (ScoreAreaBottom - ScoreAreaTop));
+    bool InScoreArea(Vector2 m) => m.X < 285 * U && m.Y >= ScoreAreaTop * U && m.Y < ScoreAreaBottom * U;
+    int ScoreRowAt(float y) => (int)MathF.Floor((y + scoreScroll * U - ScoreTop) / ScoreRowH);
+
+    // (true: the wheel moved the scores, not the maps)
+    bool UpdateScoreScroll(double dtMs)
+    {
+        if (Selected?.Md5 != scoreScrollFor) { scoreScrollFor = Selected?.Md5; scoreScroll = scoreScrollTarget = 0; }
+        float wheel = VolumeControl.Wheel;
+        if (wheel != 0 && ScoreScrollMax > 0 && InScoreArea(Input.GetMousePosition()))
+        {
+            scoreScrollTarget = Math.Clamp(scoreScrollTarget - wheel * 100, 0, ScoreScrollMax);
+        }
+        bool took = wheel != 0 && ScoreScrollMax > 0 && InScoreArea(Input.GetMousePosition());
+        scoreScrollTarget = Math.Min(scoreScrollTarget, ScoreScrollMax);
+        scoreScroll += (scoreScrollTarget - scoreScroll) * (float)(1 - Math.Pow(0.98, dtMs));
+        if (Math.Abs(scoreScrollTarget - scoreScroll) < 0.01f) scoreScroll = scoreScrollTarget;
+        return took;
+    }
 
     void DrawScoreRow(ReplayInfo r, float y, long? nextScore, bool hover)
     {
@@ -2455,10 +2477,10 @@ sealed partial class SongSelect : Screen
         if (hover) webTip = true;
     }
     bool webTip;
-    readonly float[] rankAlpha = new float[8];
+    float[] rankAlpha = new float[8];
     double rankFadeAt;
     int hoveredScore = -1;
-    static readonly string[] PlaceTexts = ["1", "2", "3", "4", "5", "6", "7", "8"];
+    static string[] PlaceTexts = ["1", "2", "3", "4", "5", "6", "7", "8"];
     ReplayInfo? scoreTip; // the score under the cursor
     ReplayInfo? scoreTipFor;
     string scoreTipText = "";
@@ -2515,10 +2537,13 @@ sealed partial class SongSelect : Screen
         float step = (float)Math.Min(1, (now - rankFadeAt) / 100);
         rankFadeAt = now;
         int hovered = -1;
-        for (int n = 0; n < Math.Min(8, list.Count); n++)
+        if (rankAlpha.Length < list.Count) { Array.Resize(ref rankAlpha, list.Count); PlaceTexts = [.. Enumerable.Range(1, list.Count).Select(i => i.ToString(CultureInfo.InvariantCulture))]; }
+        BeginScissorMode(0, (int)(ScoreAreaTop * u), (int)(285 * u), (int)((ScoreAreaBottom - ScoreAreaTop) * u));
+        for (int n = 0; n < list.Count; n++)
         {
-            float y = ScoreTop + n * ScoreRowH;
-            bool hover = mouse.X < 240 * u && ScoreRowAt(mouse.Y) == n && mouse.Y >= ScoreTop;
+            float y = ScoreTop + n * ScoreRowH - scoreScroll * u;
+            if (y + ScoreRowH < ScoreAreaTop * u || y > ScoreAreaBottom * u) { rankAlpha[n] = 0; continue; } // (out of the area)
+            bool hover = mouse.X < 240 * u && InScoreArea(mouse) && ScoreRowAt(mouse.Y) == n;
             DrawScoreRow(list[n], y, n + 1 < list.Count ? list[n + 1].Score : null, hover);
             if (hover) { scoreTip = list[n]; hovered = n; }
             // stable: a row's place shows while it's hovered (size 18, centred 18 units in and 15 down; in and out over
@@ -2531,6 +2556,7 @@ sealed partial class SongSelect : Screen
                 Game.Text(place, 22.3f * u - Game.TextWidth(place, ps) / 2, y + 15 * u - ps / 2, ps, ColorAlpha(Color.White, rankAlpha[n] * scoreFade));
             }
         }
+        EndScissorMode();
         if (hovered >= 0 && hovered != hoveredScore) Game.Skin.Sound("click-short")?.Play(BeatmapSamples.EffectVolume); // stable's hover sound
         hoveredScore = hovered;
         // (stable shows its "Personal Best" box only for the online ranking types, never for Local Ranking)
