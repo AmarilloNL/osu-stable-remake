@@ -38,6 +38,7 @@ static class Replays
     // and mania's holds held through judged at the end of the 100 window, a note hit early keeping its column till its time
     // 10: + the full combo ("perfect") flag in the header, as stable's scores keep it, and mania's health calibration lead-in
     // (stable's: the scroll time to the hit position or the longest hold, whichever is longer, + 200ms; older ones: the AR's)
+    // and Relax clicking for every circle or slider head due within 12ms, wherever the cursor is (older: the next one, cursor on it)
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;

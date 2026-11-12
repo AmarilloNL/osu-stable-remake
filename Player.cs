@@ -1094,9 +1094,17 @@ sealed partial class Player : Screen
         else
         {
             // Relax: the click happens by itself once the object's time is reached and the cursor is on it.
-            // (stable: from 11ms before it; older replays: from its time)
-            if (relax && NextPending() is int i && (OldOsu ? time >= objs[i].Time : objs[i].Time - time < 12) && Vector2.Distance(cursor, PosOf(objs[i])) <= map.Radius)
-                HandlePress();
+            // (stable: a click for every circle or slider head not yet hit that is due within 12ms, landing on whatever is
+            // under the cursor; replays before format 10: only the next one with the cursor on it, from 11ms before it, and
+            // before format 9 from its time)
+            if (relax && watching is { FromStable: false, FormatVersion: < 10 })
+            {
+                if (NextPending() is int i && (OldOsu ? time >= objs[i].Time : objs[i].Time - time < 12) && Vector2.Distance(cursor, PosOf(objs[i])) <= map.Radius)
+                    HandlePress();
+            }
+            else if (relax)
+                for (int k = firstActive; k < objs.Count && objs[k].Time - time < 12; k++)
+                    if (objs[k].Type == ObjType.Circle ? !st[k].Done : objs[k].Type == ObjType.Slider && !st[k].HeadDone) HandlePress();
             held = relax || inputKeys != 0;
         }
         int lr = ((inputKeys & 5) != 0 ? 1 : 0) | ((inputKeys & 10) != 0 ? 2 : 0);
