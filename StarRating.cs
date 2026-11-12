@@ -237,7 +237,7 @@ static class StarRating
         static double AngleAt(Vector2 p, Vector2 vertex, Vector2 q)
         {
             Vector2 v1 = q - vertex, v2 = p - vertex;
-            float dot = Vector2.Dot(v1, v2);
+            float dot = v1.X * v2.X + v1.Y * v2.Y; // (added one by one like stable: two negative zeros stay a negative zero, turning the angle to pi)
             return Math.Abs(Math.Atan2(v1.X * v2.Y - v1.Y * v2.X, dot));
         }
     }
