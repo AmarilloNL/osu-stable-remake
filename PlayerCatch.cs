@@ -198,7 +198,8 @@ sealed partial class Player
                 }
             }
         }
-        fruits.Sort((a, b) => a.Time.CompareTo(b.Time));
+        if (old) fruits.Sort((a, b) => a.Time.CompareTo(b.Time));
+        else { var inOrder = fruits.OrderBy(f => f.Time).ToList(); fruits.Clear(); fruits.AddRange(inOrder); } // (things at one moment stay in the order they were made)
         CFruit? nextFruit = null; // (walking back: the fruit after each)
         for (int i = fruits.Count - 1; i >= 0; i--)
         {
@@ -252,7 +253,7 @@ sealed partial class Player
                 if (Math.Abs(mx - cX) > 0.01f) cDir = mx > cX ? 1 : -1;
                 cX = mx;
             }
-            else if (move != 0 && dt / rate <= 33) { cX += move * speed * (float)dt; cDir = move; } // (stable: no step over a frame longer than 33ms)
+            else if (move != 0 && GetFrameTime() * 1000 <= 33) { cX += move * speed * (float)dt; cDir = move; } // (stable: no step over a frame longer than 33ms)
             // a hyperdash ends on reaching its fruit's spot
             if (cHyperDir != 0 && cHyperTarget != null && (cHyperDir > 0 ? cX >= cHyperTarget.X : cX <= cHyperTarget.X)) { cX = cHyperTarget.X; cHyperDir = 0; }
             cX = MathF.Round(Math.Clamp(cX, 0, 512) * Replays.PosScale) / Replays.PosScale; // (on the replay's grid, so playback is exact)
