@@ -18,6 +18,17 @@ sealed class Storyboard
         public readonly double Start = start, End = end;
         public readonly int Easing = easing;
         public readonly float From = from, To = to;
+        public double MaxEnd; // the latest end among this and the commands before it in its track (Sorted)
+    }
+
+    // a track in start order (ties keep file order, like stable's), with each command's running latest end
+    static List<Cmd>? Sorted(List<Cmd>? track)
+    {
+        if (track == null) return null;
+        var list = track.OrderBy(c => c.Start).ToList();
+        double max = double.NegativeInfinity;
+        foreach (var c in list) c.MaxEnd = max = Math.Max(max, c.End);
+        return list;
     }
 
     sealed class Element
@@ -254,7 +265,7 @@ sealed class Storyboard
         samples.Sort((a, b) => a.Time.CompareTo(b.Time));
         foreach (var e in elements)
         {
-            for (int i = 0; i < e.Tracks.Length; i++) e.Tracks[i] = e.Tracks[i]?.OrderBy(c => c.Start).ToList(); // stable: ties keep file order
+            for (int i = 0; i < e.Tracks.Length; i++) e.Tracks[i] = Sorted(e.Tracks[i]);
             var ps = e.Params.OrderBy(x => x.Start).ToList();
             e.Params.Clear();
             e.Params.AddRange(ps);
@@ -357,7 +368,7 @@ sealed class Storyboard
                 foreach (var (kind, p) in trig.Lines)
                     foreach (var (k, easing, s, end, values) in Expand(kind, p))
                         AddCmd(e, k, easing, s + time, end + time, values, trig.Active);
-                for (int i = 0; i < e.Tracks.Length; i++) e.Tracks[i] = e.Tracks[i]?.OrderBy(c => c.Start).ToList();
+                for (int i = 0; i < e.Tracks.Length; i++) e.Tracks[i] = Sorted(e.Tracks[i]);
                 var ps = e.Params.OrderBy(x => x.Start).ToList();
                 e.Params.Clear();
                 e.Params.AddRange(ps);
@@ -416,8 +427,8 @@ sealed class Storyboard
         foreach (var s in sounds.Values) s?.Unload();
     }
 
-    // Value of a track at t: before its first command, that command's start value; otherwise the last command
-    // started by t, interpolated while running and held at its end value afterwards.
+    // Value of a track at t, like stable's: before its first command, that command's start value; otherwise the first
+    // command (in start order) running at t, or with none running the last one started, held at its end value.
     static float Value(List<Cmd>? track, double t, float def)
     {
         if (track is not { Count: > 0 }) return def; // (a trigger's commands taken out can leave it empty)
@@ -429,7 +440,16 @@ sealed class Storyboard
             else hi = mid - 1;
         }
         if (found < 0) return track[0].From;
-        var c = track[found];
+        // the first running: the earliest command whose running latest end reaches t (it started by t: at or before found)
+        int first = -1;
+        lo = 0; hi = found;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) / 2;
+            if (track[mid].MaxEnd >= t) { first = mid; hi = mid - 1; }
+            else lo = mid + 1;
+        }
+        var c = track[first >= 0 ? first : found];
         if (t >= c.End) return c.To;
         double p = Easing.Apply(c.Easing, (t - c.Start) / (c.End - c.Start));
         return (float)(c.From + (c.To - c.From) * p);
