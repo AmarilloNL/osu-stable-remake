@@ -77,12 +77,12 @@ sealed class Storyboard
         var lines = new List<string>();
         bool widescreen = false;
         var vars = new List<(string Name, string Value)>();
-        // The .osb first, then the difficulty's own events on top of it.
-        foreach (var osb in Directory.EnumerateFiles(map.Folder, "*.osb"))
-            ReadEvents(osb, lines, vars, ref widescreen);
+        // Like stable's: the difficulty's own events first, then the one .osb named after the map (other .osb files in the
+        // folder are left alone); a layer draws them in that order
         ReadEvents(map.File, lines, vars, ref widescreen);
+        string osb = System.IO.Path.Combine(map.Folder, OsbName(map.Artist, map.Title, map.Creator, map.File));
+        if (File.Exists(osb)) ReadEvents(osb, lines, vars, ref widescreen);
         var sb = new Storyboard(map.Folder, widescreen);
-        vars.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length)); // $ab before $a
         sb.Parse(lines, vars);
         if (sb.IsEmpty) return null;
         foreach (var path in sb.samples.Select(s => s.Path).Distinct(StringComparer.OrdinalIgnoreCase))
@@ -99,11 +99,10 @@ sealed class Storyboard
         var lines = new List<string>();
         bool widescreen = false;
         var vars = new List<(string Name, string Value)>();
-        if (osbLines != null) ReadEvents(osbLines, lines, vars, ref widescreen);
         ReadEvents(new[] { "[Variables]" }.Concat(osuVariables).Append("[Events]").Concat(osuEvents), lines, vars, ref widescreen);
+        if (osbLines != null) ReadEvents(osbLines, lines, vars, ref widescreen);
         widescreen |= widescreenOsu;
         var sb = new Storyboard(map.Folder, widescreen);
-        vars.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));
         sb.Parse(lines, vars);
         if (reuse != null) { foreach (var (k, v) in reuse.textures) sb.textures[k] = v; reuse.textures.Clear(); }
         sb.LoadTextures();
@@ -112,6 +111,15 @@ sealed class Storyboard
     public bool[] ShowLayer = [true, true, true, true, true]; // (the Design view's layer toggles)
     public bool BothStates; // the Design view: the fail and pass layers both, not as the play goes
     public Texture2D? TextureOf(string path) => textures.TryGetValue(path, out var t) && t.Id != 0 ? t : null;
+
+    // stable's .osb name: "Artist - Title (Creator).osb" (the .osu's own name without an artist, no "(...)" without a
+    // creator), characters a file name can't have taken out
+    static string OsbName(string artist, string title, string creator, string osuFile)
+    {
+        string name = (artist.Length > 0 ? artist + " - " + title : System.IO.Path.GetFileNameWithoutExtension(osuFile)) + (creator.Length > 0 ? " (" + creator + ")" : "") + ".osb";
+        foreach (char c in System.IO.Path.GetInvalidFileNameChars()) name = name.Replace(c.ToString(), "");
+        return name;
+    }
 
     static void ReadEvents(string path, List<string> into, List<(string, string)> vars, ref bool widescreen) => ReadEvents(File.ReadLines(path), into, vars, ref widescreen);
     static void ReadEvents(IEnumerable<string> fileLines, List<string> into, List<(string, string)> vars, ref bool widescreen)
@@ -195,7 +203,7 @@ sealed class Storyboard
             if (raw.Length == 0) { FlushLoop(); trigger = null; current = null; continue; }
             string line = raw;
             if (line.Contains('$'))
-                foreach (var (name, value) in vars) line = line.Replace(name, value);
+                foreach (var (name, value) in vars) line = line.Replace(name, value); // (in the order they were defined, like stable's)
             int depth = 0;
             while (depth < line.Length && line[depth] is ' ' or '_') depth++;
             var p = line[depth..].Split(',');
