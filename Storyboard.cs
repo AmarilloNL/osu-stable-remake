@@ -35,6 +35,7 @@ sealed class Storyboard
     {
         public int Layer; // 0 background, 1 fail, 2 pass, 3 foreground, 4 overlay
         public bool Animation;
+        public string Always = ""; // P parameters of no length: stable sets them on the sprite for its whole life
         public Vector2 Origin; // 0..1 of the sprite size
         public string Path = "";
         public float X, Y;
@@ -272,6 +273,7 @@ sealed class Storyboard
             var ps = e.Params.OrderBy(x => x.Start).ToList();
             e.Params.Clear();
             e.Params.AddRange(ps);
+            e.Always = string.Concat(ps.Where(x => x.Start == x.End).Select(x => x.Kind).Distinct());
         }
         foreach (var e in elements) referenced.Add(e.Path); // before dropping sprites without commands: stable still hides a background they name
         elements.RemoveAll(e => e.Start > e.End && e.Triggers == null);
@@ -379,6 +381,7 @@ sealed class Storyboard
                 var ps = e.Params.OrderBy(x => x.Start).ToList();
                 e.Params.Clear();
                 e.Params.AddRange(ps);
+                e.Always = string.Concat(ps.Where(x => x.Start == x.End).Select(x => x.Kind).Distinct());
             }
     }
 
@@ -465,6 +468,7 @@ sealed class Storyboard
 
     bool Param(Element e, double t, char kind)
     {
+        if (e.Always.Contains(kind)) return true;
         foreach (var (s, end, k) in e.Params)
         {
             if (s > t) break;
