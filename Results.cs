@@ -50,24 +50,24 @@ sealed partial class Player
             modIconTex = [.. SongSelect.ModIcons.OrderBy(x => x.Flag)
                 .Where(x => p.mods.HasFlag(x.Flag) && !(x.Flag == Mods.DoubleTime && p.mods.HasFlag(Mods.Nightcore)) && !(x.Flag == Mods.SuddenDeath && p.mods.HasFlag(Mods.Perfect)))
                 .Select(x => "selection-mod-" + x.Icon)];
-            scoreText = p.score.ToString("00000000");
+            scoreText = p.score.ToString(p.mode == 3 || p.mods.HasFlag(Mods.ScoreV2) ? "0000000" : "00000000"); // (stable: seven digits for mania and Score V2)
             perfect = p.summary && p.watching is { } sw ? sw.Perfect : p.FullCombo;
 
             int lift = newLayout ? 20 : 8, textDy = newLayout ? -16 : -25;
             var list = new List<(string, Vector2, string?, float, float, Vector2, bool)>();
             void Row(string sprite, float x, float y, int count) => list.Add((sprite, new(x, y), $"{count}x", 1, 0.5f, new(x + 40, y + textDy), false));
-            if (p.mode == 1) // taiko: greats, goods and misses, and the big notes' bonuses
+            if (p.mode == 1) // taiko: greats, goods and misses on the left (stable: without the big notes' bonuses), the bonuses on the right
             {
-                Row("taiko-hit300", 40, 160, p.n300);
-                Row("taiko-hit100", 40, 220, p.n100);
+                Row("taiko-hit300", 40, 160, p.n300 - p.nGeki);
+                Row("taiko-hit100", 40, 220, p.n100 - p.nKatu);
+                Row("taiko-hit0", 40, 280, p.nMiss);
                 Row("taiko-hit300g", 240, 160, p.nGeki);
                 Row("taiko-hit100k", 240, 220, p.nKatu);
-                Row("taiko-hit0", 240, 280, p.nMiss);
             }
-            else if (p.mode == 3) // mania: MAX, 300, 200 / 100, 50, miss
+            else if (p.mode == 3) // mania: 300, 200, 50 on the left; MAX, 100, miss on the right (stable's order)
             {
-                Row("mania-hit300g", 40, 160, p.nGeki);
-                Row("mania-hit300", 240, 160, p.n300);
+                Row("mania-hit300", 40, 160, p.n300);
+                Row("mania-hit300g", 240, 160, p.nGeki);
                 Row("mania-hit200", 40, 220, p.nKatu);
                 Row("mania-hit100", 240, 220, p.n100);
                 Row("mania-hit50", 40, 280, p.n50);
