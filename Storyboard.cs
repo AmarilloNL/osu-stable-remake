@@ -74,7 +74,9 @@ sealed class Storyboard
     public double LatestEvent => Math.Max(elements.Count > 0 ? elements.Max(e => e.End) : double.NegativeInfinity, samples.Count > 0 ? samples.Max(s => s.Time) : double.NegativeInfinity);
     public double EarliestEvent => Math.Min(0, Math.Min(elements.Count > 0 ? elements.Min(e => e.Start) : 0, samples.Count > 0 ? samples.Min(s => s.Time) : 0));
     readonly HashSet<string> referenced = new(StringComparer.OrdinalIgnoreCase);
-    public bool UsesFile(string file) => referenced.Contains(file);
+    // stable hides the map's background when a Background-layer sprite names the same file (slashes made alike, case kept)
+    readonly HashSet<string> backgroundLayerFiles = new(StringComparer.Ordinal);
+    public bool UsesFile(string file) => backgroundLayerFiles.Contains(Clean(file));
     public IEnumerable<string> ReferencedFiles => referenced;
     public int CountShorterThan(double ms) => elements.Count(e => e.End - e.Start < ms); // (AiMod's epilepsy check)
 
@@ -275,7 +277,7 @@ sealed class Storyboard
             e.Params.AddRange(ps);
             e.Always = string.Concat(ps.Where(x => x.Start == x.End).Select(x => x.Kind).Distinct());
         }
-        foreach (var e in elements) referenced.Add(e.Path); // before dropping sprites without commands: stable still hides a background they name
+        foreach (var e in elements) { referenced.Add(e.Path); if (e.Layer == 0) backgroundLayerFiles.Add(e.Path); } // before dropping sprites without commands: stable still hides a background they name
         elements.RemoveAll(e => e.Start > e.End && e.Triggers == null);
         triggered = elements.Where(e => e.Triggers != null).ToList();
         var byLayer = elements.OrderBy(e => e.Layer).ToList(); // draw order: layer, then file order
