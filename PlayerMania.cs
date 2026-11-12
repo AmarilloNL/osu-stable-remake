@@ -215,7 +215,6 @@ sealed partial class Player
             list.Add(n);
             mNotes.Add(n);
         }
-        health.CalibrateMania(map, mNotes.Select(n => (n.Time, n.End)).ToList(), map.RawHP, ModeV2); // (stable's gain multiplier for the map)
 
         // the scroll: stable's 21 units a beat at speed 1, its "BPM scale" off by default: normalised to the map's main BPM
         // (the red point covering the most of it) and the mod's rate, so only BPM changes (and, in mania maps, slider
@@ -238,6 +237,20 @@ sealed partial class Player
             mScroll.Add((p.Time, dist, perMs));
             last = p.Time;
         }
+        // stable's gain multiplier for the map; its calibration starts the scroll time to the hit position (at the speed set
+        // now) or the longest hold before the first note, whichever is longer, + 200ms (an own replay: as its play did)
+        if (watching is { FromStable: false, FormatVersion: < 10 }) health.CalibrateMania(map, mNotes.Select(n => (n.Time, n.End)).ToList(), map.RawHP, ModeV2);
+        else
+        {
+            var cfg = skin.Mania.TryGetValue(mKeys, out var d) ? d : null;
+            float hitY = cfg != null && cfg.TryGetValue("HitPosition", out var hv) && float.TryParse(hv, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var hf) ? Math.Clamp(hf, 240, 480) : 402;
+            double perMs0 = mScroll.Count == 0 ? 0 : mScroll[0].PerMs;
+            for (int i = 1; i < mScroll.Count && mScroll[i].Time <= 0; i++) perMs0 = mScroll[i].PerMs;
+            int scrollMs = perMs0 * mSpeed > 0 ? (int)(hitY / (perMs0 * mSpeed)) : 0;
+            int longest = mNotes.Count == 0 ? 0 : mNotes.Max(n => (int)n.End - (int)n.Time);
+            mCalLead = watching is { FromStable: false, CalibrationLead: > 0 } played ? played.CalibrationLead : Math.Max(scrollMs, longest) + 200;
+            health.CalibrateMania(map, mNotes.Select(n => (n.Time, n.End)).ToList(), map.RawHP, ModeV2, mCalLead);
+        }
     }
 
     // the scroll distance at a time (units from the map's start)
@@ -252,6 +265,7 @@ sealed partial class Player
     int mJudged, mRecorded;
     float mHiddenH = 160, mHiddenA;
     int mSpeed = 12;
+    int mCalLead; // the health calibration's lead-in (kept in the replay)
 
     // stable's scroll speed keys (F3 / F4 by default) during a play: saved as the speed (and, when remembering per
     // beatmap, this map's; not while watching)

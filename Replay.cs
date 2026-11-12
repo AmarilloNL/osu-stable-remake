@@ -15,8 +15,9 @@ sealed class ReplayInfo
     public int MaxCombo, N300, N100, N50, NMiss, NGeki, NKatu;
     public int Mode; // 0 osu!, 1 taiko, 2 catch, 3 mania
     public int Seed; // the play's random seed (mania's Random mod)
-    public int FormatVersion = 9; // an own replay's format (6: catch frames on every step that judged something; 7-9: see Replays.Version)
+    public int FormatVersion = 10; // an own replay's format (6: catch frames on every step that judged something; 7-10: see Replays.Version)
     public bool Perfect; // full combo (the .osr flag)
+    public int CalibrationLead; // mania: the lead-in (ms) its health calibration ran with (it follows the scroll speed then)
     public double Accuracy;
     public DateTime Date;
 }
@@ -35,7 +36,8 @@ static class Replays
     // rules for missed droplets and combo ends (older replays keep the fruits and rules they were made with)
     // and taiko on stable's health scale (6% of every change), its big drumroll ticks (doubled) and kiai read 5ms past a note
     // and mania's holds held through judged at the end of the 100 window, a note hit early keeping its column till its time
-    // 10: + the full combo ("perfect") flag in the header, as stable's scores keep it
+    // 10: + the full combo ("perfect") flag in the header, as stable's scores keep it, and mania's health calibration lead-in
+    // (stable's: the scroll time to the hit position or the longest hold, whichever is longer, + 200ms; older ones: the AR's)
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
@@ -61,7 +63,7 @@ static class Replays
         w.Write(info.N300); w.Write(info.N100); w.Write(info.N50); w.Write(info.NMiss);
         w.Write(info.Accuracy); w.Write(info.Date.ToBinary());
         w.Write(info.Mode); w.Write(info.NGeki); w.Write(info.NKatu); w.Write(info.Seed);
-        w.Write(info.Perfect);
+        w.Write(info.Perfect); w.Write(info.CalibrationLead);
         w.Write(frames.Count);
         using var z = new BinaryWriter(new DeflateStream(w.BaseStream, CompressionLevel.SmallestSize, leaveOpen: true));
         long prev = 0;
@@ -92,7 +94,7 @@ static class Replays
         };
         if (version >= 4) { info.Mode = r.ReadInt32(); info.NGeki = r.ReadInt32(); info.NKatu = r.ReadInt32(); }
         if (version >= 5) info.Seed = r.ReadInt32();
-        if (version >= 10) info.Perfect = r.ReadBoolean();
+        if (version >= 10) { info.Perfect = r.ReadBoolean(); info.CalibrationLead = r.ReadInt32(); }
         info.FormatVersion = version;
         return info;
     }

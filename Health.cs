@@ -93,7 +93,7 @@ sealed class Health
     // breaks skipped), each a MAX worth mul x (1.1 - HP / 10). Its drain rate is never applied in mania; the gain
     // multiplier it settles on is (MAX, 300 and 200 heal mul times their amount). Under Score V2 a hold's head is a MAX
     // too, after its length has drained.
-    public void CalibrateMania(Beatmap map, IReadOnlyList<(double Time, double End)> notes, double hpValue, bool v2 = false)
+    public void CalibrateMania(Beatmap map, IReadOnlyList<(double Time, double End)> notes, double hpValue, bool v2 = false, int? leadIn = null)
     {
         mul = mulGeki = 1;
         if (notes.Count == 0) return;
@@ -104,7 +104,7 @@ sealed class Health
             bool retry = false;
             double value = Max, uncapped = Max;
             void Change(double d) { value = Math.Clamp(value + d, 0, Max); uncapped += d; }
-            double last = (int)notes[0].Time - (int)map.Preempt;
+            double last = (int)notes[0].Time - (leadIn ?? (int)map.Preempt);
             int breakIndex = 0;
             foreach (var (t, end) in notes)
             {
