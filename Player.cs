@@ -540,6 +540,22 @@ sealed partial class Player : Screen
     // passed more often than it failed
     readonly List<bool> passStates = [];
     internal bool Applause => playback == null && !auto && passStates.Count(x => x) > passStates.Count(x => !x);
+    bool endDecided;
+
+    // stable, once the map is complete (200ms past the last object): health at least half is one more pass, and the
+    // storyboard takes whichever won (a tie fails), firing its Passing / Failing triggers
+    void EndDecision()
+    {
+        if (endDecided || failed) return;
+        endDecided = true;
+        passStates.Add(health.Value >= Health.Max / 2);
+        bool passing = passStates.Count(x => x) > passStates.Count(x => !x);
+        if (storyboard != null && storyboard.Passing != passing)
+        {
+            storyboard.Passing = passing;
+            storyboard.Fire(time, passing ? "Passing" : "Failing");
+        }
+    }
 
     void UpdateBreakSection()
     {
@@ -1050,6 +1066,7 @@ sealed partial class Player : Screen
             }
             wasInBreak = inBreak;
         }
+        if (Complete) EndDecision();
         // (a catch replay drains up to each of its frames before what it judges there, like the play it was made from)
         if (!FrameDrain) Drain(time);
         UpdateBreakSection();
@@ -1137,7 +1154,7 @@ sealed partial class Player : Screen
             // stable's taiko: a play ending with the bar not over half is failed (not with NoFail or Relax)
             if (mode == 1 && health.Value <= Health.Max / 2 && HealthFails && !auto) { Fail(); return; } // (also when the play is ended early after completion: a replay ends the same way)
             finished = true;
-            passStates.Add(health.Value >= Health.Max / 2);
+            EndDecision(); // (ended before the map was complete: decided now)
             SaveReplay();
             Console.Error.WriteLine($"[{mods.Short()}] audio sync: mean |drift| {driftSum / Math.Max(1, driftCount):0.000}ms, max {driftMax:0.00}ms, snaps {snaps}; score {score} acc {Accuracy:0.00}% 300/100/50/miss {n300}/{n100}/{n50}/{nMiss} maxcombo {maxCombo}/{MapMaxCombo} hp {health.Value:0.0} drop {health.DropRate:0.0000}/ms");
         }
