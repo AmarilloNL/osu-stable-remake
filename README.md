@@ -157,6 +157,7 @@ Progress at a glance. Checked items are done; everything else is still open.
 - [x] Slider curves, timing, ticks, repeats and stacking bit-identical to stable on 39 maps (18,602 objects, also with HR and EZ; one HR slider ends a float step off)
 - [x] Song select, main menu, mod select, dialogs, HUD, pause/fail and ranking screens measured pixel by pixel against stable at 720p, 900p and 1080p
 - [x] Stable's rule that ignores clicks on a stacked circle while the one below it is still unhit
+- [x] Star ratings the same as the ones stable stored, on all 360 map and mod combinations of the starter maps (no mods, HardRock, Easy, DoubleTime, HalfTime and their pairs)
 
 **Missing pieces**
 - [x] Hit lighting
