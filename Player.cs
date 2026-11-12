@@ -3103,7 +3103,7 @@ sealed partial class Player : Screen
     internal static double AccuracyFor(int mode, int n300, int n100, int n50, int nMiss, int nGeki, int nKatu, bool v2 = false)
     {
         int total = n300 + n100 + n50 + nMiss;
-        if (mode == 1) return total == 0 ? 100 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half
+        if (mode == 1) return total == 0 ? 0 : (n300 + 0.5 * n100) / total * 100; // taiko: a good is half (stable: 0% before anything is judged)
         if (mode == 2) return total + nKatu == 0 ? 100 : (double)(n300 + n100 + n50) / (total + nKatu) * 100; // catch: anything caught (katu: tiny droplets missed)
         if (mode == 3) // mania: MAX (geki) and 300 full, 200 (katu) two thirds, 100 a third, 50 a sixth; Score V2: MAX 305 and 300 300 of 305
         {
