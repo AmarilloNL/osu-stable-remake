@@ -3245,8 +3245,9 @@ sealed partial class Player : Screen
             return acc >= 1 ? silv ? "XH" : "X" : acc > 0.98 ? silv ? "SH" : "S" : acc > 0.94 ? "A" : acc > 0.9 ? "B" : acc > 0.85 ? "C" : "D";
         }
         if (total == 0) return "D";
-        // (stable works these two out in single precision: exactly 80% or 60% 300s counts as over it, and exactly 1% 50s still makes an S)
-        double r300 = (float)n300 / (float)total, r50 = (float)n50 / (float)total;
+        // (stable divides into a float local, but its x86 runtime keeps the extended-precision quotient there, as in its
+        // slider maths: exactly 80% or 60% 300s is not over the line. Exactly 1% 50s still makes an S: it tests <= 0.01)
+        double r300 = n300 / (double)total, r50 = n50 / (double)total;
         bool silver = (mods & (Mods.Hidden | Mods.Flashlight | Mods.FadeIn)) != 0; // (stable: Fade In too)
         if (n300 == total) return silver ? "XH" : "X";
         if (r300 > 0.9 && r50 <= 0.01 && nMiss == 0) return silver ? "SH" : "S";
