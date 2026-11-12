@@ -386,7 +386,8 @@ sealed partial class Player : Screen
     };
     // full combo: osu!'s the map's whole combo; taiko's, catch's and mania's never broken (their combos don't count
     // the osu! objects: rolls, bananas, converted notes)
-    internal bool FullCombo => mode == 0 ? maxCombo == MapMaxCombo : !comboBroke && maxCombo > 0;
+    // (mania: stable's "perfect" is no miss, 50 or 100 and under a tenth 200s)
+    internal bool FullCombo => mode == 0 ? maxCombo == MapMaxCombo : mode == 3 ? nMiss + n50 + n100 == 0 && (double)((float)nKatu / (float)(n300 + n100 + n50 + nMiss + nGeki + nKatu)) < 0.1 : !comboBroke && maxCombo > 0;
     bool comboBroke;
 
     public void Dispose()

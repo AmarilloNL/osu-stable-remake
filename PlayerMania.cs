@@ -333,6 +333,8 @@ sealed partial class Player
         }
     }
 
+    bool OldMania => watching is { FromStable: false, FormatVersion: < 9 }; // (own replays before format 9 keep the judging they were made with)
+
     void ManiaTimeoutPass(double now)
     {
         for (int c = 0; c < mKeys; c++)
@@ -356,10 +358,12 @@ sealed partial class Player
         // once let go within the tail's 50 window, when still held 50 past the end, or (let go too early or never
         // pressed) once the tail's 100 window has passed (V2: one and a half of it, held or not)
         if (!n.HeadHit && now <= n.Time + mW50) return; // (not pressed yet: nothing before the head's window closes)
-        if (!n.HeadHit && !n.Broken && !ModeV2) { n.Broken = true; BreakCombo(); }
+        // (stable: the break comes with the column's key up; a key held since before the hold leaves it be until its miss)
+        if (!n.HeadHit && !n.Broken && !ModeV2 && (OldMania || !mDown[n.Column])) { n.Broken = true; BreakCombo(); }
         if (ModeV2) { if ((float)now >= (float)n.End + (float)mW100 * 1.5f) ManiaJudge(n, ManiaTailV2(n)); }
-        else if (n.Holding ? now >= n.End + mW50 : OldModeRules ? now >= n.End - mW50 : (float)now >= (float)(n.End + mW100))
-            ManiaJudge(n, ManiaHoldResult(n, Math.Min(now, n.End + mW50))); // (still held: as at the window's end, whatever the frame)
+        else if (OldMania ? n.Holding ? now >= n.End + mW50 : OldModeRules ? now >= n.End - mW50 : (float)now >= (float)(n.End + mW100) : (float)now >= (float)(n.End + mW100))
+            // (still held: stable judges it only here, as let go now; whatever the frame, as at this moment)
+            ManiaJudge(n, ManiaHoldResult(n, Math.Min(now, n.End + (OldMania ? mW50 : mW100))));
     }
 
     // the note a press goes to: the column's first one not judged yet; under Score V2 (stable: no note lock there) the
@@ -389,6 +393,8 @@ sealed partial class Player
     void ManiaPress(int c, double at)
     {
         if (ManiaTarget(c, at) is not { } n) return;
+        // stable: a note judged before its time keeps its column until then (a second press doesn't go on to the next)
+        if (!ModeV2 && !OldMania && mNext[c] > 0 && mColumns[c][mNext[c] - 1].Time > at) return;
         double err = at - n.Time, a = Math.Abs(err);
         if (n.Hold)
         {
