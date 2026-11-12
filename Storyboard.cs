@@ -514,10 +514,12 @@ sealed class Storyboard
         if (!Widescreen) BeginScissorMode((int)ox, screenY, (int)(640 * s), h); // 4:3 storyboards are cut to 4:3, like stable
         foreach (var e in elements)
         {
-            if (t < e.Start || t > e.End || (e.Layer == 4) != overlay || !ShowLayer[Math.Clamp(e.Layer, 0, 4)]) continue;
+            // (stable: a sprite with triggers stays, whatever its commands' times; its alpha is 0 until a fade sets it)
+            if (e.Triggers == null && (t < e.Start || t > e.End) || (e.Layer == 4) != overlay || !ShowLayer[Math.Clamp(e.Layer, 0, 4)]) continue;
             if (!BothStates && (e.Layer == 1 && Passing || e.Layer == 2 && !Passing)) continue;
             // stable dims a storyboard by darkening its colours, not by fading it: opaque sprites stay opaque.
-            float alpha = Value(e.Tracks[(int)Track.Fade], t, 1);
+            var fades = e.Tracks[(int)Track.Fade];
+            float alpha = e.Triggers != null && (fades is not { Count: > 0 } || t < fades[0].Start) ? 0 : Value(fades, t, 1);
             if (alpha <= 0) continue;
             int frame = 0;
             if (e.Frames > 1 && e.FrameDelay > 0)
