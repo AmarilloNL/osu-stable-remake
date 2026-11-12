@@ -46,10 +46,14 @@ sealed partial class Player
     int tAutoHand;
 
     const float TaikoHitX = 160, TaikoLaneY = 197; // screen units
+    bool OldTaiko => watching is { FromStable: false, FormatVersion: < 9 }; // (own replays before format 9 keep the health and scores they were made with)
+    int KiaiAhead => OldTaiko ? 0 : 5; // stable takes a note's kiai from 5ms past it
 
     void TaikoSetup()
     {
         health.Value = 0; // stable: the bar starts empty and only hits fill it; a pass needs it over half at the end
+        // stable's taiko bar takes 6% of every change (a great fills 200 / (circles x 0.5-0.98 by HP), a miss costs 1.5 at HP 5)
+        if (!OldTaiko) health.Scale = 0.06;
         double od = map.OD;
         tGreat = (int)Beatmap.Range(od, 50, 35, 20);
         tGood = (int)Beatmap.Range(od, 120, 80, 50);
@@ -448,9 +452,9 @@ sealed partial class Player
     void TaikoTick(TNote n)
     {
         n.TicksScored++;
-        int tick = map.PointAt(n.Time).Kiai ? 360 : 300;
+        int tick = map.PointAt(n.Time + KiaiAhead).Kiai ? 360 : 300;
         if (ModeV2) V2Bonus(n.Big ? 800 : 200);
-        else score += n.Big ? tick + tick / 5 : tick;
+        else score += n.Big ? (tick + tick / 5) * (OldTaiko ? 1 : 2) : tick; // (stable: a big roll's tick a fifth more, then doubled)
         SetSliderFail(false);
         health.Add(0.0001);
     }
@@ -482,7 +486,7 @@ sealed partial class Player
         if (result > 0)
         {
             // (scored on the combo before this hit, like stable)
-            if (!ModeV2) score += TaikoValue(result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai);
+            if (!ModeV2) score += TaikoValue(result == 300 ? 300 : 150, map.PointAt(n.Time + KiaiAhead).Kiai);
             combo++;
             maxCombo = Math.Max(maxCombo, combo);
             if (result != 300 && mods.HasFlag(Mods.Perfect)) Fail(); // (Perfect: greats only)
@@ -511,7 +515,7 @@ sealed partial class Player
         if (together) { if (n.Result == 300) nGeki++; else nKatu++; }
         else health.Add(n.Result == 300 ? tHpMul * 6 : tHpMul * Beatmap.Range(map.HP, 17.6, 2.2, 2.2));
         if (ModeV2) V2Hit(2100); // (V2: the second hand 7 times the first)
-        else score += TaikoValue(n.Result == 300 ? 300 : 150, map.PointAt(n.Time).Kiai, comboOffset: -1); // stable: the second hand's bonus counts one combo less
+        else score += TaikoValue(n.Result == 300 ? 300 : 150, map.PointAt(n.Time + KiaiAhead).Kiai, comboOffset: -1); // stable: the second hand's bonus counts one combo less
         tLastJudge = (n.Result, true, Game.NowMs);
     }
 

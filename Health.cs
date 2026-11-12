@@ -41,7 +41,8 @@ sealed class Health
     public double ComboEnd(int worst, bool lastHit) => !lastHit ? 0 : worst switch { 300 => mulGeki * 14, 100 => mulGeki * 10, _ => mulGeki * 6 };
 
     public void Apply(HpEvent e) => Add(Gain(e));
-    public void Add(double delta) => Value = Math.Clamp(Value + delta, 0, Max);
+    public double Scale = 1; // (taiko's bar takes 6% of every change)
+    public void Add(double delta) => Value = Math.Clamp(Value + delta * Scale, 0, Max);
 
     // osu!catch: stable calibrates over the catch objects instead (Kind 0 fruit, 1 droplet, 2 tiny droplet, 3 banana;
     // a fruit ending a combo gets the geki bonus): droplets give mul x 3, tiny droplets a tenth of that, bananas half

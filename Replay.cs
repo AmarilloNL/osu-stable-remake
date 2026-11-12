@@ -33,6 +33,8 @@ static class Replays
     // replay drains health up to each frame before that frame's presses (older replays keep draining a step at a time)
     // 9: catch plays on stable's exact fruits (tiny droplets, bananas and HardRock's nudges a pixel off before) and its
     // rules for missed droplets and combo ends (older replays keep the fruits and rules they were made with)
+    // and taiko on stable's health scale (6% of every change), its big drumroll ticks (doubled) and kiai read 5ms past a note
+    // and mania's holds held through judged at the end of the 100 window, a note hit early keeping its column till its time
     // Frames of the other modes follow stable's: taiko's keys as its bits (M1 left centre, M2 left rim, K1 right
     // centre, K2 right rim), catch's x the catcher's (keys 1: dashing), mania's x the held columns' bits.
     public const float PosScale = 64;
