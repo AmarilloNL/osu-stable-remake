@@ -120,7 +120,8 @@ sealed class Storyboard
         foreach (var raw in fileLines)
         {
             var t = raw.Trim();
-            if (t.Length == 0 || t.StartsWith("//")) continue;
+            // (in [Events] a blank or comment line is kept as an empty line: it ends the sprite's commands, like stable's)
+            if (t.Length == 0 || t.StartsWith("//")) { if (section == "[Events]") into.Add(""); continue; }
             if (t[0] == '[') { section = t; continue; }
             switch (section)
             {
@@ -189,6 +190,9 @@ sealed class Storyboard
 
         foreach (var raw in lines)
         {
+            // stable reads a sprite's commands while the lines are indented: a blank or comment line ends them (commands
+            // after it belong to no sprite)
+            if (raw.Length == 0) { FlushLoop(); trigger = null; current = null; continue; }
             string line = raw;
             if (line.Contains('$'))
                 foreach (var (name, value) in vars) line = line.Replace(name, value);
@@ -215,7 +219,7 @@ sealed class Storyboard
                         elements.Add(current);
                         break;
                     case "Sample" or "5" when p.Length >= 4:
-                        samples.Add((D(p[1]), (int)D(p[2]), Clean(p[3]), p.Length > 4 ? (int)D(p[4]) : 100));
+                        samples.Add((D(p[1]), (int)D(p[2]), Clean(p[3]), p.Length > 4 ? Math.Clamp((int)D(p[4]), 0, 100) : 100)); // (stable: volume 0-100)
                         break;
                 }
                 continue;
@@ -471,7 +475,7 @@ sealed class Storyboard
             }
             var tex = e.Textures[frame];
             if (tex.Id == 0) continue;
-            float scale = Value(e.Tracks[(int)Track.Scale], t, 1);
+            float scale = Math.Max(0, Value(e.Tracks[(int)Track.Scale], t, 1)); // (stable: a negative S is 0, not a flip; V can flip)
             float sx = scale * Value(e.Tracks[(int)Track.VX], t, 1), sy = scale * Value(e.Tracks[(int)Track.VY], t, 1);
             if (sx == 0 || sy == 0) continue;
             float x = Value(e.Tracks[(int)Track.X], t, e.X), y = Value(e.Tracks[(int)Track.Y], t, e.Y);
