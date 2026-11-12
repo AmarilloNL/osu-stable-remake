@@ -350,11 +350,12 @@ sealed partial class Player
     // a hold's combo break: ScoreV1's bonus meter refills on it too, as on every event, at a combo of 384, 768...
     void HoldBreak()
     {
-        if (!OldMania && !ModeV2 && combo != 0 && combo % 384 == 0) mBonus = 100;
+        if (!OldHolds && !ModeV2 && combo != 0 && combo % 384 == 0) mBonus = 100;
         BreakCombo();
     }
 
     bool OldMania => watching is { FromStable: false, FormatVersion: < 9 }; // (own replays before format 9 keep the judging they were made with)
+    bool OldHolds => watching is { FromStable: false, FormatVersion: < 10 }; // (and before format 10: no repeated hold breaks or bonus refill on them)
 
     void ManiaTimeoutPass(double now)
     {
@@ -383,7 +384,7 @@ sealed partial class Player
         if (!n.HeadHit && !n.Broken && !ModeV2 && (OldMania || !mDown[n.Column])) { n.Broken = true; HoldBreak(); }
         // stable: a hold let go before its head's 50 window has closed breaks the combo again on every update until then
         // (and once just after), so a note hit in another column meanwhile loses its combo too
-        else if (n.HeadHit && !n.Holding && !ModeV2 && !OldMania && now - 1 <= n.Time + mW50 && combo > 0) HoldBreak();
+        else if (n.HeadHit && !n.Holding && !ModeV2 && !OldHolds && now - 1 <= n.Time + mW50 && combo > 0) HoldBreak();
         if (ModeV2) { if ((float)now >= (float)n.End + (float)mW100 * 1.5f) ManiaJudge(n, ManiaTailV2(n)); }
         else if (OldMania ? n.Holding ? now >= n.End + mW50 : OldModeRules ? now >= n.End - mW50 : (float)now >= (float)(n.End + mW100) : (float)now >= (float)(n.End + mW100))
             // (still held: stable judges it only here, as let go now; whatever the frame, as at this moment)

@@ -370,9 +370,12 @@ sealed class Storyboard
     void Fire(double time, Func<string, bool> matches)
     {
         foreach (var e in triggered)
+        {
+            bool touched = false;
             foreach (var trig in e.Triggers!)
             {
                 if (!matches(trig.Name)) continue;
+                touched = true;
                 // stable: a firing first takes out what earlier firings added: Passing / Failing take out every Passing and
                 // Failing trigger's (even outside their window), others their group's, or with no group (0) only their own
                 void Clear(Trigger other)
@@ -389,12 +392,15 @@ sealed class Storyboard
                 foreach (var (kind, p) in trig.Lines)
                     foreach (var (k, easing, s, end, values) in Expand(kind, p))
                         AddCmd(e, k, easing, s + time, end + time, values, trig.Active);
-                for (int i = 0; i < e.Tracks.Length; i++) e.Tracks[i] = Sorted(e.Tracks[i]);
-                var ps = e.Params.OrderBy(x => x.Start).ToList();
-                e.Params.Clear();
-                e.Params.AddRange(ps);
-                e.Always = string.Concat(ps.Where(x => x.Start == x.End).Select(x => x.Kind).Distinct());
             }
+            if (!touched) continue;
+            // (after any change, a firing outside its window included: its clearing may have taken commands out)
+            for (int i = 0; i < e.Tracks.Length; i++) e.Tracks[i] = Sorted(e.Tracks[i]);
+            var ps = e.Params.OrderBy(x => x.Start).ToList();
+            e.Params.Clear();
+            e.Params.AddRange(ps);
+            e.Always = string.Concat(ps.Where(x => x.Start == x.End).Select(x => x.Kind).Distinct());
+        }
     }
 
     void LoadTextures()

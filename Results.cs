@@ -214,7 +214,7 @@ sealed partial class Player
                 }
                 Toast.Show($"Saved replay to {path}.", new Color(138, 43, 226, 255), 6000);
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Toast.Show($"Replay not saved: {e.Message}"); }
+            catch (Exception e) when (e is not OutOfMemoryException) { Toast.Show($"Replay not saved: {e.Message}"); } // (a damaged replay too)
         }
 
         // First click/key within 5s fast-forwards every animation, like stable.

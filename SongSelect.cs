@@ -2421,7 +2421,7 @@ sealed partial class SongSelect : Screen
     const float ScoreAreaTop = 92, ScoreAreaBottom = 359;
     float scoreScroll, scoreScrollTarget; // units
     string? scoreScrollFor;
-    float ScoreScrollMax => Math.Max(0, ScoreTop / U - ScoreAreaTop + SelectedScores.Count * ScoreRowH / U - (ScoreAreaBottom - ScoreAreaTop));
+    float ScoreScrollMax => SelectedScores.Count <= 8 ? 0 : Math.Max(0, ScoreTop / U - ScoreAreaTop + SelectedScores.Count * ScoreRowH / U - (ScoreAreaBottom - ScoreAreaTop));
     bool InScoreArea(Vector2 m) => m.X < 285 * U && m.Y >= ScoreAreaTop * U && m.Y < ScoreAreaBottom * U;
     int ScoreRowAt(float y) => (int)MathF.Floor((y + scoreScroll * U - ScoreTop) / ScoreRowH);
 

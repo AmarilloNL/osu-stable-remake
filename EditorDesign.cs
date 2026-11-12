@@ -79,7 +79,7 @@ sealed partial class Editor
         try
         {
             var all = Directory.EnumerateFiles(info.Folder, "*.osb").ToList();
-            osbPath = all.FirstOrDefault(f => string.Equals(Path.GetFileName(f), Path.GetFileName(NewOsbPath()), StringComparison.OrdinalIgnoreCase)) ?? all.FirstOrDefault();
+            osbPath = all.FirstOrDefault(f => string.Equals(Path.GetFileName(f), Path.GetFileName(NewOsbPath()), StringComparison.OrdinalIgnoreCase)); // (the game reads no other)
             if (osbPath != null) osbLines = [.. File.ReadAllLines(osbPath)];
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { osbUnreadable = true; osbLines = null; } // (left alone: never written over)
@@ -145,9 +145,8 @@ sealed partial class Editor
                 else if (section == "[Variables]" && l.StartsWith('$') && l.IndexOf('=') is > 0 and var eq) vars.Add((l[..eq], l[(eq + 1)..]));
             }
         }
-        if (osbLines != null) Vars(osbLines);
         Vars(sections.FirstOrDefault(s => s.Name == "Variables")?.Lines.Prepend("[Variables]") ?? []);
-        vars.Sort((a, b) => b.Name.Length.CompareTo(a.Name.Length));
+        if (osbLines != null) Vars(osbLines); // (in the game's order: the difficulty's first, filled in as defined)
         if (osbLines != null) { var (from, to) = OsbEvents(); SbParseLines(osbLines, from, to, osb: true, vars); }
         SbParseLines(ev.Lines, 0, ev.Lines.Count, osb: false, vars);
         sbSprites = [.. sbSprites.OrderBy(s => Math.Max(0, Array.IndexOf(SbLayerNames, s.Layer)))]; // (drawn, and so picked, layer by layer)
@@ -159,7 +158,7 @@ sealed partial class Editor
     void SbParseLines(List<string> lines, int from, int to, bool osb, List<(string Name, string Value)> vars)
     {
         SbSprite? cur = null;
-        bool gap = false; // (a blank or comment line after a sprite: the game reads on past it, so one with commands after it isn't edited here)
+        bool gap = false; // (unused since the game also ends a sprite's commands at a blank or comment line)
         SbCmd? loop = null;
         double loopAt = 0, first = 0, last = 0;
         int loopCount = 1;
@@ -173,7 +172,7 @@ sealed partial class Editor
         {
             string raw = lines[i], line = raw;
             if (line.Contains('$')) foreach (var (name, value) in vars) line = line.Replace(name, value);
-            if (line.Trim().Length == 0 || line.TrimStart().StartsWith("//")) { gap |= cur != null; continue; }
+            if (line.Trim().Length == 0 || line.TrimStart().StartsWith("//")) { EndLoop(); cur = null; continue; } // (the game ends a sprite's commands there)
             if (line.Length > 0 && line[0] is ' ' or '_')
             {
                 if (cur == null) continue;
